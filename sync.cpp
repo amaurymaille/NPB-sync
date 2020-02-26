@@ -9,57 +9,71 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
+#include <type_traits>
 
 #include <omp.h>
 
 namespace Globals {
-    static const size_t DIM_X = 128;
-    static const size_t DIM_Y = 128;
-    static const size_t DIM_Z = 16;
-    static const size_t NB_ELEMENTS = DIM_X * DIM_Y * DIM_Z;
+    static const size_t DIM_W = 10;
+    static const size_t DIM_X = 8;
+    static const size_t DIM_Y = 8;
+    static const size_t DIM_Z = 8;
+    static const size_t NB_ELEMENTS = DIM_W * DIM_X * DIM_Y * DIM_Z;
 
     static const size_t ZONE_X_SIZE = 32;
     static const size_t ZONE_Y_SIZE = 32;
     static const size_t ZONE_Z_SIZE = ::Globals::DIM_Z;
 
-    static const size_t ITERATIONS = 10;
+    static const size_t ITERATIONS = DIM_W;
 }
 
-size_t to1d(size_t x, size_t y, size_t z) {
+typedef int Matrix[Globals::DIM_W][Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z];
+
+static void heat_cpu(Matrix, int, size_t);
+
+size_t to1d(size_t w, size_t x, size_t y, size_t z) {
     namespace g = Globals;
-    return x * g::DIM_Y * g::DIM_Z + y * g::DIM_Z + z;
+    return w * g::DIM_X * g::DIM_Y  * g::DIM_Z +
+           x            * g::DIM_Y  * g::DIM_Z + 
+           y                        * g::DIM_Z +
+           z;
 }
 
-std::tuple<size_t, size_t, size_t> to3d(size_t n) {
+std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n) {
     namespace g = Globals;
     size_t z = n % g::DIM_Z;
     size_t y = ((n - z) / g::DIM_Z) % g::DIM_Y;
-    size_t x = (n - z - y * g::DIM_Z) / (g::DIM_Y * g::DIM_Z);
+    size_t x = ((n - z - y * g::DIM_Z) / (g::DIM_Y * g::DIM_Z)) % g::DIM_X;
+    size_t w = (n - z - y * g::DIM_Z - x * g::DIM_Y * g::DIM_Z) / (g::DIM_X * g::DIM_Y * g::DIM_Z);
 
-    return std::make_tuple(x, y, z);
+    return std::make_tuple(w, x, y, z);
 }
 
 void init_matrix(int* ptr) {
     namespace g = Globals;
     for (int i = 0; i < g::NB_ELEMENTS; ++i) {
-        ptr[i] = i;
+        ptr[i] = i % 10;
     }
 }
 
-void assert_okay_init(int matrix[Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z]) {
+void assert_okay_init(Matrix matrix) {
     namespace g = Globals;
 
-    for (int i = 0; i < g::DIM_X; ++i) {
-        for (int j = 0; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; k++) {
-                size_t as1d = to1d(i, j, k);
-                auto [ci, cj, ck] = to3d(as1d);
+    for (int i = 0; i < g::DIM_W; ++i) {
+        for (int j = 0; j < g::DIM_X; ++j) {
+            for (int k = 0; k < g::DIM_Y; k++) {
+                for (int l = 0; l < g::DIM_Z; l++) {
+                    size_t as1d = to1d(i, j, k, l);
+                    auto [ci, cj, ck, cl] = to4d(as1d);
 
-                assert(matrix[i][j][k] == to1d(i, j, k));
-                assert(ci == i && cj == j && ck == k);
+                    assert(matrix[i][j][k][l] == to1d(i, j, k, l) % 10);
+                    assert(ci == i && cj == j && ck == k && cl == l);
+                }
             }
         }
     }
@@ -88,7 +102,8 @@ const char* get_time_default_fmt() {
 class AltBitSynchronizer {
 public:
     AltBitSynchronizer(int nthreads) : _isync(nthreads) {
-
+        init_matrix(reinterpret_cast<int*>(_matrix));
+        assert_okay_init(_matrix);
     }
 
     template<typename F, typename... Args>
@@ -114,19 +129,36 @@ public:
         #pragma omp barrier
 
         for (int i = 0; i < g::ITERATIONS; ++i) {
-            // std::this_thread::sleep_for(std::chrono::seconds(rand() % 5));
-
             sync_left(thread_num, n_threads - 1, i);
 
-            // std::this_thread::sleep_for(std::chrono::seconds(rand() % 5));
-
-            f(std::forward<Args>(args)..., i);
-
-            // std::this_thread::sleep_for(std::chrono::seconds(rand() % 5));
+            f(_matrix, std::forward<Args>(args)..., i);
 
             sync_right(thread_num, n_threads - 1, i);
         }
     }
+    }
+
+    void assert_okay() {
+        namespace g = Globals;
+        Matrix matrix;
+        init_matrix(reinterpret_cast<int*>(matrix));
+
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            heat_cpu(matrix, -1, i);
+        }
+
+        for (int i = 0; i < g::DIM_W; ++i) {
+            for (int j = 0; j < g::DIM_X; ++j) {
+                for (int k = 0;  k < g::DIM_Y; ++k) {
+                    for (int l = 0; l < g::DIM_Z; ++l) {
+                        if (matrix[i][j][k][l] != _matrix[i][j][k][l]) {
+                            printf("Error: %d, %d, %d, %d (%lu) => expected %d, got %d\n", i, j, k, l, to1d(i, j, k, l), matrix[i][j][k][l], _matrix[i][j][k][l]);
+                            assert(false);
+                        }
+                    }
+                }
+            }
+        }
     }
 
 protected:
@@ -137,6 +169,8 @@ protected:
     }
 
     void sync_left(int thread_num, int n_threads, int i) {
+        namespace g = Globals;
+
         if (thread_num > 0 && thread_num <= n_threads) {
             printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
@@ -148,11 +182,14 @@ protected:
             printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);   
             _isync[neighbour].store(false, std::memory_order_acq_rel);
         }
-        // FLUSH ?
+
+        #pragma omp flush(_matrix)
     }
 
     void sync_right(int thread_num, int n_threads, int i) {
-        // FLUSH ?
+        namespace g = Globals;
+
+        #pragma omp flush(_matrix)
 
         if (thread_num < n_threads) {
             printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
@@ -166,28 +203,52 @@ protected:
         }
     }
 
+    // Utiliser un tableau d'entiers (ou double tableau de booléen pour optimiser le cache)
+    // pour permettre aux threads de prendre de l'avance
     std::vector<std::atomic<bool>> _isync;
+
+    Matrix _matrix;
 };
 
-void heat_cpu(int* ptr, int global_thread_num, int extern_i) {
+void heat_cpu(Matrix array, int global_thread_num, size_t w) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
-    printf("[%s][heat_cpu] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, extern_i);
+    int* ptr = reinterpret_cast<int*>(array);
+    // printf("[%s][heat_cpu] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, w);
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X - 1; ++i) {
-        for (int j = 1; j < g::DIM_Y; j++) {
-            for (int k = 0; k < g::DIM_Z; k++) {
-                size_t n = to1d(i, j, k);
-                size_t nm1 = to1d(i - 1, j, k);
+        for (int j = 0; j < g::DIM_Y; ++j) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
+                size_t n = to1d(w, i, j, k);
+                size_t nm1 = to1d(w, i - 1, j, k);
 
-                ptr[n] += ptr[n - 1];
+                int orig = ptr[n];
+                int to_add = ptr[nm1];
+
+                /*
+                printf("[iterations][heat_cpu] Iteration %d, n = %lu\n", w, n);
+                if (thread_num != 0 || omp_get_num_threads() == 1) {
+                    printf("[consistency][heat_cpu][before] Thread %d, iteration %d, ptr[%lu] = %d, ptr[%lu] = %d\n", thread_num, w, nm1, ptr[nm1], n, ptr[n]);
+                } */
+
+                int result = orig + to_add;
+                // printf("[debugdata][heat_cpu][before] ptr[%lu] = %d\n", n, ptr[n]);
+                ptr[n] = result;
+                // printf("[debugdata][heat_cpu][after] ptr[%lu] = %d\n", n, ptr[n]);
+                // ptr[n] %= 100; // Keep values in range [0, 99] to avoid overflows
+
+                /*
+                if (thread_num != omp_get_num_threads() - 1 || omp_get_num_threads() == 1) {
+                    printf("[consistency][heat_cpu][end] Thread %d, iteration %d, ptr[%lu] = %d, ptr[%lu] = %d\n", thread_num, w, nm1, ptr[nm1], n, ptr[n]);
+                }
+                */
             }
         }
     }
 
-    printf("[%s][heat_cpu] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, extern_i);
+    // printf("[%s][heat_cpu] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, w);
 }
 
 void omp_debug() {
@@ -211,30 +272,14 @@ int main() {
 
     omp_debug();
 
-    int matrix[g::DIM_X][g::DIM_Y][g::DIM_Z]; 
-    init_matrix(reinterpret_cast<int*>(matrix));
-
-    int matrix2[g::DIM_X][g::DIM_Y][g::DIM_Z];
-    memcpy(matrix2, matrix, g::NB_ELEMENTS * sizeof(int));
-    for (int i = 0; i < g::ITERATIONS; i++) {
-        heat_cpu(reinterpret_cast<int*>(matrix2), -1, i);
-    }
-
-    assert_okay_init(matrix);
-
     AltBitSynchronizer synchronizer(100);
 
 #pragma omp parallel
 {
-    printf("[main] I am thread %d, there are %d threads\n", omp_get_thread_num(), omp_get_num_threads());
-    #pragma omp barrier
-    synchronizer.run(&heat_cpu, reinterpret_cast<int*>(matrix), omp_get_thread_num());
+    synchronizer.run(heat_cpu, omp_get_thread_num());
 }
 
-    for (int n = 0; n < g::NB_ELEMENTS; ++n) {
-        auto [i, j, k] = to3d(n);
-        assert(matrix[i][j][k] == matrix2[i][j][k]);
-    }
+    synchronizer.assert_okay();
 
     return 0;
 }
