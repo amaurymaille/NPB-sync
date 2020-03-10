@@ -99,11 +99,124 @@ const char* get_time_default_fmt() {
     return get_time_fmt_cstr("%H:%M:%S");
 }
 
-class AltBitSynchronizer {
+class Synchronizer {
 public:
-    AltBitSynchronizer(int nthreads) : _isync(nthreads) {
+    Synchronizer() {
         init_matrix(reinterpret_cast<int*>(_matrix));
         assert_okay_init(_matrix);
+    }
+    
+    void assert_okay() {
+        namespace g = Globals;
+        Matrix matrix;
+        init_matrix(reinterpret_cast<int*>(matrix));
+
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            heat_cpu(matrix, -1, i);
+        }
+
+        for (int i = 0; i < g::DIM_W; ++i) {
+            for (int j = 0; j < g::DIM_X; ++j) {
+                for (int k = 0;  k < g::DIM_Y; ++k) {
+                    for (int l = 0; l < g::DIM_Z; ++l) {
+                        if (matrix[i][j][k][l] != _matrix[i][j][k][l]) {
+                            printf("Error: %d, %d, %d, %d (%lu) => expected %d, got %d\n", i, j, k, l, to1d(i, j, k, l), matrix[i][j][k][l], _matrix[i][j][k][l]);
+                            assert(false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+protected:
+    virtual void sync_init() = 0;
+
+    Matrix _matrix;
+};
+
+class AltBitSynchronizer : public Synchronizer {
+public:
+    AltBitSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
+
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        namespace g = Globals;
+
+        int thread_num = -1, n_threads = -1;
+
+    #pragma omp parallel private(thread_num, n_threads) 
+    {
+        thread_num = omp_get_thread_num();
+        n_threads = omp_get_num_threads();
+
+        #pragma omp master
+        {
+            printf("Running with %d threads\n", n_threads);
+            sync_init();
+        }
+
+        #pragma omp barrier
+
+        for (int i = 0; i < g::ITERATIONS; i++) {
+            sync_left(thread_num, n_threads - 1, i);
+
+            f(_matrix, std::forward<Args>(args)..., i);
+
+            sync_right(thread_num, n_threads - 1, i);
+        }
+    }
+    }
+
+private:
+    std::vector<std::atomic<bool>> _isync;
+
+    void sync_init() {
+        namespace g = Globals;
+
+        for (int i = 0; i < _isync.size(); i++)
+            _isync[i].store(false, std::memory_order_acq_rel);
+    }
+
+    void sync_left(int thread_num, int n_threads, int i) {
+        namespace g = Globals;
+
+        if (thread_num > 0 && thread_num <= n_threads) {
+            printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            int neighbour = thread_num - 1;
+            bool sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+
+            while (sync_state == false)
+                sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+
+            _isync[neighbour].store(false, std::memory_order_acq_rel);
+            printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+        }
+    }
+
+    void sync_right(int thread_num, int n_threads, int i) {
+        namespace g = Globals;
+
+        if (thread_num < n_threads) {
+            printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            
+            bool sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
+            while (sync_state == true)
+                sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
+
+            _isync[thread_num].store(true, std::memory_order_acq_rel);
+
+            printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+        }
+    }
+};
+
+class IterationSynchronizer : public Synchronizer {
+public:
+    IterationSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
+    
     }
 
     template<typename F, typename... Args>
@@ -137,34 +250,11 @@ public:
         }
     }
     }
-
-    void assert_okay() {
-        namespace g = Globals;
-        Matrix matrix;
-        init_matrix(reinterpret_cast<int*>(matrix));
-
-        for (int i = 0; i < g::ITERATIONS; ++i) {
-            heat_cpu(matrix, -1, i);
-        }
-
-        for (int i = 0; i < g::DIM_W; ++i) {
-            for (int j = 0; j < g::DIM_X; ++j) {
-                for (int k = 0;  k < g::DIM_Y; ++k) {
-                    for (int l = 0; l < g::DIM_Z; ++l) {
-                        if (matrix[i][j][k][l] != _matrix[i][j][k][l]) {
-                            printf("Error: %d, %d, %d, %d (%lu) => expected %d, got %d\n", i, j, k, l, to1d(i, j, k, l), matrix[i][j][k][l], _matrix[i][j][k][l]);
-                            assert(false);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-protected:
+    
+private:
     void sync_init() {
         for (int i = 0; i < _isync.size(); ++i) {
-            _isync[i].store(false, std::memory_order_acq_rel);
+            _isync[i].store(0, std::memory_order_acq_rel);
         }
     }
 
@@ -174,40 +264,29 @@ protected:
         if (thread_num > 0 && thread_num <= n_threads) {
             printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
-            bool sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+            unsigned int sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
-            while (sync_state == false)
+            // Wait for left neighbour to have finished its iteration
+            while (sync_state == i)
                 sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
-            printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);   
-            _isync[neighbour].store(false, std::memory_order_acq_rel);
+            printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
-
-        #pragma omp flush(_matrix)
     }
 
     void sync_right(int thread_num, int n_threads, int i) {
         namespace g = Globals;
 
-        #pragma omp flush(_matrix)
-
         if (thread_num < n_threads) {
             printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
-            bool sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
-
-            while (sync_state == true)
-                sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
-
+            _isync[thread_num]++;
             printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
-            _isync[thread_num].store(true, std::memory_order_acq_rel);
         }
     }
 
     // Utiliser un tableau d'entiers (ou double tableau de booléen pour optimiser le cache)
     // pour permettre aux threads de prendre de l'avance
-    std::vector<std::atomic<bool>> _isync;
-
-    Matrix _matrix;
+    std::vector<std::atomic<unsigned int>> _isync;
 };
 
 void heat_cpu(Matrix array, int global_thread_num, size_t w) {
@@ -272,7 +351,7 @@ int main() {
 
     omp_debug();
 
-    AltBitSynchronizer synchronizer(100);
+    AltBitSynchronizer synchronizer(20);
 
 #pragma omp parallel
 {
@@ -280,6 +359,16 @@ int main() {
 }
 
     synchronizer.assert_okay();
+
+
+    IterationSynchronizer iteration_synchro(20);
+
+#pragma omp parallel
+{
+    iteration_synchro.run(heat_cpu, omp_get_thread_num());
+}
+
+    iteration_synchro.assert_okay();
 
     return 0;
 }
