@@ -324,13 +324,14 @@ void heat_cpu(Matrix array, size_t w) {
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X - 1; ++i) {
-        for (int j = 0; j < g::DIM_Y; ++j) {
+        for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
                 size_t n = to1d(w, i, j, k);
                 size_t nm1 = to1d(w, i - 1, j, k);
+                size_t nm1j = to1d(w, i, j - 1, k);
 
                 int orig = ptr[n];
-                int to_add = ptr[nm1];
+                int to_add = ptr[nm1] + ptr[nm1j];
 
                 int result = orig + to_add;
                 ptr[n] = result;
