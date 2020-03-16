@@ -10,6 +10,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -17,6 +18,23 @@
 #include <type_traits>
 
 #include <omp.h>
+
+template<typename IntType>
+class RandomGenerator {
+public:
+    template<typename... Args>
+    RandomGenerator(Args&&... args) : _generator(std::random_device()()), _distribution(std::forward<Args>(args)...) {
+
+    }
+
+    IntType operator()() {
+        return _distribution(_generator);
+    }
+
+private:
+    std::mt19937 _generator;
+    std::uniform_int_distribution<IntType> _distribution;
+};
 
 namespace Globals {
     static const size_t DIM_W = 10;
@@ -30,7 +48,11 @@ namespace Globals {
     static const size_t ZONE_Z_SIZE = ::Globals::DIM_Z;
 
     static const size_t ITERATIONS = DIM_W;
+    static RandomGenerator<unsigned int> generator(0, 100);
+    static RandomGenerator<unsigned char> binary_generator(0, 1);
 }
+
+
 
 typedef int Matrix[Globals::DIM_W][Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z];
 
@@ -158,6 +180,7 @@ public:
             sync_init();
         }
 
+        // Est-ce que cette barrière est vraiment utile ?
         #pragma omp barrier
 
         for (int i = 0; i < g::ITERATIONS; i++) {
@@ -232,13 +255,10 @@ public:
         #pragma omp master
         {
             printf("[run] Running with %d threads\n", n_threads);
+            sync_init();
         }
 
-        #pragma omp master
-        {
-        sync_init();
-        }
-
+        // Est-ce que cette barrière est vraiment utile ?
         #pragma omp barrier
 
         for (int i = 0; i < g::ITERATIONS; ++i) {
@@ -293,6 +313,7 @@ void heat_cpu(Matrix array, int global_thread_num, size_t w) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
+    int omp_num_threads = omp_get_num_threads();
     int* ptr = reinterpret_cast<int*>(array);
     // printf("[%s][heat_cpu] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, w);
 
@@ -306,23 +327,17 @@ void heat_cpu(Matrix array, int global_thread_num, size_t w) {
                 int orig = ptr[n];
                 int to_add = ptr[nm1];
 
-                /*
-                printf("[iterations][heat_cpu] Iteration %d, n = %lu\n", w, n);
-                if (thread_num != 0 || omp_get_num_threads() == 1) {
-                    printf("[consistency][heat_cpu][before] Thread %d, iteration %d, ptr[%lu] = %d, ptr[%lu] = %d\n", thread_num, w, nm1, ptr[nm1], n, ptr[n]);
-                } */
-
                 int result = orig + to_add;
-                // printf("[debugdata][heat_cpu][before] ptr[%lu] = %d\n", n, ptr[n]);
                 ptr[n] = result;
-                // printf("[debugdata][heat_cpu][after] ptr[%lu] = %d\n", n, ptr[n]);
-                // ptr[n] %= 100; // Keep values in range [0, 99] to avoid overflows
-
-                /*
-                if (thread_num != omp_get_num_threads() - 1 || omp_get_num_threads() == 1) {
-                    printf("[consistency][heat_cpu][end] Thread %d, iteration %d, ptr[%lu] = %d, ptr[%lu] = %d\n", thread_num, w, nm1, ptr[nm1], n, ptr[n]);
+                
+                // Sleep only in OMP section, speed up the sequential version
+                if (omp_num_threads != 1) {
+                    if (g::binary_generator())
+                        std::this_thread::sleep_for(std::chrono::milliseconds(g::generator()));
+                    else
+                        std::this_thread::yield();
+                    
                 }
-                */
             }
         }
     }
