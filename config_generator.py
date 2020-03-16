@@ -66,7 +66,8 @@ def main():
         f.write("\tINIReader _reader;\n")
         f.write("\n")
 
-        f.write("\tConfig() {\n")
+        f.write("\tConfig() : _reader(\"config.ini\") {\n")
+        f.write("\t\tif (_reader.ParseError() < 0) {\n\t\t\tstd::cerr << \"Error while parsing file config.ini\" << std::endl;\n\t\t}\n")
 
         for section, key, elem_type in all_elements:
             fn = None
