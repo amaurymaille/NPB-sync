@@ -19,6 +19,8 @@
 
 #include <omp.h>
 
+#include "config.h"
+
 template<typename IntType>
 class RandomGenerator {
 public:
