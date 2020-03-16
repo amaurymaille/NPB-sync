@@ -54,11 +54,14 @@ namespace Globals {
     static RandomGenerator<unsigned char> binary_generator(0, 1);
 }
 
-
+template<typename T, typename R>
+auto count_duration_cast(std::chrono::duration<R> const& tp) {
+    return std::chrono::duration_cast<T>(tp).count();
+}
 
 typedef int Matrix[Globals::DIM_W][Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z];
 
-static void heat_cpu(Matrix, int, size_t);
+static void heat_cpu(Matrix, size_t);
 
 size_t to1d(size_t w, size_t x, size_t y, size_t z) {
     namespace g = Globals;
@@ -136,7 +139,7 @@ public:
         init_matrix(reinterpret_cast<int*>(matrix));
 
         for (int i = 0; i < g::ITERATIONS; ++i) {
-            heat_cpu(matrix, -1, i);
+            heat_cpu(matrix, i);
         }
 
         for (int i = 0; i < g::DIM_W; ++i) {
@@ -311,7 +314,7 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
-void heat_cpu(Matrix array, int global_thread_num, size_t w) {
+void heat_cpu(Matrix array, size_t w) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
@@ -332,13 +335,15 @@ void heat_cpu(Matrix array, int global_thread_num, size_t w) {
                 int result = orig + to_add;
                 ptr[n] = result;
                 
-                // Sleep only in OMP section, speed up the sequential version
-                if (omp_num_threads != 1) {
-                    if (g::binary_generator())
-                        std::this_thread::sleep_for(std::chrono::milliseconds(g::generator()));
-                    else
-                        std::this_thread::yield();
-                    
+                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
+                    // Sleep only in OMP section, speed up the sequential version
+                    if (omp_num_threads != 1) {
+                        if (g::binary_generator()) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(g::generator()));
+                        } else {
+                            std::this_thread::yield();
+                        }
+                    }
                 }
             }
         }
@@ -361,6 +366,42 @@ void omp_debug() {
     std::cout << "Number of threads (out of parallel again) : " << omp_get_num_threads() << std::endl;
 }
 
+template<class Synchronizer>
+class SynchronizationMeasurer {
+public:
+    template<class F, class... SynchronizerArgs>
+    static void measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
+        using Clock = std::chrono::steady_clock;
+
+        Synchronizer synchronizer(synchronizer_args...);
+        std::chrono::time_point<Clock> tp;
+
+        #pragma omp parallel
+        {
+            #pragma omp master
+            {
+                tp = Clock::now();
+            }
+
+            synchronizer.run(f);
+            #pragma omp barrier
+
+            #pragma omp master
+            {
+                auto now = Clock::now();
+                std::chrono::duration<double> diff = now - tp;
+                std::cout << "Elapsed time : " << diff.count() << ", " <<
+                             count_duration_cast<std::chrono::milliseconds>(diff) << ", " << 
+                             count_duration_cast<std::chrono::microseconds>(diff) << 
+                             std::endl;
+                ;
+            }
+        }
+
+        synchronizer.assert_okay();
+    }
+};
+
 int main() {
     namespace g = Globals;
 
@@ -368,24 +409,8 @@ int main() {
 
     omp_debug();
 
-    AltBitSynchronizer synchronizer(20);
-
-#pragma omp parallel
-{
-    synchronizer.run(heat_cpu, omp_get_thread_num());
-}
-
-    synchronizer.assert_okay();
-
-
-    IterationSynchronizer iteration_synchro(20);
-
-#pragma omp parallel
-{
-    iteration_synchro.run(heat_cpu, omp_get_thread_num());
-}
-
-    iteration_synchro.assert_okay();
+    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
 
     return 0;
 }
