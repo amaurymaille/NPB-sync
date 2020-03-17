@@ -314,64 +314,11 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
-void heat_cpu(Matrix array, size_t w) {
-    namespace g = Globals;
-
-    int thread_num = omp_get_thread_num();
-    int omp_num_threads = omp_get_num_threads();
-    int* ptr = reinterpret_cast<int*>(array);
-    // printf("[%s][heat_cpu] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, w);
-
-    #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X - 1; ++i) {
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t n = to1d(w, i, j, k);
-                size_t nm1 = to1d(w, i - 1, j, k);
-                size_t nm1j = to1d(w, i, j - 1, k);
-
-                int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP section, speed up the sequential version
-                    if (omp_num_threads != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // printf("[%s][heat_cpu] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, w);
-}
-
-void omp_debug() {
-    std::cout << "Number of threads (out of parallel): " << omp_get_num_threads() << std::endl;
-
-#pragma omp parallel
-{
-    #pragma omp master
-    {
-        std::cout << "Number of threads (in parallel) : " << omp_get_num_threads() << std::endl;
-    }
-}
-
-    std::cout << "Number of threads (out of parallel again) : " << omp_get_num_threads() << std::endl;
-}
-
 template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
     template<class F, class... SynchronizerArgs>
-    static void measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
+    static void measure_time(F&& f, std::string const& simulation_name, SynchronizerArgs&&... synchronizer_args) {
         using Clock = std::chrono::steady_clock;
 
         Synchronizer synchronizer(synchronizer_args...);
@@ -391,11 +338,10 @@ public:
             {
                 auto now = Clock::now();
                 std::chrono::duration<double> diff = now - tp;
-                std::cout << "Elapsed time : " << diff.count() << ", " <<
-                             count_duration_cast<std::chrono::milliseconds>(diff) << ", " << 
-                             count_duration_cast<std::chrono::microseconds>(diff) << 
+                std::cout << "[" << simulation_name << "] " << "Elapsed time : " << 
+                             diff.count() << ", " << count_duration_cast<std::chrono::milliseconds>(diff) << 
+                             ", " << count_duration_cast<std::chrono::microseconds>(diff) << 
                              std::endl;
-                ;
             }
         }
 
@@ -410,8 +356,13 @@ int main() {
 
     omp_debug();
 
-    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
-    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+    assert_switch_and_no_switch_are_identical();
 
+    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), "heat_cpu with alt bit", 20);
+    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), "heat_cpu with counter", 20);
+
+    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with alt bit", 20);
+    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with counter", 20);
+    
     return 0;
 }
