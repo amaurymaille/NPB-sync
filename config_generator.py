@@ -22,6 +22,7 @@ def main():
         f.write("#define CONFIG_H\n")
         f.write("\n")
 
+        f.write("#include <iostream>\n")
         f.write("#include <string>\n")
         f.write("\n")
 
