@@ -1,130 +1,17 @@
 #include <cassert>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <ctime>
 
 #include <atomic>
 #include <chrono>
 #include <functional>
-#include <iostream>
-#include <memory>
-#include <mutex>
-#include <random>
-#include <string>
-#include <thread>
-#include <tuple>
 #include <utility>
-#include <type_traits>
 
 #include <omp.h>
 
 #include "config.h"
-
-template<typename IntType>
-class RandomGenerator {
-public:
-    template<typename... Args>
-    RandomGenerator(Args&&... args) : _generator(std::random_device()()), _distribution(std::forward<Args>(args)...) {
-
-    }
-
-    IntType operator()() {
-        return _distribution(_generator);
-    }
-
-private:
-    std::mt19937 _generator;
-    std::uniform_int_distribution<IntType> _distribution;
-};
-
-namespace Globals {
-    static const size_t DIM_W = 10;
-    static const size_t DIM_X = 8;
-    static const size_t DIM_Y = 8;
-    static const size_t DIM_Z = 8;
-    static const size_t NB_ELEMENTS = DIM_W * DIM_X * DIM_Y * DIM_Z;
-
-    static const size_t ZONE_X_SIZE = 32;
-    static const size_t ZONE_Y_SIZE = 32;
-    static const size_t ZONE_Z_SIZE = ::Globals::DIM_Z;
-
-    static const size_t ITERATIONS = DIM_W;
-    static RandomGenerator<unsigned int> generator(0, 100);
-    static RandomGenerator<unsigned char> binary_generator(0, 1);
-}
-
-template<typename T, typename R>
-auto count_duration_cast(std::chrono::duration<R> const& tp) {
-    return std::chrono::duration_cast<T>(tp).count();
-}
-
-typedef int Matrix[Globals::DIM_W][Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z];
-
-static void heat_cpu(Matrix, size_t);
-
-size_t to1d(size_t w, size_t x, size_t y, size_t z) {
-    namespace g = Globals;
-    return w * g::DIM_X * g::DIM_Y  * g::DIM_Z +
-           x            * g::DIM_Y  * g::DIM_Z + 
-           y                        * g::DIM_Z +
-           z;
-}
-
-std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n) {
-    namespace g = Globals;
-    size_t z = n % g::DIM_Z;
-    size_t y = ((n - z) / g::DIM_Z) % g::DIM_Y;
-    size_t x = ((n - z - y * g::DIM_Z) / (g::DIM_Y * g::DIM_Z)) % g::DIM_X;
-    size_t w = (n - z - y * g::DIM_Z - x * g::DIM_Y * g::DIM_Z) / (g::DIM_X * g::DIM_Y * g::DIM_Z);
-
-    return std::make_tuple(w, x, y, z);
-}
-
-void init_matrix(int* ptr) {
-    namespace g = Globals;
-    for (int i = 0; i < g::NB_ELEMENTS; ++i) {
-        ptr[i] = i % 10;
-    }
-}
-
-void assert_okay_init(Matrix matrix) {
-    namespace g = Globals;
-
-    for (int i = 0; i < g::DIM_W; ++i) {
-        for (int j = 0; j < g::DIM_X; ++j) {
-            for (int k = 0; k < g::DIM_Y; k++) {
-                for (int l = 0; l < g::DIM_Z; l++) {
-                    size_t as1d = to1d(i, j, k, l);
-                    auto [ci, cj, ck, cl] = to4d(as1d);
-
-                    assert(matrix[i][j][k][l] == to1d(i, j, k, l) % 10);
-                    assert(ci == i && cj == j && ck == k && cl == l);
-                }
-            }
-        }
-    }
-}
-
-std::string get_time_fmt(const char* fmt) {
-    auto now = std::chrono::system_clock::now();
-    std::time_t as_time_t = std::chrono::system_clock::to_time_t(now);
-    std::tm* now_as_tm = std::gmtime(&as_time_t);
-
-    std::unique_ptr<char[]> res(new char[100]);
-    std::size_t size = std::strftime(res.get(), 100, fmt, now_as_tm);
-
-    std::string result(res.get());
-    return result;
-}
-
-const char* get_time_fmt_cstr(const char* fmt) {
-    return get_time_fmt(fmt).c_str();
-}
-
-const char* get_time_default_fmt() {
-    return get_time_fmt_cstr("%H:%M:%S");
-}
+#include "defines.h"
+#include "functions.h"
+#include "utils.h"
 
 class Synchronizer {
 public:
