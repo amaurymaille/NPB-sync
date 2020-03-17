@@ -7,6 +7,6 @@ set (CMAKE_BUILD_TYPE "Debug")
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")
 
-add_custom_command(OUTPUT config.h COMMAND python3 config_generator.py)
+add_custom_command(OUTPUT config.h COMMAND python3 config_generator.py DEPENDS config.ini)
 
 add_executable (sync sync.cpp config.h)
