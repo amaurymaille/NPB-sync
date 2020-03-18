@@ -10,6 +10,7 @@
 
 #include <omp.h>
 
+#include "functions.h"
 #include "utils.h"
 
 size_t to1d(size_t w, size_t x, size_t y, size_t z) {
@@ -88,9 +89,6 @@ void omp_debug() {
 
     std::cout << "Number of threads (out of parallel again) : " << omp_get_num_threads() << std::endl;
 }
-
-void heat_cpu(Matrix, size_t);
-void heat_cpu_switch_loops(Matrix, size_t);
 
 void assert_switch_and_no_switch_are_identical() {
     namespace g = Globals;

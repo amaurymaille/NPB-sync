@@ -1,11 +1,19 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <string>
+#include <optional>
 #include <random>
+#include <string>
 #include <tuple>
 
 #include "defines.h"
+
+namespace std {
+    template<typename T>
+    optional<T> make_null_optional(T&& t) {
+        return make_optional<T>(nullopt);
+    }
+}
 
 template<typename IntType>
 class RandomGenerator {

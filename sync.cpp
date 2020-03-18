@@ -1,9 +1,12 @@
 #include <cassert>
 #include <cstdio>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <future>
+#include <optional>
 #include <utility>
 
 #include <omp.h>
@@ -14,12 +17,13 @@
 #include "utils.h"
 
 class Synchronizer {
-public:
+protected:
     Synchronizer() {
         init_matrix(reinterpret_cast<int*>(_matrix));
         assert_okay_init(_matrix);
     }
     
+public:
     void assert_okay() {
         namespace g = Globals;
         Matrix matrix;
@@ -44,8 +48,6 @@ public:
     }
 
 protected:
-    virtual void sync_init() = 0;
-
     Matrix _matrix;
 };
 
@@ -201,6 +203,37 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
+class PromisingIterationSynchronizer : public Synchronizer {
+public:
+    PromisingIterationSynchronizer(int n) : Synchronizer() {
+        for (auto& w: _promises_store) {
+            for (auto& jk: w) {
+                jk.resize(n);
+            }
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            for (int i = 0; i < g::DIM_W; ++i) {
+                auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[i])) : std::nullopt;
+                auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[i])) : std::nullopt;
+
+                f(_matrix, std::forward<Args>(args)..., i, dst_store, src_store);
+            }
+        }
+    }
+
+private:
+    /* There are DIM_W * DIM_Y * DIM_Z lines. We need DIM_W arrays of DIM_Y * DIM_Z
+     * promises. Use separate arrays so we can more easily distribute them to the 
+     * heat_cpu function.
+     */
+    std::array<std::array<std::vector<std::promise<MatrixValue>>, Globals::DIM_Y * Globals::DIM_Z>, Globals::DIM_W> _promises_store;
+};
+
 template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
@@ -251,5 +284,11 @@ int main() {
     SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with alt bit", 20);
     SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with counter", 20);
     
+    SynchronizationMeasurer<PromisingIterationSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops_promise, 
+                                                                                    std::placeholders::_1,
+                                                                                    std::placeholders::_2,
+                                                                                    std::placeholders::_3,
+                                                                                    std::placeholders::_4),
+                                                                          "heat_cpu_switch_loops_promise with PromisingIterationSynchronizer", 20);
     return 0;
 }
