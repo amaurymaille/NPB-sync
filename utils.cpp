@@ -89,25 +89,3 @@ void omp_debug() {
 
     std::cout << "Number of threads (out of parallel again) : " << omp_get_num_threads() << std::endl;
 }
-
-void assert_switch_and_no_switch_are_identical() {
-    namespace g = Globals;
-
-    Matrix no_switch;
-    Matrix with_switch;
-
-    int* no_switch_ptr = reinterpret_cast<int*>(no_switch);
-    int* with_switch_ptr = reinterpret_cast<int*>(with_switch);
-
-    init_matrix(no_switch_ptr);
-    init_matrix(with_switch_ptr);
-
-    for (int i = 0; i < g::DIM_W; ++i) {
-        heat_cpu(no_switch, i);
-        heat_cpu_switch_loops(with_switch, i);
-    }
-
-    for (int i = 0; i < g::NB_ELEMENTS; ++i) {
-        assert(no_switch_ptr[i] == with_switch_ptr[i]);
-    }
-}

@@ -50,6 +50,5 @@ std::string get_time_fmt(const char* fmt);
 const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
 void omp_debug();
-void assert_switch_and_no_switch_are_identical();
 
 #endif /* UTILS_H */

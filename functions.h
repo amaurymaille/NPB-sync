@@ -24,8 +24,8 @@ void heat_cpu_switch_loops(Matrix, size_t);
  * by (N, N+1), using arrays (DN, SN) and (DN+1, SN+1), DN and SN+1 are the same 
  * array, as destination values for thread N are source value for thread N+1.
  */
-void heat_cpu_switch_loops_promise(Matrix, size_t, 
-                                   std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_Y * g::DIM_Z>>>&,
-                                   const std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_Y * g::DIM_Z>>>&);
+void heat_cpu_promise(Matrix, size_t, 
+                      std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_W * g::DIM_X>>>&,
+                      const std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_W * g::DIM_X>>>&);
 
 #endif /* FUNCTIONS_H */
