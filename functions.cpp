@@ -8,24 +8,24 @@
 #include "functions.h"
 #include "utils.h"
 
-void heat_cpu(Matrix array, size_t k) {
+void heat_cpu(Matrix array, size_t m) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
     int omp_num_threads = omp_get_num_threads();
     int* ptr = reinterpret_cast<int*>(array);
 
-    for (int m = 0; m < g::DIM_W; ++m) {
-        for (int i = 1; i < g::DIM_X; ++i) {
-            #pragma omp for schedule(static) nowait
-            for (int j = 1; j < g::DIM_Y; ++j) {
+    #pragma omp for schedule(static) nowait
+    for (int i = 1; i < g::DIM_X; ++i) {
+        for (int j = 1; j < g::DIM_Y; ++j) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
                 size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1k = to1d(m, i, j, k - 1);
+                size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1k];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
 
                 int result = orig + to_add;
                 ptr[n] = result;
@@ -54,7 +54,7 @@ void heat_cpu(Matrix array, size_t k) {
 //
 // Switching the order of the loops will probably have dramatic consequences for 
 // cache coherency, so this has to be checked.
-/* void heat_cpu_switch_loops(Matrix array, size_t k) {
+void heat_cpu_switch_loops(Matrix array, size_t m) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
@@ -62,15 +62,16 @@ void heat_cpu(Matrix array, size_t k) {
     int* ptr = reinterpret_cast<int*>(array);
 
     for (int j = 1; j < g::DIM_Y; ++j) {
-        for (int m = 0; m < g::DIM_W; ++m) {
+        for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
-            for (int i = 1; i < g::DIM_X - 1; ++i) {
+            for (int i = 1; i < g::DIM_X; ++i) {
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
                 size_t nm1j = to1d(m, i, j - 1, k);
+                size_t nm1m = to1d(m - 1, i, j ,k);
 
                 int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
 
                 int result = orig + to_add;
                 ptr[n] = result;
@@ -88,38 +89,38 @@ void heat_cpu(Matrix array, size_t k) {
             }
         }
     }
-} */
+}
 
 namespace g = Globals;
 
-void heat_cpu_promise(Matrix array, size_t k, 
-                                    std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_W * g::DIM_X>>>& dst,
-                                    const std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::DIM_W * g::DIM_X>>>& src) {
+void heat_cpu_line_promise(Matrix array, size_t m, 
+                           std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::NB_LINES_PER_ITERATION>>>& dst,
+                           const std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::NB_LINES_PER_ITERATION>>>& src) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
     int omp_num_threads = omp_get_num_threads();
     int* ptr = reinterpret_cast<int*>(array);
 
-    for (int m = 0; m < g::DIM_W; ++m) {
-        for (int i = 1; i < g::DIM_X; ++i) {
+    for (int j = 1; j < g::DIM_Y; ++j) {
+        for (int k = 0; k < g::DIM_Z; ++k) {
             bool used_value = false;
-            int promise_pos = m * g::DIM_X + i;
+            int promise_pos = j * g::DIM_Z + k;
             int value = src ? src->get()[promise_pos][omp_get_thread_num()].get_future().get() : -1;
-            int last_j = -1;
+            int last_i = -1;
             #pragma omp for schedule(static) nowait
-            for (int j = 1; j < g::DIM_Y; ++j) {
+            for (int i = 1; i < g::DIM_X; ++i) {
                 if (!used_value && src) {
-                    printf("[Thread %d] Accessing (%d, %d, %d, %d)\n", omp_get_thread_num(), m, i, j - 1, k);
+                    printf("[Thread %d] Accessing (%d, %d, %d, %d)\n", omp_get_thread_num(), m, i - 1, j, k);
                 }
 
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
                 size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1k = to1d(m, i, j, k - 1);
+                size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = (used_value || !src ? ptr[nm1j] : value) + ptr[nm1] + ptr[nm1k];
+                int to_add = (used_value || !src ? ptr[nm1] : value) + ptr[nm1j] + ptr[nm1m];
 
                 used_value = true;
 
@@ -136,12 +137,12 @@ void heat_cpu_promise(Matrix array, size_t k,
                         }
                     }
                 }
-                last_j = j;
+                last_i = i;
             }
 
-            if (dst && last_j != -1) {
-                size_t pos = to1d(m, i, last_j, k);
-                printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, i, last_j, k);
+            if (dst && last_i != -1) {
+                size_t pos = to1d(m, last_i, j, k);
+                printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, last_i, j, k);
                 dst->get()[promise_pos][omp_get_thread_num() + 1].set_value(ptr[pos]);
             }
         }
