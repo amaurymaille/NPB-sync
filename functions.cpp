@@ -106,8 +106,8 @@ void heat_cpu_line_promise(Matrix array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {
             bool used_value = false;
             int promise_pos = j * g::DIM_Z + k;
-            int value = src ? src->get()[promise_pos][omp_get_thread_num()].get_future().get() : -1;
             int last_i = -1;
+            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
                 if (!used_value && src) {
@@ -120,7 +120,7 @@ void heat_cpu_line_promise(Matrix array, size_t m,
                 size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = (used_value || !src ? ptr[nm1] : value) + ptr[nm1j] + ptr[nm1m];
+                int to_add = (used_value || !src ? ptr[nm1] : src->get()[promise_pos][omp_get_thread_num()].get_future().get()) + ptr[nm1j] + ptr[nm1m];
 
                 used_value = true;
 

@@ -3,7 +3,7 @@
 
 namespace Globals {
     static const size_t DIM_W = 8;
-    static const size_t DIM_X = 10;
+    static const size_t DIM_X = 20;
     static const size_t DIM_Y = 8;
     static const size_t DIM_Z = 10;
     static const size_t NB_ELEMENTS = DIM_W * DIM_X * DIM_Y * DIM_Z;
