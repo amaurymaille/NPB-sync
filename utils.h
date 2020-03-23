@@ -8,13 +8,6 @@
 
 #include "defines.h"
 
-namespace std {
-    template<typename T>
-    optional<T> make_null_optional(T&& t) {
-        return make_optional<T>(nullopt);
-    }
-}
-
 template<typename IntType>
 class RandomGenerator {
 public:
@@ -33,8 +26,8 @@ private:
 };
 
 namespace Globals {
-    static RandomGenerator<unsigned int> sleep_generator(0, 100);
-    static RandomGenerator<unsigned char> binary_generator(0, 1);
+    extern RandomGenerator<unsigned int> sleep_generator;
+    extern RandomGenerator<unsigned char> binary_generator;
 }
 
 template<typename T, typename R>

@@ -14,6 +14,7 @@ namespace g = Globals;
 void heat_cpu(Matrix, size_t);
 void heat_cpu_switch_loops(Matrix, size_t);
 
+typedef std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::NB_LINES_PER_ITERATION>>> LinePromiseStore;
 /* In this version of heat_cpu, loops are switched (like in heat_cpu_switch_loops),
  * and there are two additional parameters, arrays of promises. The first array
  * contains promises that are to be resolved every time a line is completely 
@@ -24,8 +25,10 @@ void heat_cpu_switch_loops(Matrix, size_t);
  * by (N, N+1), using arrays (DN, SN) and (DN+1, SN+1), DN and SN+1 are the same 
  * array, as destination values for thread N are source value for thread N+1.
  */
-void heat_cpu_line_promise(Matrix, size_t, 
-                           std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::NB_LINES_PER_ITERATION>>>&,
-                           const std::optional<std::reference_wrapper<std::array<std::vector<std::promise<MatrixValue>>, g::NB_LINES_PER_ITERATION>>>&);
+void heat_cpu_line_promise(Matrix, size_t, LinePromiseStore&, const LinePromiseStore&);
+
+typedef std::vector<std::promise<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>>> BlockPromiseContainer;
+typedef std::optional<std::reference_wrapper<BlockPromiseContainer>> BlockPromiseStore;
+void heat_cpu_block_promise(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
 
 #endif /* FUNCTIONS_H */

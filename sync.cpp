@@ -11,9 +11,12 @@
 
 #include <omp.h>
 
+#include "spdlog/spdlog.h"
+
 #include "config.h"
 #include "defines.h"
 #include "functions.h"
+#include "logging.h"
 #include "utils.h"
 
 class Synchronizer {
@@ -225,11 +228,51 @@ public:
     }
 
 private:
-    /* There are ITERATIONS * DIM_W * DIM_Y lines. We need DIM_W arrays of DIM_Y * DIM_Z
+    /* There are ITERATIONS * DIM_Y * DIM_Z lines. We need DIM_W arrays of DIM_Y * DIM_Z
      * promises. Use separate arrays so we can more easily distribute them to the 
      * heat_cpu function.
      */
     std::array<std::array<std::vector<std::promise<MatrixValue>>, Globals::NB_LINES_PER_ITERATION>, Globals::ITERATIONS> _promises_store;
+};
+
+/* This is basically the same as IterationSynchronizer, but we use promises so we 
+ * don't have to keep track of where each thread is in the iteration process.
+ */
+class BlockPromisingSynchronizer : public Synchronizer {
+public:
+    BlockPromisingSynchronizer(int n) : Synchronizer() {
+        for (auto& w: _promises_store) {
+            w.resize(n);
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args)
+    {
+        #pragma omp parallel
+        {
+            for (int m = 1; m < g::ITERATIONS; ++m) {
+                auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+                auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+
+                f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
+            }
+        }
+    }
+
+private:
+    /* We perform Globals::ITERATIONS iterations. During each iteration, a thread will compute 
+     * DIM_X * DIM_Y * DIM_Z values (roughly).
+     * 
+     * Array of ITERATIONS vectors. Each vector stores the promises associated with an iteration, 
+     * i.e for each pair (iteration, thread) we have a promise. Each promise stores tall the values
+     * computed during this iteration by this thread that have to be used by the next thread. 
+     */
+    std::array<std::vector<std::promise<std::array<MatrixValue, Globals::NB_VALUES_PER_BLOCK>>>, Globals::ITERATIONS> _promises_store;
+};
+
+class IncreasingLinePromisingSynchronizer : public Synchronizer {
+
 };
 
 template<class Synchronizer>
@@ -272,6 +315,8 @@ int main() {
 
     srand((unsigned)time(nullptr));
 
+    init_logging();
+
     omp_debug();
 
     SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), "heat_cpu with alt bit", 20);
@@ -285,6 +330,15 @@ int main() {
                                                                                std::placeholders::_2,
                                                                                std::placeholders::_3,
                                                                                std::placeholders::_4),
-                                                                          "heat_cpu_promise with PromisingIterationSynchronizer", 20);
+                                                                     "heat_cpu_line_promise with PromisingIterationSynchronizer", 20);
+
+    SynchronizationMeasurer<BlockPromisingSynchronizer>::measure_time(std::bind(heat_cpu_block_promise, 
+                                                                                std::placeholders::_1,
+                                                                                std::placeholders::_2,
+                                                                                std::placeholders::_3,
+                                                                                std::placeholders::_4),
+                                                                      "heat_cpu_block_promise with BlockPromisingSynchronizer", 20);
+
+    spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
 }

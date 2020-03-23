@@ -15,7 +15,7 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS
 add_custom_command(OUTPUT config.h COMMAND python3 config_generator.py DEPENDS config.ini)
 
 include_directories ("${SPDLOG_INCLUDE_DIR}")
-add_executable (sync functions.cpp sync.cpp utils.cpp config.h)
+add_executable (sync functions.cpp sync.cpp utils.cpp config.h logging.cpp)
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (sync "${SPDLOG_LIBRARY}")
 endif (NOT SPDLOG_HEADER_ONLY)

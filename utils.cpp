@@ -13,6 +13,11 @@
 #include "functions.h"
 #include "utils.h"
 
+namespace Globals {
+    RandomGenerator<unsigned int> sleep_generator(0, 100);
+    RandomGenerator<unsigned char> binary_generator(0, 1);
+}
+
 size_t to1d(size_t w, size_t x, size_t y, size_t z) {
     namespace g = Globals;
     return w * g::DIM_X * g::DIM_Y  * g::DIM_Z +
