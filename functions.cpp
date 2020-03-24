@@ -212,6 +212,8 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                                       const IncreasingLinePromiseStore& src) {
     namespace g = Globals;
 
+    printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
+
     int* ptr = reinterpret_cast<int*>(array);
     
     /* auto all_promises = src >>= [](const IncreasingLinePromiseStore::value_type& v) {
@@ -298,4 +300,11 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
             }
         }
     }
+
+    if (values_for_neighbor.size() != 0) {
+        printf("[Thread %d] Leaving iteration %d with vector not empty\n", omp_get_thread_num(), m);
+        dst->get()[omp_get_thread_num() + 1][nb_vectors_filled].set_value(values_for_neighbor);
+    }
+
+    printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
 }
