@@ -204,7 +204,56 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
-class LinePromisingSynchronizer : public Synchronizer {
+template<typename T>
+class IterationPromisingSynchronizer : public Synchronizer {
+public:
+    IterationPromisingSynchronizer(int n) : Synchronizer() {
+        for (auto& w: _promises_store) {
+            w.resize(n);
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            for (int m = 1; m < g::ITERATIONS; ++m) {
+                auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+                auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+
+                f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
+            }
+        }
+    }
+
+protected:
+    std::array<T, g::ITERATIONS> _promises_store;
+};
+
+using LinePromisingSynchronizer = IterationPromisingSynchronizer<LinePromiseContainer>;
+using BlockPromisingSynchronizer = IterationPromisingSynchronizer<BlockPromiseContainer>;
+
+class IncreasingLinePromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingLinePromiseContainer> {
+public:
+    IncreasingLinePromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingLinePromiseContainer>(n) {
+        for (int i = 1; i < _promises_store.size(); ++i) {
+            IncreasingLinePromiseContainer& container = _promises_store[i];
+            int nb_elements_per_vector = pow(4, i - 1);
+            int nb_vectors = g::NB_LINES_PER_ITERATION / nb_elements_per_vector;
+
+            if (nb_vectors * nb_elements_per_vector < g::NB_LINES_PER_ITERATION) {
+                ++nb_vectors;
+                assert(nb_vectors * nb_elements_per_vector >= g::NB_LINES_PER_ITERATION);
+            }
+
+            for (int j = 0; j < container.size(); j++) {
+                container[j].resize(nb_vectors);
+            }
+        }
+    }
+};
+
+/* class LinePromisingSynchronizer : public Synchronizer {
 public:
     LinePromisingSynchronizer(int n) : Synchronizer() {
         for (auto& w: _promises_store) {
@@ -226,16 +275,9 @@ public:
     }
 
 private:
-    /* There are ITERATIONS * DIM_Y * DIM_Z lines. We need DIM_W arrays of DIM_Y * DIM_Z
-     * promises. Use separate arrays so we can more easily distribute them to the 
-     * heat_cpu function.
-     */
     std::array<LinePromiseContainer, Globals::ITERATIONS> _promises_store;
 };
 
-/* This is basically the same as IterationSynchronizer, but we use promises so we 
- * don't have to keep track of where each thread is in the iteration process.
- */
 class BlockPromisingSynchronizer : public Synchronizer {
 public:
     BlockPromisingSynchronizer(int n) : Synchronizer() {
@@ -259,19 +301,34 @@ public:
     }
 
 private:
-    /* We perform Globals::ITERATIONS iterations. During each iteration, a thread will compute 
-     * DIM_X * DIM_Y * DIM_Z values (roughly).
-     * 
-     * Array of ITERATIONS vectors. Each vector stores the promises associated with an iteration, 
-     * i.e for each pair (iteration, thread) we have a promise. Each promise stores tall the values
-     * computed during this iteration by this thread that have to be used by the next thread. 
-     */
     std::array<BlockPromiseContainer, Globals::ITERATIONS> _promises_store;
 };
 
 class IncreasingLinePromisingSynchronizer : public Synchronizer {
+public:
+    IncreasingLinePromisingSynchronizer(int n) : Synchronizer() {
+        for (auto& w: _promises_store) {
+            w.resize(n);
+        }
+    }
 
-};
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args)
+    {
+        #pragma omp parallel
+        {
+            for (int m = 1; m < g::ITERATIONS; ++m) {
+                auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+                auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
+
+                f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
+            }
+        }
+    }
+
+private:
+    std::array<IncreasingLinePromiseContainer, Globals::ITERATIONS> _promises_store;
+}; */
 
 template<class Synchronizer>
 class SynchronizationMeasurer {

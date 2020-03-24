@@ -21,6 +21,9 @@ namespace Globals {
     static const size_t ITERATIONS = DIM_W;
     static const size_t NB_LINES_PER_ITERATION = DIM_Y * DIM_Z;
     static const size_t NB_VALUES_PER_BLOCK = DIM_Y * DIM_Z;
+
+    static const size_t INCREASING_LINES_BASE_POWER = 4;
+    static const size_t INCREASING_LINES_ITERATION_LIMIT = 4; 
 }
 
 namespace g = Globals;
@@ -31,13 +34,16 @@ typedef MatrixValue Matrix[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z];
 template<typename T>
 using OptionalReference = std::optional<std::reference_wrapper<T>>;
 
-typedef std::vector<std::array<std::promise<MatrixValue>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
+template<typename T>
+using ThreadStore = std::vector<T>;
+
+typedef ThreadStore<std::array<std::promise<MatrixValue>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
 typedef OptionalReference<LinePromiseContainer> LinePromiseStore;
 
-typedef std::vector<std::promise<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>>> BlockPromiseContainer;
+typedef ThreadStore<std::promise<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>>> BlockPromiseContainer;
 typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
 
-typedef std::vector<std::promise<std::vector<MatrixValue>>> IncreasingLinePromiseContainer;
+typedef ThreadStore<std::vector<std::promise<std::vector<MatrixValue>>>> IncreasingLinePromiseContainer;
 typedef OptionalReference<IncreasingLinePromiseContainer> IncreasingLinePromiseStore;
 
 #endif /* DEFINES_H */

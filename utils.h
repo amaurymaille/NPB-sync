@@ -44,4 +44,13 @@ const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
 void omp_debug();
 
+template<typename T, typename F>
+std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optional<T> const& lhs, F const& fn) {
+    if (!lhs.has_value()) {
+        return std::nullopt;
+    } else {
+        return std::make_optional(fn(*lhs));
+    }
+}
+
 #endif /* UTILS_H */
