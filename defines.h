@@ -1,6 +1,12 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+#include <array>
+#include <future>
+#include <optional>
+#include <utility>
+#include <vector>
+
 namespace Globals {
     static const size_t DIM_W = 8;
     static const size_t DIM_X = 20;
@@ -17,7 +23,21 @@ namespace Globals {
     static const size_t NB_VALUES_PER_BLOCK = DIM_Y * DIM_Z;
 }
 
+namespace g = Globals;
+
 typedef int MatrixValue;
-typedef MatrixValue Matrix[Globals::DIM_W][Globals::DIM_X][Globals::DIM_Y][Globals::DIM_Z];
+typedef MatrixValue Matrix[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z];
+
+template<typename T>
+using OptionalReference = std::optional<std::reference_wrapper<T>>;
+
+typedef std::vector<std::array<std::promise<MatrixValue>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
+typedef OptionalReference<LinePromiseContainer> LinePromiseStore;
+
+typedef std::vector<std::promise<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>>> BlockPromiseContainer;
+typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
+
+typedef std::vector<std::promise<std::vector<MatrixValue>>> IncreasingLinePromiseContainer;
+typedef OptionalReference<IncreasingLinePromiseContainer> IncreasingLinePromiseStore;
 
 #endif /* DEFINES_H */

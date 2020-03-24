@@ -208,9 +208,7 @@ class LinePromisingSynchronizer : public Synchronizer {
 public:
     LinePromisingSynchronizer(int n) : Synchronizer() {
         for (auto& w: _promises_store) {
-            for (auto& jk: w) {
-                jk.resize(n);
-            }
+            w.resize(n);
         }
     }
 
@@ -232,7 +230,7 @@ private:
      * promises. Use separate arrays so we can more easily distribute them to the 
      * heat_cpu function.
      */
-    std::array<std::array<std::vector<std::promise<MatrixValue>>, Globals::NB_LINES_PER_ITERATION>, Globals::ITERATIONS> _promises_store;
+    std::array<LinePromiseContainer, Globals::ITERATIONS> _promises_store;
 };
 
 /* This is basically the same as IterationSynchronizer, but we use promises so we 
@@ -268,7 +266,7 @@ private:
      * i.e for each pair (iteration, thread) we have a promise. Each promise stores tall the values
      * computed during this iteration by this thread that have to be used by the next thread. 
      */
-    std::array<std::vector<std::promise<std::array<MatrixValue, Globals::NB_VALUES_PER_BLOCK>>>, Globals::ITERATIONS> _promises_store;
+    std::array<BlockPromiseContainer, Globals::ITERATIONS> _promises_store;
 };
 
 class IncreasingLinePromisingSynchronizer : public Synchronizer {

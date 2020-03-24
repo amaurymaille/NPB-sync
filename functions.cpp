@@ -118,7 +118,7 @@ void heat_cpu_line_promise(Matrix array, size_t m, LinePromiseStore& dst, const 
                 size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = (used_value || !src ? ptr[nm1] : src->get()[promise_pos][omp_get_thread_num()].get_future().get()) + ptr[nm1j] + ptr[nm1m];
+                int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
 
                 used_value = true;
 
@@ -141,7 +141,7 @@ void heat_cpu_line_promise(Matrix array, size_t m, LinePromiseStore& dst, const 
             if (dst && last_i != -1) {
                 size_t pos = to1d(m, last_i, j, k);
                 printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, last_i, j, k);
-                dst->get()[promise_pos][omp_get_thread_num() + 1].set_value(ptr[pos]);
+                dst->get()[omp_get_thread_num() + 1][promise_pos].set_value(ptr[pos]);
             }
         }
     }
