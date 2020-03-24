@@ -19,7 +19,7 @@ namespace Globals {
     static const size_t ZONE_Z_SIZE = ::Globals::DIM_Z;
 
     static const size_t ITERATIONS = DIM_W;
-    static const size_t NB_LINES_PER_ITERATION = DIM_Y * DIM_Z;
+    static const size_t NB_LINES_PER_ITERATION = (DIM_Y - 1) * DIM_Z;
     static const size_t NB_VALUES_PER_BLOCK = DIM_Y * DIM_Z;
 
     static const size_t INCREASING_LINES_BASE_POWER = 4;

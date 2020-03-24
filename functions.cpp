@@ -156,7 +156,7 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
         if (!used_values && src) {
-            printf("[Thread %d] Getting promise at i = %d\n", omp_get_thread_num(), i);
+            // printf("[Thread %d] Getting promise at i = %d\n", omp_get_thread_num(), i);
         }
 
         for (int j = 1; j < g::DIM_Y; ++j) {
@@ -193,7 +193,7 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     }
 
     if (dst && last_i != -1) {
-        printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
+        // printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
         std::array<MatrixValue, g::NB_VALUES_PER_BLOCK> arr;
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
@@ -212,7 +212,7 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                                       const IncreasingLinePromiseStore& src) {
     namespace g = Globals;
 
-    printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
+    // printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
 
     int* ptr = reinterpret_cast<int*>(array);
     
@@ -236,6 +236,7 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
     int nb_elements_for_neighbor = m < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, m - 1) : g::NB_LINES_PER_ITERATION;
     std::vector<MatrixValue> values_for_neighbor;
     int nb_vectors_filled = 0;
+    int nb_iteration = 0;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
@@ -244,6 +245,10 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
             
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
+                if (!used_value && src) {
+                    // printf("[Thread %d] Getting (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, i - 1, j, k, **values_iter);
+                }
+
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
                 size_t nm1j = to1d(m, i, j - 1, k);
@@ -271,18 +276,20 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
             }
 
             if (src) {
+                ++(*values_iter);
                 if (*values_iter == values->end()) {
                     ++(*promise_store_iter);
+                    nb_iteration++;
 
-                    values = promise_store_iter >>= [](auto& iter) {
-                        return iter->get_future().get();
-                    };
+                    if (*promise_store_iter != all_promises->get().end()) {
+                        values = promise_store_iter >>= [](auto& iter) {
+                            return iter->get_future().get();
+                        };
 
-                    values_iter = values >>= [](auto& vect) {
-                        return vect.begin();
-                    };
-                } else {
-                    ++(*values_iter);
+                        values_iter = values >>= [](auto& vect) {
+                            return vect.begin();
+                        };
+                    }
                 }
             }
 
@@ -290,6 +297,7 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                 size_t pos = to1d(m, last_i, j, k);
                 std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
 
+                // printf("[Thread %d] Sending (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, last_i, j, k, ptr[pos]);
                 values_for_neighbor.push_back(ptr[pos]);
 
                 if (values_for_neighbor.size() == nb_elements_for_neighbor) {
@@ -302,9 +310,9 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
     }
 
     if (values_for_neighbor.size() != 0) {
-        printf("[Thread %d] Leaving iteration %d with vector not empty\n", omp_get_thread_num(), m);
+        // printf("[Thread %d] Leaving iteration %d with vector not empty\n", omp_get_thread_num(), m);
         dst->get()[omp_get_thread_num() + 1][nb_vectors_filled].set_value(values_for_neighbor);
     }
 
-    printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
+    // printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
 }
