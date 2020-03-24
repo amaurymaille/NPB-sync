@@ -394,6 +394,14 @@ int main() {
                                                                                 std::placeholders::_4),
                                                                       "heat_cpu_block_promise with BlockPromisingSynchronizer", 20);
 
+    SynchronizationMeasurer<IncreasingLinePromisingSynchronizer>::measure_time(std::bind(heat_cpu_increasing_line_promise,
+                                                                                         std::placeholders::_1,
+                                                                                         std::placeholders::_2,
+                                                                                         std::placeholders::_3,
+                                                                                         std::placeholders::_4),
+                                                                               "heat_cpu_increasing_line_promise with IncreasingLinePromisingSynchronizer",
+                                                                               20);
+
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
 }

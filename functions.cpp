@@ -214,11 +214,13 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
 
     int* ptr = reinterpret_cast<int*>(array);
     
-    auto all_promises = src >>= [](const IncreasingLinePromiseStore::value_type& v) {
+    /* auto all_promises = src >>= [](const IncreasingLinePromiseStore::value_type& v) {
         return std::move(v.get()[omp_get_thread_num()]);
-    };
+    }; */
 
-    auto promise_store_iter = all_promises ? std::make_optional(all_promises->begin()) : std::nullopt;
+    auto all_promises = src ? std::make_optional(std::ref(src->get()[omp_get_thread_num()])) : std::nullopt;
+
+    auto promise_store_iter = all_promises ? std::make_optional(all_promises->get().begin()) : std::nullopt;
 
     auto values = promise_store_iter >>= [](auto& iter) {
         return iter->get_future().get();
