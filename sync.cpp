@@ -238,7 +238,7 @@ public:
     IncreasingLinePromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingLinePromiseContainer>(n) {
         for (int i = 1; i < _promises_store.size(); ++i) {
             IncreasingLinePromiseContainer& container = _promises_store[i];
-            int nb_elements_per_vector = pow(4, i - 1);
+            int nb_elements_per_vector = i < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, i - 1) : g::NB_LINES_PER_ITERATION;
             int nb_vectors = g::NB_LINES_PER_ITERATION / nb_elements_per_vector;
 
             if (nb_vectors * nb_elements_per_vector < g::NB_LINES_PER_ITERATION) {

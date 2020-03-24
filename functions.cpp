@@ -229,7 +229,7 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
     };
 
     // TODO: better way to do that ? More flexible maybe ?
-    int nb_elements_for_neighbor = m < 4 ? std::pow(4, m - 1) : g::NB_LINES_PER_ITERATION;
+    int nb_elements_for_neighbor = m < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, m - 1) : g::NB_LINES_PER_ITERATION;
     std::vector<MatrixValue> values_for_neighbor;
     int nb_vectors_filled = 0;
 
