@@ -215,10 +215,6 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
     // printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
 
     int* ptr = reinterpret_cast<int*>(array);
-    
-    /* auto all_promises = src >>= [](const IncreasingLinePromiseStore::value_type& v) {
-        return std::move(v.get()[omp_get_thread_num()]);
-    }; */
 
     auto all_promises = src ? std::make_optional(std::ref(src->get()[omp_get_thread_num()])) : std::nullopt;
 
@@ -236,7 +232,6 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
     int nb_elements_for_neighbor = m < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, m - 1) : g::NB_LINES_PER_ITERATION;
     std::vector<MatrixValue> values_for_neighbor;
     int nb_vectors_filled = 0;
-    int nb_iteration = 0;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
@@ -279,7 +274,6 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                 ++(*values_iter);
                 if (*values_iter == values->end()) {
                     ++(*promise_store_iter);
-                    nb_iteration++;
 
                     if (*promise_store_iter != all_promises->get().end()) {
                         values = promise_store_iter >>= [](auto& iter) {
