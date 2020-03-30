@@ -8,6 +8,8 @@
 #include <string>
 #include <tuple>
 
+#include <sys/time.h>
+
 #include <omp.h>
 
 #include "functions.h"
@@ -93,4 +95,9 @@ void omp_debug() {
 }
 
     std::cout << "Number of threads (out of parallel again) : " << omp_get_num_threads() << std::endl;
+}
+
+// Computes a - b
+uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
+    return (a->tv_sec - b->tv_sec) * NANO + a->tv_nsec - b->tv_nsec;
 }

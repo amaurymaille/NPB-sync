@@ -8,6 +8,8 @@
 
 #include "defines.h"
 
+struct timespec;
+
 template<typename IntType>
 class RandomGenerator {
 public:
@@ -43,6 +45,7 @@ std::string get_time_fmt(const char* fmt);
 const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
 void omp_debug();
+uint64 clock_diff(const struct timespec*, const struct timespec*);
 
 template<typename T, typename F>
 std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optional<T> const& lhs, F const& fn) {
