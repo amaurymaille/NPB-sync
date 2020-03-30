@@ -71,4 +71,9 @@ typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
 typedef ThreadStore<std::vector<std::promise<std::vector<MatrixValue>>>> IncreasingLinePromiseContainer;
 typedef OptionalReference<IncreasingLinePromiseContainer> IncreasingLinePromiseStore;
 
+// The initial matrix
+extern Matrix g_start_matrix;
+// The expected final matrix 
+extern Matrix g_expected_matrix;
+
 #endif /* DEFINES_H */

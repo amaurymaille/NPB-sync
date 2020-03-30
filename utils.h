@@ -56,4 +56,11 @@ std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optio
     }
 }
 
+void assert_matrix_equals(Matrix lhs, Matrix rhs);
+
+void init_start_matrix_once();
+void init_from_start_matrix(Matrix);
+
+void init_expected_matrix_once();
+
 #endif /* UTILS_H */

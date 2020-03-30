@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <ctime>
 
 #include <chrono>
@@ -100,4 +101,22 @@ void omp_debug() {
 // Computes a - b
 uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
     return (a->tv_sec - b->tv_sec) * NANO + a->tv_nsec - b->tv_nsec;
+}
+
+void assert_matrix_equals(Matrix lhs, Matrix rhs) {
+    assert(memcmp(lhs, rhs, Globals::NB_ELEMENTS) == 0);
+}
+
+void init_start_matrix_once() {
+    init_matrix(reinterpret_cast<int*>(g_start_matrix));
+}
+
+void init_from_start_matrix(Matrix matrix) {
+    memcpy(matrix, g_start_matrix, Globals::NB_ELEMENTS * sizeof(MatrixValue));
+}
+
+void init_expected_matrix_once() {
+    for (int i = 1; i < Globals::ITERATIONS; ++i) {
+        heat_cpu(g_expected_matrix, i);
+    }
 }

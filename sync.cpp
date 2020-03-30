@@ -24,35 +24,21 @@
 
 using Clock = std::chrono::system_clock;
 
+Matrix g_expected_matrix;
+Matrix g_start_matrix;
+
 class Synchronizer {
 protected:
     Synchronizer() {
-        init_matrix(reinterpret_cast<int*>(_matrix));
+        // init_matrix(reinterpret_cast<int*>(_matrix));
+        init_from_start_matrix(_matrix);
         assert_okay_init(_matrix);
     }
     
 public:
     void assert_okay() {
         namespace g = Globals;
-        Matrix matrix;
-        init_matrix(reinterpret_cast<int*>(matrix));
-
-        for (int m = 1; m < g::ITERATIONS; ++m) {
-            heat_cpu(matrix, m);
-        }
-
-        for (int i = 0; i < g::DIM_W; ++i) {
-            for (int j = 0; j < g::DIM_X; ++j) {
-                for (int k = 0;  k < g::DIM_Y; ++k) {
-                    for (int l = 0; l < g::DIM_Z; ++l) {
-                        if (matrix[i][j][k][l] != _matrix[i][j][k][l]) {
-                            printf("Error: %d, %d, %d, %d (%lu) => expected %d, got %d\n", i, j, k, l, to1d(i, j, k, l), matrix[i][j][k][l], _matrix[i][j][k][l]);
-                            assert(false);
-                        }
-                    }
-                }
-            }
-        }
+        assert_matrix_equals(g_expected_matrix, _matrix);
     }
 
 protected:
@@ -332,17 +318,15 @@ using Collector = SynchronizationTimeCollector::Collector<T>;
 
 int main() {
     namespace g = Globals;
-    namespace c = std::chrono;
-
-    auto tp = Clock::now();
-    struct timespec begin, end;
-    clock_gettime(CLOCK_MONOTONIC, &begin);
 
     srand((unsigned)time(nullptr));
 
     init_logging();
 
-    omp_debug();
+    init_start_matrix_once();
+    init_from_start_matrix(g_expected_matrix);
+    assert_matrix_equals(g_start_matrix, g_expected_matrix);
+    init_expected_matrix_once();
 
     // SynchronizationTimeCollector::collect_all();
     for (int i = 0; i < 10; ++i) {
@@ -351,10 +335,5 @@ int main() {
     }
 
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
-
-    c::duration<double> diff = Clock::now() - tp;
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    std::cout << count_duration_cast<c::seconds>(diff) << ", " << end.tv_sec - begin.tv_sec << ":" << end.tv_nsec - begin.tv_nsec << std::endl;
     return 0;
 }
