@@ -1,6 +1,8 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
+#include <cstdint>
+
 #include <array>
 #include <future>
 #include <optional>
@@ -25,6 +27,28 @@ namespace Globals {
     static const size_t INCREASING_LINES_BASE_POWER = 4;
     static const size_t INCREASING_LINES_ITERATION_LIMIT = 4; 
 }
+
+enum Tenths {
+    TEN         = 10,
+    HUNDRED     = TEN       * TEN,
+    THOUSAND    = HUNDRED   * 10,
+    MILLION     = THOUSAND  * THOUSAND,
+    BILLION     = MILLION   * THOUSAND,
+};
+
+enum SecondsTimes {
+    MINUTES = 60,
+    HOURS   = 60 * MINUTES,
+    DAY     = 24 * HOURS,
+};
+
+enum ToSecondsTimes {
+    MILLI   = THOUSAND,
+    MICRO   = MILLION,
+    NANO    = BILLION,
+};
+
+typedef uint64_t uint64;
 
 namespace g = Globals;
 
