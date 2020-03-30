@@ -48,20 +48,7 @@ void init_matrix(int* ptr) {
 
 void assert_okay_init(Matrix matrix) {
     namespace g = Globals;
-
-    for (int i = 0; i < g::DIM_W; ++i) {
-        for (int j = 0; j < g::DIM_X; ++j) {
-            for (int k = 0; k < g::DIM_Y; k++) {
-                for (int l = 0; l < g::DIM_Z; l++) {
-                    size_t as1d = to1d(i, j, k, l);
-                    auto [ci, cj, ck, cl] = to4d(as1d);
-
-                    assert(matrix[i][j][k][l] == to1d(i, j, k, l) % 10);
-                    assert(ci == i && cj == j && ck == k && cl == l);
-                }
-            }
-        }
-    }
+    assert_matrix_equals(matrix, g_start_matrix);
 }
 
 std::string get_time_fmt(const char* fmt) {
