@@ -248,19 +248,29 @@ template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
     template<class F, class... SynchronizerArgs>
-    static uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
+    static /* std::tuple<uint64, uint64, uint64> */ uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
         struct timespec begin, end;
+	// struct timespec init_begin, init_end;
+	// struct timespec assert_begin, assert_end;
 
+	// clock_gettime(CLOCK_MONOTONIC, &init_begin);
         Synchronizer synchronizer(synchronizer_args...);
+	// clock_gettime(CLOCK_MONOTONIC, &init_end);
 
         clock_gettime(CLOCK_MONOTONIC, &begin);
         synchronizer.run(f);
         clock_gettime(CLOCK_MONOTONIC, &end);
 
+	// clock_gettime(CLOCK_MONOTONIC, &assert_begin);
         synchronizer.assert_okay();
+	// clock_gettime(CLOCK_MONOTONIC, &assert_end);
 
         uint64 diff = clock_diff(&end, &begin);
-        return diff; 
+	// uint64 init_diff = clock_diff(&init_end, &init_begin);
+	// uint64 assert_diff = clock_diff(&assert_end, &assert_begin);
+
+        // return std::make_tuple(init_diff, diff, assert_diff);
+	return diff;
     }
 };
 
@@ -271,13 +281,31 @@ public:
     public:
         template<typename F, typename... SynchronizerArgs>
         static void collect(std::string const& name, F&& f, SynchronizerArgs&&... args) {
-            uint64 diff = 0;
-            for (int i = 0; i < 10000; ++i) {
-                diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
-            }
+            uint64 /* init_diff = 0, diff = 0, assert_diff = 0 */ diff = 0;
+	    // struct timespec begin, end;
 
+	    // clock_gettime(CLOCK_MONOTONIC, &begin);
+            for (int i = 0; i < 10000; ++i) {
+                // auto [init_time, compute_time, assert_time] = SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
+		// init_diff += init_time;
+		// diff += compute_time;
+		// assert_diff += assert_time;
+		diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
+            }
+	    // clock_gettime(CLOCK_MONOTONIC, &end);
+	    
+	    // uint64 global_diff = clock_diff(&end, &begin);
+
+	    // lldiv_t global_d = lldiv(global_diff, BILLION);
+	    // lldiv_t init_d = lldiv(init_diff, BILLION);
+	    // lldiv_t assert_d = lldiv(assert_diff, BILLION);
             lldiv_t d = lldiv(diff, BILLION);
+
             std::cout << "Simulation " << name << " took " << d.quot << ":" << d.rem << " seconds (" << diff << ")" << std::endl;
+	    // std::cout << "Initialization took " << init_d.quot << ":" << init_d.rem << " seconds (" << init_diff << ")" << std::endl;
+	    // std::cout << "Assertion took " << assert_d.quot << ":" << assert_d.rem << " seconds (" << assert_diff << ")" << std::endl;
+	    // std::cout << "Globally, it took " << global_d.quot << ":" << global_d.rem << " seconds (" << global_diff << ")" << std::endl;
+	    // std::cout << std::endl;
         }
     };
 
@@ -322,6 +350,8 @@ int main() {
     srand((unsigned)time(nullptr));
 
     init_logging();
+
+    spdlog::get(Loggers::Names::global_logger)->info("Starting");
 
     init_start_matrix_once();
     init_from_start_matrix(g_expected_matrix);
