@@ -9,8 +9,11 @@
 #include <optional>
 #include <utility>
 
+#include <sys/time.h>
+
 #include <omp.h>
 
+#include "measure-time.h"
 #include "spdlog/spdlog.h"
 
 #include "config.h"
@@ -18,6 +21,8 @@
 #include "functions.h"
 #include "logging.h"
 #include "utils.h"
+
+using Clock = std::chrono::system_clock;
 
 class Synchronizer {
 protected:
@@ -73,7 +78,7 @@ public:
 
         #pragma omp master
         {
-            printf("Running with %d threads\n", n_threads);
+            // printf("Running with %d threads\n", n_threads);
             sync_init();
         }
 
@@ -103,7 +108,7 @@ private:
         namespace g = Globals;
 
         if (thread_num > 0 && thread_num <= n_threads) {
-            printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
             bool sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
@@ -111,7 +116,7 @@ private:
                 sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
             _isync[neighbour].store(false, std::memory_order_acq_rel);
-            printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
     }
 
@@ -119,7 +124,7 @@ private:
         namespace g = Globals;
 
         if (thread_num < n_threads) {
-            printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             
             bool sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
             while (sync_state == true)
@@ -127,7 +132,7 @@ private:
 
             _isync[thread_num].store(true, std::memory_order_acq_rel);
 
-            printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
     }
 };
@@ -150,7 +155,7 @@ public:
 
         #pragma omp master
         {
-            printf("[run] Running with %d threads\n", n_threads);
+            // printf("[run] Running with %d threads\n", n_threads);
             sync_init();
         }
 
@@ -177,7 +182,7 @@ private:
         namespace g = Globals;
 
         if (thread_num > 0 && thread_num <= n_threads) {
-            printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
             unsigned int sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
@@ -185,7 +190,7 @@ private:
             while (sync_state == i)
                 sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
-            printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
     }
 
@@ -193,9 +198,9 @@ private:
         namespace g = Globals;
 
         if (thread_num < n_threads) {
-            printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             _isync[thread_num]++;
-            printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
+            // printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
     }
 
@@ -257,39 +262,81 @@ template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
     template<class F, class... SynchronizerArgs>
-    static void measure_time(F&& f, std::string const& simulation_name, SynchronizerArgs&&... synchronizer_args) {
-        using Clock = std::chrono::steady_clock;
+    static uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
+        struct timespec begin, end;
 
         Synchronizer synchronizer(synchronizer_args...);
-        std::chrono::time_point<Clock> tp;
 
-        #pragma omp parallel
-        {
-            #pragma omp master
-            {
-                tp = Clock::now();
-            }
-
-            synchronizer.run(f);
-            #pragma omp barrier
-
-            #pragma omp master
-            {
-                auto now = Clock::now();
-                std::chrono::duration<double> diff = now - tp;
-                std::cout << "[" << simulation_name << "] " << "Elapsed time : " << 
-                             diff.count() << ", " << count_duration_cast<std::chrono::milliseconds>(diff) << 
-                             ", " << count_duration_cast<std::chrono::microseconds>(diff) << 
-                             std::endl;
-            }
-        }
+        clock_gettime(CLOCK_MONOTONIC, &begin);
+        synchronizer.run(f);
+        clock_gettime(CLOCK_MONOTONIC, &end);
 
         synchronizer.assert_okay();
+
+        uint64 diff = clock_diff(&end, &begin);
+        return diff; 
     }
 };
 
+class SynchronizationTimeCollector {
+public:
+    template<typename Synchronizer>
+    class Collector {
+    public:
+        template<typename F, typename... SynchronizerArgs>
+        static void collect(std::string const& name, F&& f, SynchronizerArgs&&... args) {
+            uint64 diff = 0;
+            for (int i = 0; i < 10000; ++i) {
+                diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
+            }
+
+            lldiv_t d = lldiv(diff, BILLION);
+            std::cout << "Simulation " << name << " took " << d.quot << ":" << d.rem << " seconds (" << diff << ")" << std::endl;
+        }
+    };
+
+    static void collect_all() {
+        Collector<AltBitSynchronizer>::collect("heat_cpu with AltBitSynchronizer", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        Collector<IterationSynchronizer>::collect("heat_cpu with IterationSynchronizer", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        Collector<AltBitSynchronizer>::collect("heat_cpu_switch_loops with AltBitSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
+        Collector<IterationSynchronizer>::collect("heat_cpu_switch_loops with IterationSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
+
+        Collector<LinePromisingSynchronizer>::collect("LinePromisingSynchronizer",
+                                                      std::bind(heat_cpu_line_promise, 
+                                                                std::placeholders::_1,
+                                                                std::placeholders::_2,
+                                                                std::placeholders::_3,
+                                                                std::placeholders::_4),
+                                                      20);
+
+        Collector<BlockPromisingSynchronizer>::collect("BlockPromisingSynchronizer",
+                                                       std::bind(heat_cpu_block_promise, 
+                                                                 std::placeholders::_1,
+                                                                 std::placeholders::_2,
+                                                                 std::placeholders::_3,
+                                                                 std::placeholders::_4),
+                                                       20);
+
+        Collector<IncreasingLinePromisingSynchronizer>::collect("IncreasingLinePromisingSynchronizer",
+                                                                std::bind(heat_cpu_increasing_line_promise,
+                                                                          std::placeholders::_1,
+                                                                          std::placeholders::_2,
+                                                                          std::placeholders::_3,
+                                                                          std::placeholders::_4),
+                                                                20);
+    }
+};
+
+template<typename T>
+using Collector = SynchronizationTimeCollector::Collector<T>;
+
 int main() {
     namespace g = Globals;
+    namespace c = std::chrono;
+
+    auto tp = Clock::now();
+    struct timespec begin, end;
+    clock_gettime(CLOCK_MONOTONIC, &begin);
 
     srand((unsigned)time(nullptr));
 
@@ -297,34 +344,17 @@ int main() {
 
     omp_debug();
 
-    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), "heat_cpu with alt bit", 20);
-    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), "heat_cpu with counter", 20);
-
-    SynchronizationMeasurer<AltBitSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with alt bit", 20);
-    SynchronizationMeasurer<IterationSynchronizer>::measure_time(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), "heat_cpu_switch_loops with counter", 20);
-    
-    SynchronizationMeasurer<LinePromisingSynchronizer>::measure_time(std::bind(heat_cpu_line_promise, 
-                                                                               std::placeholders::_1,
-                                                                               std::placeholders::_2,
-                                                                               std::placeholders::_3,
-                                                                               std::placeholders::_4),
-                                                                     "heat_cpu_line_promise with PromisingIterationSynchronizer", 20);
-
-    SynchronizationMeasurer<BlockPromisingSynchronizer>::measure_time(std::bind(heat_cpu_block_promise, 
-                                                                                std::placeholders::_1,
-                                                                                std::placeholders::_2,
-                                                                                std::placeholders::_3,
-                                                                                std::placeholders::_4),
-                                                                      "heat_cpu_block_promise with BlockPromisingSynchronizer", 20);
-
-    SynchronizationMeasurer<IncreasingLinePromisingSynchronizer>::measure_time(std::bind(heat_cpu_increasing_line_promise,
-                                                                                         std::placeholders::_1,
-                                                                                         std::placeholders::_2,
-                                                                                         std::placeholders::_3,
-                                                                                         std::placeholders::_4),
-                                                                               "heat_cpu_increasing_line_promise with IncreasingLinePromisingSynchronizer",
-                                                                               20);
+    // SynchronizationTimeCollector::collect_all();
+    for (int i = 0; i < 10; ++i) {
+        SynchronizationTimeCollector::Collector<IterationSynchronizer>::collect("Iteration", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        SynchronizationTimeCollector::Collector<BlockPromisingSynchronizer>::collect("Block", std::bind(heat_cpu_block_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
+    }
 
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
+
+    c::duration<double> diff = Clock::now() - tp;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    std::cout << count_duration_cast<c::seconds>(diff) << ", " << end.tv_sec - begin.tv_sec << ":" << end.tv_nsec - begin.tv_nsec << std::endl;
     return 0;
 }

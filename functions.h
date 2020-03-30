@@ -29,6 +29,8 @@ void heat_cpu_line_promise(Matrix, size_t, LinePromiseStore&, const LinePromiseS
 
 void heat_cpu_block_promise(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
 
+void heat_cpu_block_promise_switch_loops(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
+
 void heat_cpu_increasing_line_promise(Matrix, size_t, IncreasingLinePromiseStore&, const IncreasingLinePromiseStore&);
 
 #endif /* FUNCTIONS_H */

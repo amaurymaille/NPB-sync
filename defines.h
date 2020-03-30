@@ -11,9 +11,9 @@
 
 namespace Globals {
     static const size_t DIM_W = 8;
-    static const size_t DIM_X = 20;
-    static const size_t DIM_Y = 8;
-    static const size_t DIM_Z = 10;
+    static const size_t DIM_X = 25;
+    static const size_t DIM_Y = 20;
+    static const size_t DIM_Z = 22;
     static const size_t NB_ELEMENTS = DIM_W * DIM_X * DIM_Y * DIM_Z;
 
     static const size_t ZONE_X_SIZE = 32;
@@ -64,7 +64,8 @@ using ThreadStore = std::vector<T>;
 typedef ThreadStore<std::array<std::promise<MatrixValue>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
 typedef OptionalReference<LinePromiseContainer> LinePromiseStore;
 
-typedef ThreadStore<std::promise<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>>> BlockPromiseContainer;
+// typedef ThreadStore<std::promise<std::vector<MatrixValue>*>> BlockPromiseContainer;
+typedef ThreadStore<std::promise<void>> BlockPromiseContainer;
 typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
 
 typedef ThreadStore<std::vector<std::promise<std::vector<MatrixValue>>>> IncreasingLinePromiseContainer;
