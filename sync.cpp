@@ -358,10 +358,12 @@ int main() {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
+    // SynchronizationTimeCollector::Collector<IncreasingLinePromisingSynchronizer>::collect("IncreasingLinePromisingSynchronizer", std::bind(heat_cpu_increasing_line_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
     // SynchronizationTimeCollector::collect_all();
     for (int i = 0; i < 10; ++i) {
-        SynchronizationTimeCollector::Collector<IterationSynchronizer>::collect("Iteration", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
-        SynchronizationTimeCollector::Collector<BlockPromisingSynchronizer>::collect("Block", std::bind(heat_cpu_block_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
+	SynchronizationTimeCollector::collect_all();
+        // SynchronizationTimeCollector::Collector<IterationSynchronizer>::collect("Iteration", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        // SynchronizationTimeCollector::Collector<BlockPromisingSynchronizer>::collect("Block", std::bind(heat_cpu_block_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
     }
 
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
