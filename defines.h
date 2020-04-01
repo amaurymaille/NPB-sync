@@ -61,14 +61,14 @@ using OptionalReference = std::optional<std::reference_wrapper<T>>;
 template<typename T>
 using ThreadStore = std::vector<T>;
 
-typedef ThreadStore<std::array<std::promise<MatrixValue>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
+typedef ThreadStore<std::array<std::promise<void>, g::NB_LINES_PER_ITERATION>> LinePromiseContainer;
 typedef OptionalReference<LinePromiseContainer> LinePromiseStore;
 
 // typedef ThreadStore<std::promise<std::vector<MatrixValue>*>> BlockPromiseContainer;
 typedef ThreadStore<std::promise<void>> BlockPromiseContainer;
 typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
 
-typedef ThreadStore<std::vector<std::promise<std::vector<MatrixValue>>>> IncreasingLinePromiseContainer;
+typedef ThreadStore<std::vector<std::promise<size_t>>> IncreasingLinePromiseContainer;
 typedef OptionalReference<IncreasingLinePromiseContainer> IncreasingLinePromiseStore;
 
 // The initial matrix

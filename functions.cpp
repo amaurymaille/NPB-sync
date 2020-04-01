@@ -114,7 +114,8 @@ void heat_cpu_line_promise(Matrix array, size_t m, LinePromiseStore& dst, const 
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
                 if (!used_value && src) {
-                    // printf("[Thread %d] Accessing (%d, %d, %d, %d)\n", omp_get_thread_num(), m, i - 1, j, k);
+                    src->get()[omp_get_thread_num()][promise_pos].get_future().get();
+                    used_value = true;
                 }
 
                 size_t n = to1d(m, i, j, k);
@@ -123,9 +124,8 @@ void heat_cpu_line_promise(Matrix array, size_t m, LinePromiseStore& dst, const 
                 size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-
-                used_value = true;
+                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
 
                 int result = orig + to_add;
                 ptr[n] = result;
@@ -146,7 +146,7 @@ void heat_cpu_line_promise(Matrix array, size_t m, LinePromiseStore& dst, const 
             if (dst && last_i != -1) {
                 size_t pos = to1d(m, last_i, j, k);
                 // printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, last_i, j, k);
-                dst->get()[omp_get_thread_num() + 1][promise_pos].set_value(ptr[pos]);
+                dst->get()[omp_get_thread_num() + 1][promise_pos].set_value(/* ptr[pos] */);
             }
         }
     }
@@ -241,71 +241,6 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     } */
 }
 
-/* void heat_cpu_block_promise_switch_loops(Matrix array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
-    namespace g = Globals;
-
-    int* ptr = reinterpret_cast<int*>(array);
-    bool used_values = false;
-    int last_i = -1;
-
-    // There is a copy here and it angers me (copy of the array stored in the promise)
-    std::optional<std::array<MatrixValue, g::NB_VALUES_PER_BLOCK>> values = 
-        src ? std::make_optional(src->get()[omp_get_thread_num()].get_future().get()) : std::nullopt;
-
-    #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X; ++i) {
-        if (!used_values && src) {
-            // printf("[Thread %d] Getting promise at i = %d\n", omp_get_thread_num(), i);
-        }
-
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
-                int promise_pos = j * g::DIM_Z + k;
-
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                int to_add = (used_values || !values ? ptr[nm1] : (*values)[promise_pos]) + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
-                
-            }
-        }
-
-        used_values = true;
-        last_i = i;
-    }
-
-    if (dst && last_i != -1) {
-        // printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
-        std::array<MatrixValue, g::NB_VALUES_PER_BLOCK> arr;
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t ptr_pos = to1d(m, last_i, j, k);
-                size_t arr_pos = j * g::DIM_Z + k;
-                arr[arr_pos] = ptr[ptr_pos];
-            }
-        }
-
-        dst->get()[omp_get_thread_num() + 1].set_value(arr);
-    }
-} */
-
 void heat_cpu_increasing_line_promise(Matrix array, size_t m, 
                                       IncreasingLinePromiseStore& dst, 
                                       const IncreasingLinePromiseStore& src) {
@@ -323,25 +258,26 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
         return iter->get_future().get();
     };
 
-    auto values_iter = values >>= [](auto& vect) {
+    /* auto values_iter = values >>= [](auto& vect) {
         return vect.begin();
-    };
+    }; */
 
     // TODO: better way to do that ? More flexible maybe ?
     int nb_elements_for_neighbor = m < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, m - 1) : g::NB_LINES_PER_ITERATION;
-    std::vector<MatrixValue> values_for_neighbor;
+    // std::vector<MatrixValue> values_for_neighbor;
+    size_t values_ready = 0;
     int nb_vectors_filled = 0;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
-            bool used_value = false;
+            // bool used_value = false;
             int last_i = -1;
             
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                if (!used_value && src) {
+                /* if (!used_value && src) {
                     // printf("[Thread %d] Getting (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, i - 1, j, k, **values_iter);
-                }
+                } */
 
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
@@ -349,9 +285,10 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                 size_t nm1m = to1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
-                int to_add = (used_value || !src ? ptr[nm1] : (**values_iter)) + ptr[nm1j] + ptr[nm1m];
+                // int to_add = (used_value || !src ? ptr[nm1] : (**values_iter)) + ptr[nm1j] + ptr[nm1m];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
 
-                used_value = true;
+                // used_value = true;
 
                 int result = orig + to_add;
                 ptr[n] = result;
@@ -370,8 +307,9 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
             }
 
             if (src) {
-                ++(*values_iter);
-                if (*values_iter == values->end()) {
+                // ++(*values_iter);
+                --values.value();
+                if (/* *values_iter == values->end() */ *values == 0) {
                     ++(*promise_store_iter);
 
                     if (*promise_store_iter != all_promises->get().end()) {
@@ -379,32 +317,35 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
                             return iter->get_future().get();
                         };
 
-                        values_iter = values >>= [](auto& vect) {
+                        /* values_iter = values >>= [](auto& vect) {
                             return vect.begin();
-                        };
+                        }; */
                     }
                 }
             }
 
             if (dst && last_i != -1) {
                 size_t pos = to1d(m, last_i, j, k);
-                std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
+                // std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
+                std::vector<std::promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
 
                 // printf("[Thread %d] Sending (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, last_i, j, k, ptr[pos]);
-                values_for_neighbor.push_back(ptr[pos]);
+                // values_for_neighbor.push_back(ptr[pos]);
+                values_ready++;
 
-                if (values_for_neighbor.size() == nb_elements_for_neighbor) {
-                    target[nb_vectors_filled].set_value(values_for_neighbor);
-                    values_for_neighbor.resize(0);
+                if (values_ready == nb_elements_for_neighbor) {
+                    target[nb_vectors_filled].set_value(nb_elements_for_neighbor);
+                    // values_for_neighbor.resize(0);
+                    values_ready = 0;
                     ++nb_vectors_filled;
                 }
             }
         }
     }
 
-    if (values_for_neighbor.size() != 0) {
+    if (/* values_for_neighbor.size() != 0 */ values_ready != nb_elements_for_neighbor) {
         // printf("[Thread %d] Leaving iteration %d with vector not empty\n", omp_get_thread_num(), m);
-        dst->get()[omp_get_thread_num() + 1][nb_vectors_filled].set_value(values_for_neighbor);
+        dst->get()[omp_get_thread_num() + 1][nb_vectors_filled].set_value(values_ready);
     }
 
     // printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
