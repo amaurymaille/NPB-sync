@@ -327,7 +327,7 @@ void heat_cpu_increasing_line_promise(Matrix array, size_t m,
             if (dst && last_i != -1) {
                 size_t pos = to1d(m, last_i, j, k);
                 // std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
-                std::vector<std::promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
+                std::vector<Promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
 
                 // printf("[Thread %d] Sending (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, last_i, j, k, ptr[pos]);
                 // values_for_neighbor.push_back(ptr[pos]);
