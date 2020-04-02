@@ -315,13 +315,13 @@ public:
         Collector<AltBitSynchronizer>::collect("heat_cpu_switch_loops with AltBitSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
         Collector<IterationSynchronizer>::collect("heat_cpu_switch_loops with IterationSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
 
-        Collector<LinePromisingSynchronizer>::collect("LinePromisingSynchronizer",
+        /* Collector<LinePromisingSynchronizer>::collect("LinePromisingSynchronizer",
                                                       std::bind(heat_cpu_line_promise, 
                                                                 std::placeholders::_1,
                                                                 std::placeholders::_2,
                                                                 std::placeholders::_3,
                                                                 std::placeholders::_4),
-                                                      20);
+                                                      20); */
 
         Collector<BlockPromisingSynchronizer>::collect("BlockPromisingSynchronizer",
                                                        std::bind(heat_cpu_block_promise, 
