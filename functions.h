@@ -25,12 +25,15 @@ void heat_cpu_switch_loops(Matrix, size_t);
  * by (N, N+1), using arrays (DN, SN) and (DN+1, SN+1), DN and SN+1 are the same 
  * array, as destination values for thread N are source value for thread N+1.
  */
-void heat_cpu_line_promise(Matrix, size_t, LinePromiseStore&, const LinePromiseStore&);
+void heat_cpu_point_promise(Matrix, size_t, PointPromiseStore&, const PointPromiseStore&);
 
 void heat_cpu_block_promise(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
 
 void heat_cpu_block_promise_switch_loops(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
 
-void heat_cpu_increasing_line_promise(Matrix, size_t, IncreasingLinePromiseStore&, const IncreasingLinePromiseStore&);
+void heat_cpu_increasing_line_promise(Matrix, size_t, IncreasingPointPromiseStore&, const IncreasingPointPromiseStore&);
+
+void heat_cpu_jline_promise(Matrix, size_t, JLinePromiseStore&, const JLinePromiseStore&);
+void heat_cpu_kline_promise(Matrix, size_t, KLinePromiseStore&, const KLinePromiseStore&);
 
 #endif /* FUNCTIONS_H */

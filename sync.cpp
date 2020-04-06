@@ -221,20 +221,22 @@ protected:
     std::array<T, g::ITERATIONS> _promises_store;
 };
 
-using LinePromisingSynchronizer = IterationPromisingSynchronizer<LinePromiseContainer>;
+using PointPromisingSynchronizer = IterationPromisingSynchronizer<PointPromiseContainer>;
 using BlockPromisingSynchronizer = IterationPromisingSynchronizer<BlockPromiseContainer>;
+using JLinePromisingSynchronizer = IterationPromisingSynchronizer<JLinePromiseContainer>;
+using KLinePromisingSynchronizer = IterationPromisingSynchronizer<KLinePromiseContainer>;
 
-class IncreasingLinePromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingLinePromiseContainer> {
+class IncreasingPointPromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingPointPromiseContainer> {
 public:
-    IncreasingLinePromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingLinePromiseContainer>(n) {
+    IncreasingPointPromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingPointPromiseContainer>(n) {
         for (int i = 1; i < _promises_store.size(); ++i) {
-            IncreasingLinePromiseContainer& container = _promises_store[i];
-            int nb_elements_per_vector = i < g::INCREASING_LINES_ITERATION_LIMIT ? std::pow(g::INCREASING_LINES_BASE_POWER, i - 1) : g::NB_LINES_PER_ITERATION;
-            int nb_vectors = g::NB_LINES_PER_ITERATION / nb_elements_per_vector;
+            IncreasingPointPromiseContainer& container = _promises_store[i];
+            int nb_elements_per_vector = i < g::INCREASING_POINTS_ITERATION_LIMIT ? std::pow(g::INCREASING_POINTS_BASE_POWER, i - 1) : g::NB_POINTS_PER_ITERATION;
+            int nb_vectors = g::NB_POINTS_PER_ITERATION / nb_elements_per_vector;
 
-            if (nb_vectors * nb_elements_per_vector < g::NB_LINES_PER_ITERATION) {
+            if (nb_vectors * nb_elements_per_vector < g::NB_POINTS_PER_ITERATION) {
                 ++nb_vectors;
-                assert(nb_vectors * nb_elements_per_vector >= g::NB_LINES_PER_ITERATION);
+                assert(nb_vectors * nb_elements_per_vector >= g::NB_POINTS_PER_ITERATION);
             }
 
             for (int j = 0; j < container.size(); j++) {
@@ -315,8 +317,8 @@ public:
         Collector<AltBitSynchronizer>::collect("heat_cpu_switch_loops with AltBitSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
         Collector<IterationSynchronizer>::collect("heat_cpu_switch_loops with IterationSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
 
-        /* Collector<LinePromisingSynchronizer>::collect("LinePromisingSynchronizer",
-                                                      std::bind(heat_cpu_line_promise, 
+        /* Collector<PointPromisingSynchronizer>::collect("PointPromisingSynchronizer",
+                                                      std::bind(heat_cpu_point_promise, 
                                                                 std::placeholders::_1,
                                                                 std::placeholders::_2,
                                                                 std::placeholders::_3,
@@ -331,13 +333,21 @@ public:
                                                                  std::placeholders::_4),
                                                        20);
 
-        Collector<IncreasingLinePromisingSynchronizer>::collect("IncreasingLinePromisingSynchronizer",
+        Collector<IncreasingPointPromisingSynchronizer>::collect("IncreasingPointPromisingSynchronizer",
                                                                 std::bind(heat_cpu_increasing_line_promise,
                                                                           std::placeholders::_1,
                                                                           std::placeholders::_2,
                                                                           std::placeholders::_3,
                                                                           std::placeholders::_4),
                                                                 20);
+
+        Collector<JLinePromisingSynchronizer>::collect("JLinePromisingSynchronizer",
+                                                       std::bind(heat_cpu_jline_promise,
+                                                                 std::placeholders::_1,
+                                                                 std::placeholders::_2,
+                                                                 std::placeholders::_3,
+                                                                 std::placeholders::_4),
+                                                       20);
     }
 };
 
@@ -361,10 +371,18 @@ int main() {
     // SynchronizationTimeCollector::Collector<IncreasingLinePromisingSynchronizer>::collect("IncreasingLinePromisingSynchronizer", std::bind(heat_cpu_increasing_line_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
     // SynchronizationTimeCollector::collect_all();
     for (int i = 0; i < 10; ++i) {
-	SynchronizationTimeCollector::collect_all();
+	    // SynchronizationTimeCollector::collect_all();
         // SynchronizationTimeCollector::Collector<IterationSynchronizer>::collect("Iteration", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
         // SynchronizationTimeCollector::Collector<BlockPromisingSynchronizer>::collect("Block", std::bind(heat_cpu_block_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
     }
+
+    Collector<JLinePromisingSynchronizer>::collect("JLinePromisingSynchronizer",
+                                                       std::bind(heat_cpu_jline_promise,
+                                                                 std::placeholders::_1,
+                                                                 std::placeholders::_2,
+                                                                 std::placeholders::_3,
+                                                                 std::placeholders::_4),
+                                                       20);
 
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
