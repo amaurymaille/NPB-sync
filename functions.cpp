@@ -9,6 +9,11 @@
 #include "functions.h"
 #include "utils.h"
 
+// 🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲
+// Palpatine's worst nightmare
+static int limited_power(int base, int power, int limit);
+
+
 void heat_cpu(Matrix array, size_t m) {
     namespace g = Globals;
 
@@ -241,7 +246,7 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     } */
 }
 
-void heat_cpu_increasing_line_promise(Matrix array, size_t m, 
+void heat_cpu_increasing_point_promise(Matrix array, size_t m, 
                                       IncreasingPointPromiseStore& dst, 
                                       const IncreasingPointPromiseStore& src) {
     namespace g = Globals;
@@ -395,4 +400,117 @@ void heat_cpu_jline_promise(Matrix array, size_t m, JLinePromiseStore& dst, cons
 
 void heat_cpu_kline_promise(Matrix array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
 
+}
+
+void heat_cpu_increasing_jline_promise(Matrix array, size_t m, 
+                                       IncreasingJLinePromiseStore& dst, 
+                                       const IncreasingJLinePromiseStore& src) {
+    namespace g = Globals;
+
+    printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
+
+    int* ptr = reinterpret_cast<int*>(array);
+    int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
+
+    // How many lines before we synchronize with our left neighbor (next get), i.e
+    // when we are out of lines to process
+    int remaining_lines = -1;
+    // Which promise holds the number of lines we need to compute before synchronizing
+    // with left neighbor
+    int src_promise_index = 0;
+    // Which promise holds the number of lines the right neighbor will need to process
+    // before synchronizing with us
+    int dst_promise_index = 0;
+    // How many lines we have processed since last synchronization with our right 
+    // neighbor (next set), i;e when we have processed enough lines
+    int processed_lines = 0;
+
+    // In practice, remaining_lines and processed_lines are mirrors : 
+    // remaining_lines + processed_lines = nb_lines_for_neighbor. But it might
+    // be interesting to change that, for example by increasing the amount of lines
+    // we send to the neighbor as we progress.
+
+    if (src)
+        remaining_lines = src->get()[omp_get_thread_num()][src_promise_index].get_future().get();
+    else
+        remaining_lines = nb_lines_for_neighbor;
+
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        for (int j = 1; j < g::DIM_Y; ++j) {            
+            #pragma omp for schedule(static) nowait
+            for (int i = 1; i < g::DIM_X; ++i) {
+                size_t n = to1d(m, i, j, k);
+                size_t nm1 = to1d(m, i - 1, j, k);
+                size_t nm1j = to1d(m, i, j - 1, k);
+                size_t nm1m = to1d(m - 1, i, j, k);
+
+                int orig = ptr[n];
+                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
+
+                int result = orig + to_add;
+                ptr[n] = result;
+                
+                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
+                    // Sleep only in OMP parallel, speed up the sequential version
+                    if (omp_get_num_threads() != 1) {
+                        if (g::binary_generator()) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
+                        } else {
+                            std::this_thread::yield();
+                        }
+                    }
+                }
+            }
+        }
+
+        ++processed_lines;
+        --remaining_lines;
+
+        if (remaining_lines == 0) {
+            ++src_promise_index;
+
+            if (src) { 
+                auto& promises_array = src->get()[omp_get_thread_num()];
+                if (src_promise_index < promises_array.size())
+                    remaining_lines = promises_array[src_promise_index].get_future().get();
+                else
+                    remaining_lines = -1;
+            }
+            else
+                remaining_lines = nb_lines_for_neighbor;
+        }
+
+        if (processed_lines == nb_lines_for_neighbor) {
+            if (dst)
+                dst->get()[omp_get_thread_num() + 1][dst_promise_index].set_value(processed_lines);
+
+            ++dst_promise_index;
+            processed_lines = 0;
+        }
+    }
+
+    if (remaining_lines != 0 && dst) {
+        auto& promises_array = dst->get()[omp_get_thread_num() + 1];
+        if (dst_promise_index < promises_array.size())
+            promises_array[dst_promise_index].set_value(processed_lines);
+    }
+
+    printf("[Thread %d] Ending iteration %d\n", omp_get_thread_num(), m);
+}
+
+void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&) {
+
+}
+
+int nb_points_for_iteration(int iteration) {
+    return iteration < g::INCREASING_POINTS_ITERATION_LIMIT ? 
+           std::pow(g::INCREASING_POINTS_BASE_POWER, iteration - 1) : 
+           g::NB_POINTS_PER_ITERATION;
+}
+
+int nb_jlines_for_iteration(int iteration) {
+    return iteration < g::INCREASING_LINES_ITERATION_LIMIT ?
+           std::pow(g::INCREASING_LINES_BASE_POWER, iteration - 1) :
+           g::NB_J_LINES_PER_ITERATION;
 }

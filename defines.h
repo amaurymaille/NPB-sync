@@ -63,6 +63,9 @@ namespace Globals {
     static const size_t NB_J_LINES_PER_ITERATION = DIM_Z;
     // How many lines parallel to the K axis on the (JK) face of a sub-cube
     static const size_t NB_K_LINES_PER_ITERATION = DIM_Y;
+
+    static const size_t INCREASING_LINES_BASE_POWER = 4;
+    static const size_t INCREASING_LINES_ITERATION_LIMIT = 4;
 }
 
 enum Tenths {
@@ -131,6 +134,13 @@ typedef OptionalReference<JLinePromiseContainer> JLinePromiseStore;
 
 typedef ThreadStore<std::array<Promise<void>, Globals::NB_K_LINES_PER_ITERATION>> KLinePromiseContainer;
 typedef OptionalReference<KLinePromiseContainer> KLinePromiseStore;
+
+// Increasing line synchronization
+typedef ThreadStore<std::vector<Promise<size_t>>> IncreasingJLinePromiseContainer;
+typedef OptionalReference<IncreasingJLinePromiseContainer> IncreasingJLinePromiseStore;
+
+typedef IncreasingJLinePromiseContainer IncreasingKLinePromiseContainer;
+typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;

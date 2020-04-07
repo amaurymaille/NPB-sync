@@ -226,7 +226,29 @@ using BlockPromisingSynchronizer = IterationPromisingSynchronizer<BlockPromiseCo
 using JLinePromisingSynchronizer = IterationPromisingSynchronizer<JLinePromiseContainer>;
 using KLinePromisingSynchronizer = IterationPromisingSynchronizer<KLinePromiseContainer>;
 
-class IncreasingPointPromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingPointPromiseContainer> {
+template<class Store>
+class IncreasingIterationPromisingSynchronizer : public IterationPromisingSynchronizer<Store> {
+public:
+    template<class F>
+    IncreasingIterationPromisingSynchronizer(int n, F&& f, size_t MAX) : IterationPromisingSynchronizer<Store>(n) {
+        for (int i = 1; i < this->_promises_store.size(); ++i) {
+            Store& container = this->_promises_store[i];
+            int nb_elements_for_synchronization = f(i);
+            int nb_promises = MAX / nb_elements_for_synchronization;
+
+            if (nb_promises * nb_elements_for_synchronization < MAX) {
+                ++nb_promises;
+                assert(nb_promises * nb_elements_for_synchronization >= MAX);
+            }
+
+            for (int j = 0; j < container.size(); j++) {
+                container[j].resize(nb_promises);
+            }
+        }
+    }
+};
+
+/* class IncreasingPointPromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingPointPromiseContainer> {
 public:
     IncreasingPointPromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingPointPromiseContainer>(n) {
         for (int i = 1; i < _promises_store.size(); ++i) {
@@ -244,7 +266,10 @@ public:
             }
         }
     }
-};
+}; */
+
+using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
+using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 
 template<class Synchronizer>
 class SynchronizationMeasurer {
@@ -252,27 +277,27 @@ public:
     template<class F, class... SynchronizerArgs>
     static /* std::tuple<uint64, uint64, uint64> */ uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
         struct timespec begin, end;
-	// struct timespec init_begin, init_end;
-	// struct timespec assert_begin, assert_end;
+        // struct timespec init_begin, init_end;
+        // struct timespec assert_begin, assert_end;
 
-	// clock_gettime(CLOCK_MONOTONIC, &init_begin);
+        // clock_gettime(CLOCK_MONOTONIC, &init_begin);
         Synchronizer synchronizer(synchronizer_args...);
-	// clock_gettime(CLOCK_MONOTONIC, &init_end);
+        // clock_gettime(CLOCK_MONOTONIC, &init_end);
 
         clock_gettime(CLOCK_MONOTONIC, &begin);
         synchronizer.run(f);
         clock_gettime(CLOCK_MONOTONIC, &end);
 
-	// clock_gettime(CLOCK_MONOTONIC, &assert_begin);
+        // clock_gettime(CLOCK_MONOTONIC, &assert_begin);
         synchronizer.assert_okay();
-	// clock_gettime(CLOCK_MONOTONIC, &assert_end);
+        // clock_gettime(CLOCK_MONOTONIC, &assert_end);
 
         uint64 diff = clock_diff(&end, &begin);
-	// uint64 init_diff = clock_diff(&init_end, &init_begin);
-	// uint64 assert_diff = clock_diff(&assert_end, &assert_begin);
+        // uint64 init_diff = clock_diff(&init_end, &init_begin);
+        // uint64 assert_diff = clock_diff(&assert_end, &assert_begin);
 
         // return std::make_tuple(init_diff, diff, assert_diff);
-	return diff;
+    return diff;
     }
 };
 
@@ -284,30 +309,30 @@ public:
         template<typename F, typename... SynchronizerArgs>
         static void collect(std::string const& name, F&& f, SynchronizerArgs&&... args) {
             uint64 /* init_diff = 0, diff = 0, assert_diff = 0 */ diff = 0;
-	    // struct timespec begin, end;
+            // struct timespec begin, end;
 
-	    // clock_gettime(CLOCK_MONOTONIC, &begin);
+            // clock_gettime(CLOCK_MONOTONIC, &begin);
             for (int i = 0; i < 10000; ++i) {
                 // auto [init_time, compute_time, assert_time] = SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
-		// init_diff += init_time;
-		// diff += compute_time;
-		// assert_diff += assert_time;
-		diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
+                // init_diff += init_time;
+                // diff += compute_time;
+                // assert_diff += assert_time;
+                diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
             }
-	    // clock_gettime(CLOCK_MONOTONIC, &end);
-	    
-	    // uint64 global_diff = clock_diff(&end, &begin);
+            // clock_gettime(CLOCK_MONOTONIC, &end);
+        
+            // uint64 global_diff = clock_diff(&end, &begin);
 
-	    // lldiv_t global_d = lldiv(global_diff, BILLION);
-	    // lldiv_t init_d = lldiv(init_diff, BILLION);
-	    // lldiv_t assert_d = lldiv(assert_diff, BILLION);
+            // lldiv_t global_d = lldiv(global_diff, BILLION);
+            // lldiv_t init_d = lldiv(init_diff, BILLION);
+            // lldiv_t assert_d = lldiv(assert_diff, BILLION);
             lldiv_t d = lldiv(diff, BILLION);
 
             std::cout << "Simulation " << name << " took " << d.quot << ":" << d.rem << " seconds (" << diff << ")" << std::endl;
-	    // std::cout << "Initialization took " << init_d.quot << ":" << init_d.rem << " seconds (" << init_diff << ")" << std::endl;
-	    // std::cout << "Assertion took " << assert_d.quot << ":" << assert_d.rem << " seconds (" << assert_diff << ")" << std::endl;
-	    // std::cout << "Globally, it took " << global_d.quot << ":" << global_d.rem << " seconds (" << global_diff << ")" << std::endl;
-	    // std::cout << std::endl;
+            // std::cout << "Initialization took " << init_d.quot << ":" << init_d.rem << " seconds (" << init_diff << ")" << std::endl;
+            // std::cout << "Assertion took " << assert_d.quot << ":" << assert_d.rem << " seconds (" << assert_diff << ")" << std::endl;
+            // std::cout << "Globally, it took " << global_d.quot << ":" << global_d.rem << " seconds (" << global_diff << ")" << std::endl;
+            // std::cout << std::endl;
         }
     };
 
@@ -334,12 +359,12 @@ public:
                                                        20);
 
         Collector<IncreasingPointPromisingSynchronizer>::collect("IncreasingPointPromisingSynchronizer",
-                                                                std::bind(heat_cpu_increasing_line_promise,
+                                                                std::bind(heat_cpu_increasing_point_promise,
                                                                           std::placeholders::_1,
                                                                           std::placeholders::_2,
                                                                           std::placeholders::_3,
                                                                           std::placeholders::_4),
-                                                                20);
+                                                                20, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
 
         Collector<JLinePromisingSynchronizer>::collect("JLinePromisingSynchronizer",
                                                        std::bind(heat_cpu_jline_promise,
@@ -348,6 +373,14 @@ public:
                                                                  std::placeholders::_3,
                                                                  std::placeholders::_4),
                                                        20);
+
+        Collector<IncreasingJLinePromisingSynchronizer>::collect("IncreasingJLinePromisingSynchronizer",
+                                                                std::bind(heat_cpu_increasing_point_promise,
+                                                                          std::placeholders::_1,
+                                                                          std::placeholders::_2,
+                                                                          std::placeholders::_3,
+                                                                          std::placeholders::_4),
+                                                                20, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
     }
 };
 
@@ -368,21 +401,9 @@ int main() {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
-    // SynchronizationTimeCollector::Collector<IncreasingLinePromisingSynchronizer>::collect("IncreasingLinePromisingSynchronizer", std::bind(heat_cpu_increasing_line_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
-    // SynchronizationTimeCollector::collect_all();
     for (int i = 0; i < 10; ++i) {
-	    // SynchronizationTimeCollector::collect_all();
-        // SynchronizationTimeCollector::Collector<IterationSynchronizer>::collect("Iteration", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
-        // SynchronizationTimeCollector::Collector<BlockPromisingSynchronizer>::collect("Block", std::bind(heat_cpu_block_promise, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 20);
+        SynchronizationTimeCollector::collect_all();
     }
-
-    Collector<JLinePromisingSynchronizer>::collect("JLinePromisingSynchronizer",
-                                                       std::bind(heat_cpu_jline_promise,
-                                                                 std::placeholders::_1,
-                                                                 std::placeholders::_2,
-                                                                 std::placeholders::_3,
-                                                                 std::placeholders::_4),
-                                                       20);
 
     spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;

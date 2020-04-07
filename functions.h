@@ -31,9 +31,16 @@ void heat_cpu_block_promise(Matrix, size_t, BlockPromiseStore&, const BlockPromi
 
 void heat_cpu_block_promise_switch_loops(Matrix, size_t, BlockPromiseStore&, const BlockPromiseStore&);
 
-void heat_cpu_increasing_line_promise(Matrix, size_t, IncreasingPointPromiseStore&, const IncreasingPointPromiseStore&);
+void heat_cpu_increasing_point_promise(Matrix, size_t, IncreasingPointPromiseStore&, const IncreasingPointPromiseStore&);
 
 void heat_cpu_jline_promise(Matrix, size_t, JLinePromiseStore&, const JLinePromiseStore&);
 void heat_cpu_kline_promise(Matrix, size_t, KLinePromiseStore&, const KLinePromiseStore&);
+
+void heat_cpu_increasing_jline_promise(Matrix, size_t, IncreasingJLinePromiseStore&, const IncreasingJLinePromiseStore&);
+void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&);
+
+int nb_points_for_iteration(int iteration);
+int nb_jlines_for_iteration(int iteration);
+int nb_klines_for_iteration(int iteration);
 
 #endif /* FUNCTIONS_H */

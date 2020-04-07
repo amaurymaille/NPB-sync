@@ -32,156 +32,160 @@ private:
 template<typename T> 
 class ActivePromise {
 public:
-	ActivePromise() { 
-		_moved.store(false, std::memory_order_release); 
-		_ready.store(false, std::memory_order_release);
-	}
-	ActivePromise(ActivePromise<T> const&) = delete;
-	ActivePromise(ActivePromise<T>&& other) {
-		other._moved.store(true, std::memory_order_release);
+    ActivePromise() { 
+        _moved.store(false, std::memory_order_release); 
+        _ready.store(false, std::memory_order_release);
+    }
+    ActivePromise(ActivePromise<T> const&) = delete;
+    ActivePromise(ActivePromise<T>&& other) {
+        other._moved.store(true, std::memory_order_release);
+        std::cout << "[Constructor] Moved promise " << &other << std::endl;
 
-		_moved.store(false, std::memory_order_release);
-		static std::mutex m;
-		std::unique_lock<std::mutex> lck(m);
-		_ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
-	}
+        _moved.store(false, std::memory_order_release);
+        static std::mutex m;
+        std::unique_lock<std::mutex> lck(m);
+        _ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
+    }
 
-	template<typename Alloc>
-	ActivePromise(std::allocator_arg_t a, Alloc alloc) {
-		_moved.store(false, std::memory_order_release);
-		_ready.store(false, std::memory_order_release);
-	}
+    template<typename Alloc>
+    ActivePromise(std::allocator_arg_t a, Alloc alloc) {
+        _moved.store(false, std::memory_order_release);
+        _ready.store(false, std::memory_order_release);
+    }
 
-	~ActivePromise() {
-		/* if (!_ready.load(std::memory_order_acquire) && !_moved.load()) {
-			std::cerr << "Broken promise, ABORT, ABORT !!!!" << std::endl;
-			// exit(EXIT_FAILURE);
-		} */
-	}
+    ~ActivePromise() {
+        /* if (!_ready.load(std::memory_order_acquire) && !_moved.load()) {
+            std::cerr << "Broken promise, ABORT, ABORT !!!!" << std::endl;
+            // exit(EXIT_FAILURE);
+        } */
+    }
 
-	ActivePromise<T>& operator=(const ActivePromise<T>& rhs) = delete;
+    ActivePromise<T>& operator=(const ActivePromise<T>& rhs) = delete;
 
-	ActivePromise<T>& operator=(ActivePromise<T>&& other) noexcept {
-		other._moved.store(true, std::memory_order_release);
+    ActivePromise<T>& operator=(ActivePromise<T>&& other) noexcept {
+        other._moved.store(true, std::memory_order_release);
+        std::cout << "[operator=] Moved promise " << &other << std::endl;
 
-		_moved.store(false, std::memory_order_release);
-		static std::mutex m;
-		std::unique_lock<std::mutex> lck(m);
-		_ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
+        _moved.store(false, std::memory_order_release);
+        static std::mutex m;
+        std::unique_lock<std::mutex> lck(m);
+        _ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
 
-		return *this;
-	}
+        return *this;
+    }
 
-	void set_value(T const& v) {
-		if (_moved.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise moved");
+    void set_value(T const& v) {
+        if (_moved.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise moved");
 
-		if (_ready.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise already fulfilled");
+        if (_ready.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise already fulfilled");
 
-		_value = v;
-		_ready.store(true, std::memory_order_release);
-	}
+        _value = v;
+        _ready.store(true, std::memory_order_release);
+    }
 
-	void set_value(T&& v) {
-		if (_moved.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise moved");
+    void set_value(T&& v) {
+        if (_moved.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise moved");
 
-		if (_ready.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise already fulfilled");
+        if (_ready.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise already fulfilled");
 
-		_value = std::move(v);
-		_ready.store(true, std::memory_order_release);
-	}
+        _value = std::move(v);
+        _ready.store(true, std::memory_order_release);
+    }
 
-	ActivePromise<T>& get_future() {
-		return *this;
-	}
+    ActivePromise<T>& get_future() {
+        return *this;
+    }
 
-	T get() {
-		if (_moved.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise moved");
+    T get() {
+        if (_moved.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise moved");
 
-		while (!_ready.load(std::memory_order_acquire))
-			;
+        while (!_ready.load(std::memory_order_acquire))
+            ;
 
-		return _value;
-	}
+        return _value;
+    }
 
 private:
-	std::atomic<bool> _ready;
-	T _value;
-	std::atomic<bool> _moved;
+    std::atomic<bool> _ready;
+    T _value;
+    std::atomic<bool> _moved;
 };
 
 template<>
 class ActivePromise<void> {
 public:
-	ActivePromise() { 
-		_moved.store(false, std::memory_order_release); 
-		_ready.store(false, std::memory_order_release);
-	}
-	ActivePromise(ActivePromise<void> const&) = delete;
-	ActivePromise(ActivePromise<void>&& other) {
-		other._moved.store(true, std::memory_order_release);
+    ActivePromise() { 
+        _moved.store(false, std::memory_order_release); 
+        _ready.store(false, std::memory_order_release);
+    }
+    ActivePromise(ActivePromise<void> const&) = delete;
+    ActivePromise(ActivePromise<void>&& other) {
+        other._moved.store(true, std::memory_order_release);
+        std::cout << "[Constructor<void>] Moved promise " << &other << std::endl;
 
-		_moved.store(false, std::memory_order_release);
-		static std::mutex m;
-		std::unique_lock<std::mutex> lck(m);
-		_ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
+        _moved.store(false, std::memory_order_release);
+        static std::mutex m;
+        std::unique_lock<std::mutex> lck(m);
+        _ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
 
-	}
-	template<typename Alloc>
-	ActivePromise(std::allocator_arg_t a, Alloc alloc) {
-		_moved.store(false, std::memory_order_release);
-		_ready.store(false, std::memory_order_release);
-	}
+    }
+    template<typename Alloc>
+    ActivePromise(std::allocator_arg_t a, Alloc alloc) {
+        _moved.store(false, std::memory_order_release);
+        _ready.store(false, std::memory_order_release);
+    }
 
-	~ActivePromise() {
-		/* if (!_ready.load(std::memory_order_acquire) && !_moved.load()) {
-			// std::cerr << "Broken promise, ABORT, ABORT !!!!" << std::endl;
-			// exit(EXIT_FAILURE);
-		} */
-	}
+    ~ActivePromise() {
+        /* if (!_ready.load(std::memory_order_acquire) && !_moved.load()) {
+            // std::cerr << "Broken promise, ABORT, ABORT !!!!" << std::endl;
+            // exit(EXIT_FAILURE);
+        } */
+    }
 
-	ActivePromise<void>& operator=(ActivePromise<void> const& other) = delete;
+    ActivePromise<void>& operator=(ActivePromise<void> const& other) = delete;
 
-	ActivePromise<void>& operator=(ActivePromise<void>&& other) {
-		other._moved.store(true, std::memory_order_release);
+    ActivePromise<void>& operator=(ActivePromise<void>&& other) {
+        other._moved.store(true, std::memory_order_release);
+        std::cout << "[operator=<void>] Moved promise " << &other << std::endl;
 
-		_moved.store(false, std::memory_order_release);
-		static std::mutex m;
-		std::unique_lock<std::mutex> lck(m);
-		_ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
+        _moved.store(false, std::memory_order_release);
+        static std::mutex m;
+        std::unique_lock<std::mutex> lck(m);
+        _ready.store(other._ready.load(std::memory_order_acquire), std::memory_order_release);
 
-		return *this;
-	}
+        return *this;
+    }
 
-	void set_value() {
-		if (_moved.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise moved");
+    void set_value() {
+        if (_moved.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise moved");
 
-		if (_ready.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise already fulfilled");
+        if (_ready.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise already fulfilled");
 
-		_ready.store(true, std::memory_order_release);
-	}
+        _ready.store(true, std::memory_order_release);
+    }
 
-	ActivePromise<void>& get_future() {
-		return *this;
-	}
+    ActivePromise<void>& get_future() {
+        return *this;
+    }
 
-	void get() {
-		if (_moved.load(std::memory_order_acquire))
-			throw std::runtime_error("Promise moved");
+    void get() {
+        if (_moved.load(std::memory_order_acquire))
+            throw std::runtime_error("Promise moved");
 
-		while (!_ready.load(std::memory_order_acquire))
-			;
-	}
+        while (!_ready.load(std::memory_order_acquire))
+            ;
+    }
 
 private:
-	std::atomic<bool> _ready;
-	std::atomic<bool> _moved;
+    std::atomic<bool> _ready;
+    std::atomic<bool> _moved;
 };
 
 template<typename R, typename Alloc>
