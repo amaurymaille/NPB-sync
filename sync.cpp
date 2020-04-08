@@ -375,7 +375,7 @@ public:
                                                        20);
 
         Collector<IncreasingJLinePromisingSynchronizer>::collect("IncreasingJLinePromisingSynchronizer",
-                                                                std::bind(heat_cpu_increasing_point_promise,
+                                                                std::bind(heat_cpu_increasing_jline_promise,
                                                                           std::placeholders::_1,
                                                                           std::placeholders::_2,
                                                                           std::placeholders::_3,

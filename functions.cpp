@@ -407,8 +407,6 @@ void heat_cpu_increasing_jline_promise(Matrix array, size_t m,
                                        const IncreasingJLinePromiseStore& src) {
     namespace g = Globals;
 
-    printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
-
     int* ptr = reinterpret_cast<int*>(array);
     int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
 
@@ -495,8 +493,6 @@ void heat_cpu_increasing_jline_promise(Matrix array, size_t m,
         if (dst_promise_index < promises_array.size())
             promises_array[dst_promise_index].set_value(processed_lines);
     }
-
-    printf("[Thread %d] Ending iteration %d\n", omp_get_thread_num(), m);
 }
 
 void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&) {
