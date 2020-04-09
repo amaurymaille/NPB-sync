@@ -281,12 +281,7 @@ public:
     public:
         template<typename F, typename... SynchronizerArgs>
         static uint64 collect(F&& f, SynchronizerArgs&&... args) {
-            uint64 diff = 0;
-            for (int i = 0; i < 10000; ++i) {
-                diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
-            }
-
-            return diff;
+            return SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
         }
     };
 
@@ -350,7 +345,7 @@ public:
             int count = 0;
             for (uint64 const& time: p.second) {
                 lldiv_t result = lldiv(time, BILLION);
-                std::cout << count << p.first.first << " " << p.first.second << " " << result.quot << "." << result.rem << std::endl;
+                std::cout << count << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << result.rem << std::endl;
                 ++count;
             }
         }
@@ -381,7 +376,7 @@ int main(int argc, char** argv) {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 100000; ++i) {
         SynchronizationTimeCollector::collect_all();
     }
 
