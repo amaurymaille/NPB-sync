@@ -68,6 +68,8 @@ namespace Globals {
     static const size_t INCREASING_LINES_ITERATION_LIMIT = 4;
 }
 
+#define assertM(C, M, ...) do { if (!C) { fprintf(stderr, M, __VA_ARGS__); assert(false); }} while (0);
+
 enum Tenths {
     TEN         = 10,
     HUNDRED     = TEN       * TEN,
@@ -101,6 +103,13 @@ using OptionalReference = std::optional<std::reference_wrapper<T>>;
 template<typename T>
 using ThreadStore = std::vector<T>;
 
+enum class PromiseTypes : unsigned char {
+    NATIVE,
+    ACTIVE
+};
+
+std::string to_string(PromiseTypes v); 
+
 #ifdef ACTIVE_PROMISES
 template<typename T>
 class ActivePromise;
@@ -110,9 +119,18 @@ class ActivePromise<void>;
 
 template<typename T>
 using Promise = ActivePromise<T>;
+
+namespace Globals {
+    static constexpr PromiseTypes PROMISE_TYPE = PromiseTypes::ACTIVE;
+}
+
 #else
 template<typename T>
 using Promise = std::promise<T>;
+
+namespace Globals {
+    static constexpr PromiseTypes PROMISE_TYPE = PromiseTypes::NATIVE;
+}
 #endif
 
 // Point synchronization

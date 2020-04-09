@@ -6,8 +6,12 @@
 #include <chrono>
 #include <functional>
 #include <future>
+#include <iterator>
+#include <map>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <sys/time.h>
 
@@ -248,26 +252,6 @@ public:
     }
 };
 
-/* class IncreasingPointPromisingSynchronizer : public IterationPromisingSynchronizer<IncreasingPointPromiseContainer> {
-public:
-    IncreasingPointPromisingSynchronizer(int n) : IterationPromisingSynchronizer<IncreasingPointPromiseContainer>(n) {
-        for (int i = 1; i < _promises_store.size(); ++i) {
-            IncreasingPointPromiseContainer& container = _promises_store[i];
-            int nb_elements_per_vector = i < g::INCREASING_POINTS_ITERATION_LIMIT ? std::pow(g::INCREASING_POINTS_BASE_POWER, i - 1) : g::NB_POINTS_PER_ITERATION;
-            int nb_vectors = g::NB_POINTS_PER_ITERATION / nb_elements_per_vector;
-
-            if (nb_vectors * nb_elements_per_vector < g::NB_POINTS_PER_ITERATION) {
-                ++nb_vectors;
-                assert(nb_vectors * nb_elements_per_vector >= g::NB_POINTS_PER_ITERATION);
-            }
-
-            for (int j = 0; j < container.size(); j++) {
-                container[j].resize(nb_vectors);
-            }
-        }
-    }
-}; */
-
 using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 
@@ -275,29 +259,18 @@ template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
     template<class F, class... SynchronizerArgs>
-    static /* std::tuple<uint64, uint64, uint64> */ uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
+    static uint64 measure_time(F&& f, SynchronizerArgs&&... synchronizer_args) {
         struct timespec begin, end;
-        // struct timespec init_begin, init_end;
-        // struct timespec assert_begin, assert_end;
-
-        // clock_gettime(CLOCK_MONOTONIC, &init_begin);
         Synchronizer synchronizer(synchronizer_args...);
-        // clock_gettime(CLOCK_MONOTONIC, &init_end);
 
         clock_gettime(CLOCK_MONOTONIC, &begin);
         synchronizer.run(f);
         clock_gettime(CLOCK_MONOTONIC, &end);
 
-        // clock_gettime(CLOCK_MONOTONIC, &assert_begin);
         synchronizer.assert_okay();
-        // clock_gettime(CLOCK_MONOTONIC, &assert_end);
 
         uint64 diff = clock_diff(&end, &begin);
-        // uint64 init_diff = clock_diff(&init_end, &init_begin);
-        // uint64 assert_diff = clock_diff(&assert_end, &assert_begin);
-
-        // return std::make_tuple(init_diff, diff, assert_diff);
-    return diff;
+        return diff;
     }
 };
 
@@ -307,94 +280,101 @@ public:
     class Collector {
     public:
         template<typename F, typename... SynchronizerArgs>
-        static void collect(std::string const& name, F&& f, SynchronizerArgs&&... args) {
-            uint64 /* init_diff = 0, diff = 0, assert_diff = 0 */ diff = 0;
-            // struct timespec begin, end;
-
-            // clock_gettime(CLOCK_MONOTONIC, &begin);
+        static uint64 collect(F&& f, SynchronizerArgs&&... args) {
+            uint64 diff = 0;
             for (int i = 0; i < 10000; ++i) {
-                // auto [init_time, compute_time, assert_time] = SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
-                // init_diff += init_time;
-                // diff += compute_time;
-                // assert_diff += assert_time;
                 diff += SynchronizationMeasurer<Synchronizer>::measure_time(std::forward<F>(f), std::forward<SynchronizerArgs>(args)...);
             }
-            // clock_gettime(CLOCK_MONOTONIC, &end);
-        
-            // uint64 global_diff = clock_diff(&end, &begin);
 
-            // lldiv_t global_d = lldiv(global_diff, BILLION);
-            // lldiv_t init_d = lldiv(init_diff, BILLION);
-            // lldiv_t assert_d = lldiv(assert_diff, BILLION);
-            lldiv_t d = lldiv(diff, BILLION);
-
-            std::cout << "Simulation " << name << " took " << d.quot << ":" << d.rem << " seconds (" << diff << ")" << std::endl;
-            // std::cout << "Initialization took " << init_d.quot << ":" << init_d.rem << " seconds (" << init_diff << ")" << std::endl;
-            // std::cout << "Assertion took " << assert_d.quot << ":" << assert_d.rem << " seconds (" << assert_diff << ")" << std::endl;
-            // std::cout << "Globally, it took " << global_d.quot << ":" << global_d.rem << " seconds (" << global_diff << ")" << std::endl;
-            // std::cout << std::endl;
+            return diff;
         }
     };
 
     static void collect_all() {
-        Collector<AltBitSynchronizer>::collect("heat_cpu with AltBitSynchronizer", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
-        Collector<IterationSynchronizer>::collect("heat_cpu with IterationSynchronizer", std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
-        Collector<AltBitSynchronizer>::collect("heat_cpu_switch_loops with AltBitSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
-        Collector<IterationSynchronizer>::collect("heat_cpu_switch_loops with IterationSynchronizer", std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
+        uint64 time = Collector<AltBitSynchronizer>::collect(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        SynchronizationTimeCollector::__times[std::make_pair("AltBitSynchronizer", "heat_cpu")].push_back(time);
 
-        /* Collector<PointPromisingSynchronizer>::collect("PointPromisingSynchronizer",
-                                                      std::bind(heat_cpu_point_promise, 
-                                                                std::placeholders::_1,
-                                                                std::placeholders::_2,
-                                                                std::placeholders::_3,
-                                                                std::placeholders::_4),
-                                                      20); */
+        time = Collector<IterationSynchronizer>::collect(std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2), 20);
+        SynchronizationTimeCollector::__times[std::make_pair("IterationSynchronizer", "heat_cpu")].push_back(time);
 
-        Collector<BlockPromisingSynchronizer>::collect("BlockPromisingSynchronizer",
-                                                       std::bind(heat_cpu_block_promise, 
-                                                                 std::placeholders::_1,
-                                                                 std::placeholders::_2,
-                                                                 std::placeholders::_3,
-                                                                 std::placeholders::_4),
-                                                       20);
+        time = Collector<AltBitSynchronizer>::collect(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
+        SynchronizationTimeCollector::__times[std::make_pair("AltBitSynchronizer", "heat_cpu_switch_loops")].push_back(time);
 
-        Collector<IncreasingPointPromisingSynchronizer>::collect("IncreasingPointPromisingSynchronizer",
-                                                                std::bind(heat_cpu_increasing_point_promise,
-                                                                          std::placeholders::_1,
-                                                                          std::placeholders::_2,
-                                                                          std::placeholders::_3,
-                                                                          std::placeholders::_4),
-                                                                20, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
+        time = Collector<IterationSynchronizer>::collect(std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2), 20);
+        SynchronizationTimeCollector::__times[std::make_pair("IterationSynchronizer", "heat_cpu_switch_loops")].push_back(time);
 
-        Collector<JLinePromisingSynchronizer>::collect("JLinePromisingSynchronizer",
-                                                       std::bind(heat_cpu_jline_promise,
-                                                                 std::placeholders::_1,
-                                                                 std::placeholders::_2,
-                                                                 std::placeholders::_3,
-                                                                 std::placeholders::_4),
-                                                       20);
+        /* time = Collector<PointPromisingSynchronizer>::collect(std::bind(heat_cpu_point_promise, 
+                                                                           std::placeholders::_1,
+                                                                           std::placeholders::_2,
+                                                                           std::placeholders::_3,
+                                                                           std::placeholders::_4),
+                                                                  20); 
+        SynchronizationTimeCollector::__times[std::make_pair("PointPromisingSynchronizer", "heat_cpu_point_promise")].push_back(time);                                                          
+        */
 
-        Collector<IncreasingJLinePromisingSynchronizer>::collect("IncreasingJLinePromisingSynchronizer",
-                                                                std::bind(heat_cpu_increasing_jline_promise,
-                                                                          std::placeholders::_1,
-                                                                          std::placeholders::_2,
-                                                                          std::placeholders::_3,
-                                                                          std::placeholders::_4),
-                                                                20, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
+        time = Collector<BlockPromisingSynchronizer>::collect(std::bind(heat_cpu_block_promise, 
+                                                                        std::placeholders::_1,
+                                                                        std::placeholders::_2,
+                                                                        std::placeholders::_3,
+                                                                        std::placeholders::_4),
+                                                              20);
+        SynchronizationTimeCollector::__times[std::make_pair("BlockPromisingSynchronizer", "heat_cpu_block_promise")].push_back(time);
+
+        time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
+                                                                                  std::placeholders::_1,
+                                                                                  std::placeholders::_2,
+                                                                                  std::placeholders::_3,
+                                                                                  std::placeholders::_4),
+                                                                        20, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
+        SynchronizationTimeCollector::__times[std::make_pair("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise")].push_back(time);
+
+        time = Collector<JLinePromisingSynchronizer>::collect(std::bind(heat_cpu_jline_promise,
+                                                                        std::placeholders::_1,
+                                                                        std::placeholders::_2,
+                                                                        std::placeholders::_3,
+                                                                        std::placeholders::_4),
+                                                              20);
+        SynchronizationTimeCollector::__times[std::make_pair("JLinePromisingSynchronizer", "heat_cpu_jline_promise")].push_back(time);
+
+        time = Collector<IncreasingJLinePromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_jline_promise,
+                                                                                  std::placeholders::_1,
+                                                                                  std::placeholders::_2,
+                                                                                  std::placeholders::_3,
+                                                                                  std::placeholders::_4),
+                                                                        20, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
+        SynchronizationTimeCollector::__times[std::make_pair("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise")].push_back(time);
     }
+
+    static void print_times() {
+        for (auto const& p: __times) {
+            int count = 0;
+            for (uint64 const& time: p.second) {
+                lldiv_t result = lldiv(time, BILLION);
+                std::cout << count << p.first.first << " " << p.first.second << " " << result.quot << "." << result.rem << std::endl;
+                ++count;
+            }
+        }
+    }
+
+    static std::map<std::pair<std::string, std::string>, std::vector<uint64>> __times;
 };
+
+std::map<std::pair<std::string, std::string>, std::vector<uint64>> SynchronizationTimeCollector::__times;
 
 template<typename T>
 using Collector = SynchronizationTimeCollector::Collector<T>;
 
-int main() {
+int main(int argc, char** argv) {
     namespace g = Globals;
 
     srand((unsigned)time(nullptr));
 
     init_logging();
 
-    spdlog::get(Loggers::Names::global_logger)->info("Starting");
+    // spdlog::get(Loggers::Names::global_logger)->info("Starting");
+
+    std::cout << "// W X Y Z PromiseType" << std::endl <<
+                 "// " << g::DIM_W << " " << g::DIM_X << " " << g::DIM_Y << " " << g::DIM_Z << " " <<  to_string(g::PROMISE_TYPE) << std::endl;
 
     init_start_matrix_once();
     init_from_start_matrix(g_expected_matrix);
@@ -405,6 +385,8 @@ int main() {
         SynchronizationTimeCollector::collect_all();
     }
 
-    spdlog::get(Loggers::Names::global_logger)->info("Ending");
+    SynchronizationTimeCollector::print_times();
+
+    // spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
 }
