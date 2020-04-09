@@ -13,9 +13,13 @@ fi
 FILENAME=$(date "+%F_%T")
 FILENAME=${FILENAME//:/}
 
-if [[ -f ${FILENAME}.log ]]
+FULL_FILENAME=${FILENAME}.$(hostname).log
+
+if [[ -f $FULL_FILENAME ]]
 then
-	./sync > ${FILENAME}.log.$(expr 1 + $(ls -l ${FILENAME}.log.* | wc -l))
-else
-	./sync > ${FILENAME}.log
+	FULL_FILENAME=$FULL_FILENAME.$(expr 1 + $(ls -l $FULL_FILENAME.* | wc -l))
 fi
+
+
+echo "// OMP_NUM_THREADS=$OMP_NUM_THREADS" > $FULL_FILENAME
+echo 1 >> $FULL_FILENAME
