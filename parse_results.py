@@ -113,7 +113,7 @@ def compute_correlation_matrix(efficiencies):
             names.add(fullname)
 
     data = np.zeros((len(names), len(names)))
-    names_to_int = { n: i for n, i in zip(names, range(0, len(names))) }
+    names_to_int = { n: i for n, i in zip(names, range(len(names))) }
 
     for synchro in efficiencies:
         fns = efficiencies[synchro]
@@ -128,7 +128,7 @@ def compute_correlation_matrix(efficiencies):
                     data[names_to_int[fullname]][names_to_int[_fullname]] = comps[_synchro][_fn]
 
     np.set_printoptions(linewidth=100)
-    return names, data
+    return names_to_int, data
 
 def main():
     data = None
@@ -144,8 +144,13 @@ def main():
 
     efficiencies = compute_efficiency(results)
     names, matrix = compute_correlation_matrix(efficiencies)
-    print (names)
-    print (matrix)
+    # print (names)
+    ints_to_name = { names[name]: name for name in names }
+    print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]))
+    for i in range(len(names)):
+        print (",".join([ints_to_name[i]] + [str(j) for j in matrix[i]]))
+
+    # print (matrix)
 
 if __name__ == "__main__":
    main()

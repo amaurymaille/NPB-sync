@@ -22,4 +22,4 @@ fi
 
 
 echo "// OMP_NUM_THREADS=$OMP_NUM_THREADS" > $FULL_FILENAME
-echo 1 >> $FULL_FILENAME
+./sync >> $FULL_FILENAME
