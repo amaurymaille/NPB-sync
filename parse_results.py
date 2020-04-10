@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+
+import argparse
 import sys
 
 import numpy as np
@@ -130,27 +133,51 @@ def compute_correlation_matrix(efficiencies):
     np.set_printoptions(linewidth=100)
     return names_to_int, data
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Process logs produced by the sync application")
+
+    parser.add_argument("file", type=argparse.FileType(mode="r"), help="File to process", nargs="?")
+    parser.add_argument("-a", "--avg", action="store_true", help="Display average values")
+    parser.add_argument("--ratios", action="store_true", help="Compute ratios")
+    
+    csv_group = parser.add_mutually_exclusive_group()
+    csv_group.add_argument("--csv", action="store_true", help="Display ratios as CSV. No effect without --ratios")
+    csv_group.add_argument("--csv-dst", type=argparse.FileType(mode="w"), metavar="filename", help="Write ratios to file. No effect without --ratios")
+
+    result = parser.parse_args()
+    
+    return result
+
 def main():
+    args = parse_arguments()
+    print (args)
     data = None
 
-    if len(sys.argv) == 1:
+    if args.file is None:
         data = sys.stdin.readlines()
     else:
-        with open(sys.argv[1]) as f:
-            data = f.readlines()
+        data = args.file.readlines()
+        args.file.close()
 
     groups = group_results(data)
     results = process_groups(groups)
 
+    if args.avg:
+        print (results)
+
+    if not args.ratios:
+        return
+
     efficiencies = compute_efficiency(results)
     names, matrix = compute_correlation_matrix(efficiencies)
-    # print (names)
     ints_to_name = { names[name]: name for name in names }
-    print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]))
-    for i in range(len(names)):
-        print (",".join([ints_to_name[i]] + [str(j) for j in matrix[i]]))
 
-    # print (matrix)
+    if args.csv or args.csv_dst is not None:
+        output = sys.stdout if args.csv else args.csv_dst
+
+        print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]), file=output)
+        for i in range(len(names)):
+            print (",".join([ints_to_name[i]] + [str(j) for j in matrix[i]]), file=output)
 
 if __name__ == "__main__":
    main()

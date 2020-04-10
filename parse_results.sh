@@ -1,6 +1,6 @@
 #¡/bin/bash
 
-if [[ "$#" -ne 1 ]]
+if [[ "$#" -lt 1 ]]
 then
 	echo "Missing filename"
 	exit 1
@@ -12,4 +12,6 @@ then
 	exit 1
 fi
 
-grep -v '^//' "$1" | python3 parse_results.py
+FILENAME="$1"
+shift
+grep -v '^//' "$FILENAME" | python3 parse_results.py "$@"
