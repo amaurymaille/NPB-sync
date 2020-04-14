@@ -53,7 +53,7 @@ def main():
  * M. If N = 8 and DIM_X = 9, OMP_DIMX(0) = 2 and OMP_DIMX(M) = 1 for every other M.
  */
 
-namespace Globals {
+namespace Globals {{
     static const size_t DIM_W = {};
     static const size_t DIM_X = {};
     static const size_t DIM_Y = {};
@@ -72,7 +72,7 @@ namespace Globals {
     static const size_t NB_J_LINES_PER_ITERATION = DIM_Z;
     // How many lines parallel to the K axis on the (JK) face of a sub-cube
     static const size_t NB_K_LINES_PER_ITERATION = DIM_Y;
-}
+}}
 
 #endif // DYNAMIC_DEFINES_H
 """.format(args.dimw, args.dimx, args.dimy, args.dimz))

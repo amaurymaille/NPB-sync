@@ -14,9 +14,10 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -Wall -Wextra -Wno-sign-compare ${O
 add_definitions ("${CMAKE_ADDITIONAL_DEFINITIONS}")
 
 add_custom_command(OUTPUT config.h COMMAND python3 config_generator.py DEPENDS config.ini)
+add_custom_command(OUTPUT dynamic_defines.h COMMAND python3 generate_dynamic_defines.py)
 
 include_directories ("${SPDLOG_INCLUDE_DIR}")
-add_executable (sync functions.cpp sync.cpp utils.cpp config.h logging.cpp defines.cpp increase.cpp)
+add_executable (sync functions.cpp sync.cpp utils.cpp config.h logging.cpp defines.cpp increase.cpp dynamic_defines.h)
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (sync "${SPDLOG_LIBRARY}")
 endif (NOT SPDLOG_HEADER_ONLY)
