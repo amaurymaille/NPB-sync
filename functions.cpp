@@ -7,12 +7,8 @@
 
 #include "config.h"
 #include "functions.h"
+#include "increase.h"
 #include "utils.h"
-
-// 🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲🗲
-// Palpatine's worst nightmare
-static int limited_power(int base, int power, int limit);
-
 
 void heat_cpu(Matrix array, size_t m) {
     namespace g = Globals;
@@ -268,7 +264,7 @@ void heat_cpu_increasing_point_promise(Matrix array, size_t m,
     }; */
 
     // TODO: better way to do that ? More flexible maybe ?
-    int nb_elements_for_neighbor = m < g::INCREASING_POINTS_ITERATION_LIMIT ? std::pow(g::INCREASING_POINTS_BASE_POWER, m - 1) : g::NB_POINTS_PER_ITERATION;
+    int nb_elements_for_neighbor = nb_points_for_iteration(m);
     // std::vector<MatrixValue> values_for_neighbor;
     size_t values_ready = 0;
     int nb_vectors_filled = 0;
@@ -497,16 +493,4 @@ void heat_cpu_increasing_jline_promise(Matrix array, size_t m,
 
 void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&) {
 
-}
-
-int nb_points_for_iteration(int iteration) {
-    return iteration < g::INCREASING_POINTS_ITERATION_LIMIT ? 
-           std::pow(g::INCREASING_POINTS_BASE_POWER, iteration - 1) : 
-           g::NB_POINTS_PER_ITERATION;
-}
-
-int nb_jlines_for_iteration(int iteration) {
-    return iteration < g::INCREASING_LINES_ITERATION_LIMIT ?
-           std::pow(g::INCREASING_LINES_BASE_POWER, iteration - 1) :
-           g::NB_J_LINES_PER_ITERATION;
 }

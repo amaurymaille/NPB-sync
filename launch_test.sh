@@ -20,6 +20,15 @@ then
 	FULL_FILENAME=$FULL_FILENAME.$(expr 1 + $(ls -l $FULL_FILENAME.* | wc -l))
 fi
 
+if [[ ! -f sync ]]
+then
+    if [[ ! -f dynamic_defines.h ]]
+    then
+        python3 generate_dynamic_defines.h
+    fi
 
+    make
+fi
+ 
 echo "// OMP_NUM_THREADS=$OMP_NUM_THREADS" > $FULL_FILENAME
 ./sync >> $FULL_FILENAME
