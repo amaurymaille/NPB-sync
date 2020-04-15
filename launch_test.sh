@@ -10,7 +10,7 @@ then
 	fi
 fi
 
-FILENAME=$(date "+%F_%T")
+FILENAME=logs/$(date "+%F_%T")
 FILENAME=${FILENAME//:/}
 
 FULL_FILENAME=${FILENAME}.$(hostname).log
@@ -22,13 +22,9 @@ fi
 
 if [[ ! -f sync ]]
 then
-    if [[ ! -f dynamic_defines.h ]]
-    then
-        python3 generate_dynamic_defines.h
-    fi
-
-    make
+    make || exit 1
 fi
  
 echo "// OMP_NUM_THREADS=$OMP_NUM_THREADS" > $FULL_FILENAME
+cat increase.cpp | awk '{ print "//", $0 }' >> $FULL_FILENAME
 ./sync >> $FULL_FILENAME
