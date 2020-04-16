@@ -377,7 +377,7 @@ int main() {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
-    for (int i = 0; i < 100000; ++i) {
+    for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {
         SynchronizationTimeCollector::collect_all();
     }
 
