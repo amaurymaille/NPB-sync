@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <random>
 #include <string>
@@ -190,12 +191,104 @@ private:
 
 template<typename T>
 class PromisePlus {
+public:
+    PromisePlus(int num_threads, int nb_values) {
+        _ready_indexes.resize(num_threads);
+        _values.resize(nb_values);
+    }
 
+    T& get(int thread_id, int index) {
+#ifdef ACTIVE_PROMISES
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= index))
+            ;
+#else
+        std::unique_lock<std::mutex> lck(_locks[thread_id][index].first);
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= index))
+            _locks[thread_id][index].second.wait(lck);
+#endif
+        return _values[index];
+    }
+
+    std::unique_ptr<T[]> get_slice(int thread_id, int begin, int end, int step = 1) {
+        T* values = new T[(end - begin) / step + 1];
+
+#ifdef ACTIVE_PROMISES
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= end))
+            ;
+#else
+        std::unique_lock<std::mutex> lck(_locks[thread_id][end].first);
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= end))
+            _locks[thread_id][end].second.wait(lck);
+#endif
+        for (int i = begin; i < end; i += step)
+            values[i] = _values[i];
+
+        return std::unique_ptr<T[]>(values);
+    }
+
+    void set(int thread_id, int index, const T& value) {
+        assert(_ready_indexes[thread_id].load(std::memory_order_acquire) < index);
+
+        _values[index] = value;
+        
+#ifndef ACTIVE_PROMISES
+        std::unique_lock<std::mutex> lck(_locks[thread_id][index].first);
+#endif
+        _ready_indexes[thread_id].store(index, std::memory_order_release);
+#ifndef ACTIVE_PROMISES
+        _locks[thread_id][index].second.notify_one();
+#endif
+    }
+
+private:
+    std::vector<std::atomic<int>> _ready_indexes;
+    std::vector<T> _values;
+
+#ifndef ACTIVE_PROMISES
+    std::vector<std::map<int, std::pair<std::mutex, std::condition_variable>>> _locks;
+#endif
 };
 
 template<>
 class PromisePlus<void> {
+public:
+    PromisePlus() {
 
+    }
+
+    void get(int thread_id, int index) {
+#ifdef ACTIVE_PROMISES
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= index))
+            ;
+#else
+        std::unique_lock<std::mutex> lck(_locks[thread_id][index].first);
+        while (!(_ready_indexes[thread_id].load(std::memory_order_acquire) >= index))
+            _locks[thread_id][index].second.wait(lck);
+#endif
+    }
+
+    void get_slice(int thread_id, int begin, int end, int step) {
+        (void)begin;
+        (void)step;
+
+        get(thread_id, end);
+    }
+
+    void set(int thread_id, int index) {
+        assert(_ready_indexes[thread_id].load(std::memory_order_acquire) < index);
+
+        _ready_indexes[thread_id].store(index, std::memory_order_release);
+#ifndef ACTIVE_PROMISES
+        _locks[thread_id][index].second.notify_one();
+#endif
+    }
+
+private:
+    std::map<int, std::atomic<int>> _ready_indexes;
+
+#ifndef ACTIVE_PROMISES
+    std::vector<std::map<int, std::pair<std::mutex, std::condition_variable>>> _locks;
+#endif
 }; 
 
 template<typename R, typename Alloc>

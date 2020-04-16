@@ -256,6 +256,26 @@ public:
 using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 
+class PromisePlusSynchronizer : public Synchronizer {
+public:
+    PromisePlusSynchronizer() : Synchronizer() {
+
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            for (int m = 1; m < g::ITERATIONS; ++m) {
+                f(_matrix, std::forward<Args>(args)..., m, _promises_store[m]);
+            }
+        }
+    }
+
+private:
+    std::array<PromisePlus<void>, g::ITERATIONS> _promises_store;
+};
+
 template<class Synchronizer>
 class SynchronizationMeasurer {
 public:
@@ -339,6 +359,13 @@ public:
                                                                                   std::placeholders::_4),
                                                                         20, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
         SynchronizationTimeCollector::__times[std::make_pair("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise")].push_back(time);
+
+        time = Collector<PromisePlusSynchronizer>::collect(std::bind(heat_cpu_block_promise_plus, 
+                                                                     std::placeholders::_1,
+                                                                     std::placeholders::_2,
+                                                                     std::placeholders::_3));
+
+        SynchronizationTimeCollector::__times[std::make_pair("PromisePlusSynchronizer", "heat_cpu_block_promise_plus")].push_back(time);
     }
 
     static void print_times() {

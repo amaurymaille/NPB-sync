@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "defines.h"
+#include "utils.h"
 
 namespace g = Globals;
 
@@ -39,6 +40,6 @@ void heat_cpu_kline_promise(Matrix, size_t, KLinePromiseStore&, const KLinePromi
 void heat_cpu_increasing_jline_promise(Matrix, size_t, IncreasingJLinePromiseStore&, const IncreasingJLinePromiseStore&);
 void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&);
 
-void heat_cpu_promise_plus(Matrix, size_t, PromisePlusStore&, const PromisePlusStore&);
+void heat_cpu_block_promise_plus(Matrix, size_t, PromisePlus<void>&);
 
 #endif /* FUNCTIONS_H */
