@@ -188,6 +188,16 @@ private:
     std::atomic<bool> _moved;
 };
 
+template<typename T>
+class PromisePlus {
+
+};
+
+template<>
+class PromisePlus<void> {
+
+}; 
+
 template<typename R, typename Alloc>
 struct std::uses_allocator<ActivePromise<R>, Alloc> : std::true_type { };
 

@@ -23,6 +23,7 @@
 #include "config.h"
 #include "defines.h"
 #include "functions.h"
+#include "increase.h"
 #include "logging.h"
 #include "utils.h"
 
@@ -75,11 +76,11 @@ public:
         #pragma omp barrier
 
         for (int m = 1; m < g::ITERATIONS; m++) {
-            sync_left(thread_num, n_threads - 1, m);
+            sync_left(thread_num, n_threads - 1);
 
             f(_matrix, std::forward<Args>(args)..., m);
 
-            sync_right(thread_num, n_threads - 1, m);
+            sync_right(thread_num, n_threads - 1);
         }
     }
     }
@@ -94,7 +95,7 @@ private:
             _isync[i].store(false, std::memory_order_acq_rel);
     }
 
-    void sync_left(int thread_num, int n_threads, int i) {
+    void sync_left(int thread_num, int n_threads) {
         namespace g = Globals;
 
         if (thread_num > 0 && thread_num <= n_threads) {
@@ -110,7 +111,7 @@ private:
         }
     }
 
-    void sync_right(int thread_num, int n_threads, int i) {
+    void sync_right(int thread_num, int n_threads) {
         namespace g = Globals;
 
         if (thread_num < n_threads) {
@@ -156,7 +157,7 @@ public:
 
             f(_matrix, std::forward<Args>(args)..., m);
 
-            sync_right(thread_num, n_threads - 1, m);
+            sync_right(thread_num, n_threads - 1);
         }
     }
     }
@@ -184,7 +185,7 @@ private:
         }
     }
 
-    void sync_right(int thread_num, int n_threads, int i) {
+    void sync_right(int thread_num, int n_threads) {
         namespace g = Globals;
 
         if (thread_num < n_threads) {
@@ -359,7 +360,7 @@ std::map<std::pair<std::string, std::string>, std::vector<uint64>> Synchronizati
 template<typename T>
 using Collector = SynchronizationTimeCollector::Collector<T>;
 
-int main(int argc, char** argv) {
+int main() {
     namespace g = Globals;
 
     srand((unsigned)time(nullptr));

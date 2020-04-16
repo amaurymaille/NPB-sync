@@ -39,8 +39,6 @@ void heat_cpu_kline_promise(Matrix, size_t, KLinePromiseStore&, const KLinePromi
 void heat_cpu_increasing_jline_promise(Matrix, size_t, IncreasingJLinePromiseStore&, const IncreasingJLinePromiseStore&);
 void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&);
 
-int nb_points_for_iteration(int iteration);
-int nb_jlines_for_iteration(int iteration);
-int nb_klines_for_iteration(int iteration);
+void heat_cpu_promise_plus(Matrix, size_t, PromisePlusStore&, const PromisePlusStore&);
 
 #endif /* FUNCTIONS_H */

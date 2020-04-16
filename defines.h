@@ -74,7 +74,13 @@ using Promise = std::promise<T>;
 namespace Globals {
     static constexpr PromiseTypes PROMISE_TYPE = PromiseTypes::NATIVE;
 }
-#endif
+#endif // ACTIVE_PROMISES
+
+template<typename T>
+class PromisePlus;
+
+template<>
+class PromisePlus<void>;
 
 // Point synchronization
 typedef ThreadStore<std::array<Promise<void>, g::NB_POINTS_PER_ITERATION>> PointPromiseContainer;
@@ -102,6 +108,9 @@ typedef OptionalReference<IncreasingJLinePromiseContainer> IncreasingJLinePromis
 
 typedef IncreasingJLinePromiseContainer IncreasingKLinePromiseContainer;
 typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
+
+typedef ThreadStore<PromisePlus<void>> PromisePlusContainer;
+typedef OptionalReference<PromisePlusContainer> PromisePlusStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;

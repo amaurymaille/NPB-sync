@@ -13,9 +13,6 @@
 void heat_cpu(Matrix array, size_t m) {
     namespace g = Globals;
 
-    struct timespec begin, end;
-    clock_gettime(CLOCK_MONOTONIC, &begin);
-
     int* ptr = reinterpret_cast<int*>(array);
 
     #pragma omp for schedule(static) nowait
@@ -46,13 +43,6 @@ void heat_cpu(Matrix array, size_t m) {
             }
         }
     }
-
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    uint64 diff = clock_diff(&end, &begin);
-    lldiv_t d = lldiv(diff, BILLION);
-
-    /* if (omp_get_num_threads() != 1)
-        printf("[AltBit][Thread %d] Iteration %d took %d:%d seconds\n", omp_get_thread_num(), m, d.quot, d.rem); */
 }
 
 // In this version we switch the i / k and k / j loops, in order to complete a line before
@@ -145,7 +135,6 @@ void heat_cpu_point_promise(Matrix array, size_t m, PointPromiseStore& dst, cons
             }
 
             if (dst && last_i != -1) {
-                size_t pos = to1d(m, last_i, j, k);
                 // printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, last_i, j, k);
                 dst->get()[omp_get_thread_num() + 1][promise_pos].set_value(/* ptr[pos] */);
             }
@@ -157,7 +146,6 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     namespace g = Globals;
 
     int* ptr = reinterpret_cast<int*>(array);
-    bool used_values = false;
     int last_i = -1;
 
     uint64 diff = 0;
@@ -180,7 +168,7 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                int promise_pos = j * g::DIM_Z + k;
+                // int promise_pos = j * g::DIM_Z + k;
 
                 size_t n = to1d(m, i, j, k);
                 size_t nm1 = to1d(m, i - 1, j, k);
@@ -208,7 +196,6 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
             }
         }
 
-        used_values = true;
         last_i = i;
     }
 
@@ -326,7 +313,7 @@ void heat_cpu_increasing_point_promise(Matrix array, size_t m,
             }
 
             if (dst && last_i != -1) {
-                size_t pos = to1d(m, last_i, j, k);
+                // size_t pos = to1d(m, last_i, j, k);
                 // std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
                 std::vector<Promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
 
@@ -395,7 +382,10 @@ void heat_cpu_jline_promise(Matrix array, size_t m, JLinePromiseStore& dst, cons
 }
 
 void heat_cpu_kline_promise(Matrix array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
-
+    (void)array;
+    (void)m;
+    (void)dst;
+    (void)src;
 }
 
 void heat_cpu_increasing_jline_promise(Matrix array, size_t m, 

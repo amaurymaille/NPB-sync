@@ -58,6 +58,7 @@ std::string get_time_fmt(const char* fmt) {
 
     std::unique_ptr<char[]> res(new char[100]);
     std::size_t size = std::strftime(res.get(), 100, fmt, now_as_tm);
+    assert(size != 0);
 
     std::string result(res.get());
     return result;
