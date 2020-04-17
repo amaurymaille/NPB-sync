@@ -8,6 +8,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+#include <utility>
 
 #include "defines.h"
 
@@ -253,7 +254,16 @@ template<>
 class PromisePlus<void> {
 public:
     PromisePlus() {
+        for (auto& atomic: _ready_indexes)
+            atomic.store(-1, std::memory_order_release);
 
+#ifndef ACTIVE_PROMISES
+        for (auto& map: _locks) {
+            for (int i = 0; i < 10; ++i) {
+                map[i];
+            }
+        }
+#endif
     }
 
     void get(int thread_id, int index) {
@@ -279,15 +289,16 @@ public:
 
         _ready_indexes[thread_id].store(index, std::memory_order_release);
 #ifndef ACTIVE_PROMISES
-        _locks[thread_id][index].second.notify_one();
+        std::unique_lock<std::mutex> lck(_locks[thread_id][index].first);
+        _locks[thread_id][index].second.notify_all();
 #endif
     }
 
 private:
-    std::map<int, std::atomic<int>> _ready_indexes;
+    std::array<std::atomic<int>, 20> _ready_indexes;
 
 #ifndef ACTIVE_PROMISES
-    std::vector<std::map<int, std::pair<std::mutex, std::condition_variable>>> _locks;
+    std::array<std::map<int, std::pair<std::mutex, std::condition_variable>>, 20> _locks;
 #endif
 }; 
 

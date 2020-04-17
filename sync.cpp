@@ -336,13 +336,13 @@ public:
                                                               20);
         SynchronizationTimeCollector::__times[std::make_pair("BlockPromisingSynchronizer", "heat_cpu_block_promise")].push_back(time);
 
-        time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
+        /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
                                                                                   std::placeholders::_1,
                                                                                   std::placeholders::_2,
                                                                                   std::placeholders::_3,
                                                                                   std::placeholders::_4),
                                                                         20, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
-        SynchronizationTimeCollector::__times[std::make_pair("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise")].push_back(time);
+        SynchronizationTimeCollector::__times[std::make_pair("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise")].push_back(time); */
 
         time = Collector<JLinePromisingSynchronizer>::collect(std::bind(heat_cpu_jline_promise,
                                                                         std::placeholders::_1,
@@ -358,7 +358,7 @@ public:
                                                                                   std::placeholders::_3,
                                                                                   std::placeholders::_4),
                                                                         20, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
-        SynchronizationTimeCollector::__times[std::make_pair("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise")].push_back(time);
+        SynchronizationTimeCollector::__times[std::make_pair("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise")].push_back(time); 
 
         time = Collector<PromisePlusSynchronizer>::collect(std::bind(heat_cpu_block_promise_plus, 
                                                                      std::placeholders::_1,
@@ -396,8 +396,8 @@ int main() {
 
     // spdlog::get(Loggers::Names::global_logger)->info("Starting");
 
-    std::cout << "// W X Y Z PromiseType" << std::endl <<
-                 "// " << g::DIM_W << " " << g::DIM_X << " " << g::DIM_Y << " " << g::DIM_Z << " " <<  to_string(g::PROMISE_TYPE) << std::endl;
+    std::cout << "// W X Y Z Loops PromiseType" << std::endl <<
+                 "// " << g::DIM_W << " " << g::DIM_X << " " << g::DIM_Y << " " << g::DIM_Z << " " << g::NB_GLOBAL_LOOPS << " " << to_string(g::PROMISE_TYPE) << std::endl;
 
     init_start_matrix_once();
     init_from_start_matrix(g_expected_matrix);
