@@ -390,6 +390,11 @@ using Collector = SynchronizationTimeCollector::Collector<T>;
 int main() {
     namespace g = Globals;
 
+    if (!getenv("OMP_NUM_THREADS")) {
+        std::cerr << "OMP_NUM_THREADS not set. Abort." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
     srand((unsigned)time(nullptr));
 
     init_logging();
