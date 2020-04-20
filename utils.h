@@ -318,7 +318,7 @@ auto count_duration_cast(std::chrono::duration<R> const& tp) {
 size_t to1d(size_t w, size_t x, size_t y, size_t z);
 std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n);
 void init_matrix(int* ptr);
-void assert_okay_init(Matrix matrix);
+void assert_okay_init(Matrix const& matrix);
 std::string get_time_fmt(const char* fmt);
 const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
@@ -334,10 +334,10 @@ std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optio
     }
 }
 
-void assert_matrix_equals(Matrix lhs, Matrix rhs);
+void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs);
 
 void init_start_matrix_once();
-void init_from_start_matrix(Matrix);
+void init_from_start_matrix(Matrix&);
 
 void init_expected_matrix_once();
 

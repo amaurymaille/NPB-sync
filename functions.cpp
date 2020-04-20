@@ -10,10 +10,10 @@
 #include "increase.h"
 #include "utils.h"
 
-void heat_cpu(Matrix array, size_t m) {
+void heat_cpu(Matrix& array, size_t m) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
@@ -54,10 +54,10 @@ void heat_cpu(Matrix array, size_t m) {
 //
 // Switching the order of the loops will probably have dramatic consequences for 
 // cache coherency, so this has to be checked.
-void heat_cpu_switch_loops(Matrix array, size_t m) {
+void heat_cpu_switch_loops(Matrix& array, size_t m) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
@@ -91,10 +91,10 @@ void heat_cpu_switch_loops(Matrix array, size_t m) {
 
 namespace g = Globals;
 
-void heat_cpu_point_promise(Matrix array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
+void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
@@ -142,10 +142,10 @@ void heat_cpu_point_promise(Matrix array, size_t m, PointPromiseStore& dst, cons
     }
 }
 
-void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
+void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
     int last_i = -1;
 
     uint64 diff = 0;
@@ -229,14 +229,14 @@ void heat_cpu_block_promise(Matrix array, size_t m, BlockPromiseStore& dst, cons
     } */
 }
 
-void heat_cpu_increasing_point_promise(Matrix array, size_t m, 
+void heat_cpu_increasing_point_promise(Matrix& array, size_t m, 
                                       IncreasingPointPromiseStore& dst, 
                                       const IncreasingPointPromiseStore& src) {
     namespace g = Globals;
 
     // printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     auto all_promises = src ? std::make_optional(std::ref(src->get()[omp_get_thread_num()])) : std::nullopt;
 
@@ -339,10 +339,10 @@ void heat_cpu_increasing_point_promise(Matrix array, size_t m,
     // printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
 }
 
-void heat_cpu_jline_promise(Matrix array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
+void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         if (src)
@@ -381,19 +381,19 @@ void heat_cpu_jline_promise(Matrix array, size_t m, JLinePromiseStore& dst, cons
     }
 }
 
-void heat_cpu_kline_promise(Matrix array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
+void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
     (void)array;
     (void)m;
     (void)dst;
     (void)src;
 }
 
-void heat_cpu_increasing_jline_promise(Matrix array, size_t m, 
+void heat_cpu_increasing_jline_promise(Matrix& array, size_t m, 
                                        IncreasingJLinePromiseStore& dst, 
                                        const IncreasingJLinePromiseStore& src) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
     int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
 
     // How many lines before we synchronize with our left neighbor (next get), i.e
@@ -485,10 +485,10 @@ void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseSto
 
 }
 
-void heat_cpu_block_promise_plus(Matrix array, size_t m, PromisePlus<void>& promise) {
+void heat_cpu_block_promise_plus(Matrix& array, size_t m, PromisePlus<void>& promise) {
     namespace g = Globals;
 
-    int* ptr = reinterpret_cast<int*>(array);
+    int* ptr = array.data();
 
     int thread_num = omp_get_thread_num();
     if (thread_num)

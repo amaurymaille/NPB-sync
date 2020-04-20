@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <boost/multi_array.hpp>
+
 #include "dynamic_defines.h"
 
 #define assertM(C, M, ...) do { if (!C) { fprintf(stderr, M, __VA_ARGS__); assert(false); }} while (0);
@@ -37,8 +39,9 @@ typedef uint64_t uint64;
 
 namespace g = Globals;
 
-typedef int MatrixValue;
-typedef MatrixValue Matrix[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z];
+typedef boost::multi_array<int, 4> Matrix;
+typedef Matrix::element MatrixValue;
+// typedef MatrixValue Matrix[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z];
 
 template<typename T>
 using OptionalReference = std::optional<std::reference_wrapper<T>>;

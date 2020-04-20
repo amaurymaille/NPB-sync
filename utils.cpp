@@ -46,7 +46,7 @@ void init_matrix(int* ptr) {
     }
 }
 
-void assert_okay_init(Matrix matrix) {
+void assert_okay_init(Matrix const& matrix) {
     namespace g = Globals;
     assert_matrix_equals(matrix, g_start_matrix);
 }
@@ -91,16 +91,16 @@ uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
     return (a->tv_sec - b->tv_sec) * NANO + a->tv_nsec - b->tv_nsec;
 }
 
-void assert_matrix_equals(Matrix lhs, Matrix rhs) {
-    assert(memcmp(lhs, rhs, Globals::NB_ELEMENTS) == 0);
+void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
+    assert(memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) == 0);
 }
 
 void init_start_matrix_once() {
-    init_matrix(reinterpret_cast<int*>(g_start_matrix));
+    init_matrix(g_start_matrix.data());
 }
 
-void init_from_start_matrix(Matrix matrix) {
-    memcpy(matrix, g_start_matrix, Globals::NB_ELEMENTS * sizeof(MatrixValue));
+void init_from_start_matrix(Matrix& matrix) {
+    memcpy(matrix.data(), g_start_matrix.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue));
 }
 
 void init_expected_matrix_once() {

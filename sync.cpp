@@ -28,13 +28,14 @@
 #include "utils.h"
 
 using Clock = std::chrono::system_clock;
+namespace g = Globals;
 
 Matrix g_expected_matrix;
 Matrix g_start_matrix;
 
 class Synchronizer {
 protected:
-    Synchronizer() {
+    Synchronizer() : _matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]) {
         // init_matrix(reinterpret_cast<int*>(_matrix));
         init_from_start_matrix(_matrix);
         assert_okay_init(_matrix);
