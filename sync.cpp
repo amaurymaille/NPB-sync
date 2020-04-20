@@ -30,8 +30,8 @@
 using Clock = std::chrono::system_clock;
 namespace g = Globals;
 
-Matrix g_expected_matrix;
-Matrix g_start_matrix;
+Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
 class Synchronizer {
 protected:
