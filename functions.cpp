@@ -5,6 +5,7 @@
 
 #include <omp.h>
 
+#include "active_promise.h"
 #include "config.h"
 #include "functions.h"
 #include "increase.h"

@@ -20,6 +20,7 @@
 #include "measure-time.h"
 #include "spdlog/spdlog.h"
 
+#include "active_promise.h"
 #include "config.h"
 #include "defines.h"
 #include "functions.h"
