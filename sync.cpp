@@ -178,7 +178,7 @@ private:
             unsigned int sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
             // Wait for left neighbour to have finished its iteration
-            while (sync_state == i)
+            while (sync_state <= i)
                 sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
 
             // printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
