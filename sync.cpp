@@ -378,8 +378,8 @@ public:
                                                         std::placeholders::_1,
                                                         std::placeholders::_2,
                                                         std::placeholders::_3,
-                                                        std::placeholders::_3));
-        SynchronizationTimeCollector::add_time("JLinePromePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
+                                                        std::placeholders::_4));
+        SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
     }
 
     static void print_times() {

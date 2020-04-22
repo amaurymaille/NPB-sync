@@ -510,7 +510,7 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
     int thread_num = omp_get_thread_num();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
-        if (src)
+        if (thread_num)
             src->get()[thread_num - 1].get(k);
 
         for (int j = 1; j < g::DIM_Y; ++j) {            
@@ -541,7 +541,7 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
             }
         }
 
-        if (dst)
+        if (thread_num < omp_get_num_threads() - 1)
             dst->get()[thread_num].set(k);
     }
 }
