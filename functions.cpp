@@ -560,21 +560,18 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
     // How many lines we have processed since last synchronization with our right 
     // neighbor (next set), i;e when we have processed enough lines
     int processed_lines = 0;
-    // Total amount of lines we have processed to set the index in promises
-    int total_processed_lines = 0;
     // In practice, remaining_lines and processed_lines are mirrors : 
     // remaining_lines + processed_lines = nb_lines_for_neighbor. But it might
     // be interesting to change that, for example by increasing the amount of lines
     // we send to the neighbor as we progress.
 
-    // Somehow I'm convinced this is useful. Probably isn't.
-    int index = nb_lines_for_neighbor;
-
-
     int thread_num = omp_get_thread_num();
 
+    int prod_index = 0;
+    int cons_index = 0;
+
     if (thread_num)
-        remaining_lines = src->get()[thread_num - 1].get(nb_lines_for_neighbor);
+        remaining_lines = src->get()[thread_num - 1].get(0);
     else
         remaining_lines = nb_lines_for_neighbor;
 
@@ -610,11 +607,11 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
         ++processed_lines;
         --remaining_lines;
 
-        if (remaining_lines == 0) {
-            index += nb_lines_for_neighbor;
+        if (remaining_lines == 0 && k != g::DIM_Z - 1) {
+            if (thread_num) {
+                cons_index += processed_lines;
 
-            if (thread_num) { 
-                remaining_lines = src->get()[thread_num - 1].get(index);
+                remaining_lines = src->get()[thread_num - 1].get(cons_index);
             }
             else {
                 remaining_lines = nb_lines_for_neighbor;
@@ -622,16 +619,16 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
         }
 
         if (processed_lines == nb_lines_for_neighbor) {
-            total_processed_lines += processed_lines;
-            if (thread_num < omp_get_num_threads() - 1)
-                dst->get()[thread_num].set(total_processed_lines, processed_lines);
+            if (thread_num < omp_get_num_threads() - 1) {
+                dst->get()[thread_num].set(prod_index, processed_lines);
+                prod_index += processed_lines;
+            }
 
             processed_lines = 0;
         }
     }
 
-    if (remaining_lines != 0 && thread_num < omp_get_num_threads() - 1) {
-        total_processed_lines += processed_lines;
-        dst->get()[thread_num].set(total_processed_lines, processed_lines);
+    if (processed_lines != 0 && thread_num < omp_get_num_threads() - 1) {
+        dst->get()[thread_num].set(prod_index, processed_lines);
     }
 }
