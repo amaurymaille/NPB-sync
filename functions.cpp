@@ -494,7 +494,7 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore&
 
     int thread_num = omp_get_thread_num();
     if (thread_num)
-        src->get()[thread_num].get(m);
+        src->get()[thread_num - 1].get(m);
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
