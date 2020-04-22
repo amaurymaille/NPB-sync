@@ -79,6 +79,12 @@ namespace Globals {
 }
 #endif // ACTIVE_PROMISES
 
+template<typename T>
+class PromisePlus;
+
+template<>
+class PromisePlus<void>;
+
 // Point synchronization
 typedef ThreadStore<std::array<Promise<void>, g::NB_POINTS_PER_ITERATION>> PointPromiseContainer;
 typedef OptionalReference<PointPromiseContainer> PointPromiseStore;
@@ -105,6 +111,10 @@ typedef OptionalReference<IncreasingJLinePromiseContainer> IncreasingJLinePromis
 
 typedef IncreasingJLinePromiseContainer IncreasingKLinePromiseContainer;
 typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
+
+// Block PromisePlus synchronization
+typedef ThreadStore<PromisePlus<void>> BlockPromisePlusContainer;
+typedef OptionalReference<BlockPromisePlusContainer> BlockPromisePlusStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;

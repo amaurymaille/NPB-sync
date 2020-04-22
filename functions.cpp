@@ -9,6 +9,7 @@
 #include "config.h"
 #include "functions.h"
 #include "increase.h"
+#include "promise_plus.h"
 #include "utils.h"
 
 void heat_cpu(Matrix& array, size_t m) {
@@ -486,14 +487,14 @@ void heat_cpu_increasing_kline_promise(Matrix, size_t, IncreasingKLinePromiseSto
 
 }
 
-void heat_cpu_block_promise_plus(Matrix& array, size_t m, PromisePlus<void>& promise) {
+void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore& dst, const BlockPromisePlusStore& src) {
     namespace g = Globals;
 
     int* ptr = array.data();
 
     int thread_num = omp_get_thread_num();
     if (thread_num)
-        promise.get(thread_num - 1, m);
+        src->get()[thread_num].get(m);
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
@@ -525,5 +526,5 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, PromisePlus<void>& pro
     }
 
     if (thread_num != omp_get_num_threads() - 1)
-        promise.set(thread_num, m);
+        dst->get()[thread_num].set(m);
 }
