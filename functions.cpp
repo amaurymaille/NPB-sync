@@ -137,7 +137,6 @@ void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, con
             }
 
             if (dst && last_i != -1) {
-                // printf("[Thread %d] Setting value for promise %d (%d, %d, %d, %d)\n", omp_get_thread_num(), promise_pos, m, last_i, j, k);
                 dst->get()[omp_get_thread_num() + 1][promise_pos].set_value(/* ptr[pos] */);
             }
         }
@@ -150,21 +149,10 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
     int* ptr = array.data();
     int last_i = -1;
 
-    uint64 diff = 0;
-    lldiv_t d;
-
-    struct timespec begin, end;
-    clock_gettime(CLOCK_MONOTONIC, &begin);
     /* std::optional<std::vector<MatrixValue>*> values = 
         src ? std::make_optional(src->get()[omp_get_thread_num()].get_future().get()) : std::nullopt; */
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    d = lldiv(clock_diff(&end, &begin), BILLION);
-
-    // printf("Synchro|%d:%d\n", d.quot, d.rem);
-    
-    clock_gettime(CLOCK_MONOTONIC, &begin);
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
@@ -201,12 +189,6 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
         last_i = i;
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    diff = clock_diff(&end, &begin);
-    d = lldiv(diff, BILLION);
-    // printf("[Block][Thread %d] Iteration %d took %d:%d seconds\n", omp_get_thread_num(), m, d.quot, d.rem);
-
-    clock_gettime(CLOCK_MONOTONIC, &begin);
     if (dst && last_i != -1) {
         // printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
         /* std::vector<MatrixValue>* arr = new std::vector<MatrixValue>(g::NB_VALUES_PER_BLOCK);
@@ -220,10 +202,6 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
 
         dst->get()[omp_get_thread_num() + 1].set_value();
     }
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    d = lldiv(clock_diff(&end, &begin), BILLION);
-
-    // printf("Thread %d|Block|VectorFill|Iteration %d|%d:%d\n", omp_get_thread_num(), m, d.quot, d.rem);
 
 
     /* if (values) {
@@ -319,7 +297,6 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
                 // std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
                 std::vector<Promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
 
-                // printf("[Thread %d] Sending (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, last_i, j, k, ptr[pos]);
                 // values_for_neighbor.push_back(ptr[pos]);
                 values_ready++;
 
@@ -334,11 +311,8 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
     }
 
     if (/* values_for_neighbor.size() != 0 */ values_ready != 0) {
-        // printf("[Thread %d] Leaving iteration %d with vector not empty\n", omp_get_thread_num(), m);
         dst->get()[omp_get_thread_num() + 1][nb_vectors_filled].set_value(values_ready);
     }
-
-    // printf("[Thread %d] Finished iteration %d\n", omp_get_thread_num(), m);
 }
 
 void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
