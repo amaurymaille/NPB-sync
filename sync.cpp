@@ -260,19 +260,22 @@ public:
 using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 
-class BlockPromisePlusSynchronizer : public IterationPromisingSynchronizer<BlockPromisePlusContainer> {
+template<typename Store>
+class IterationPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
 public:
-    BlockPromisePlusSynchronizer(int n_threads, int nb_blocks, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) : 
-        IterationPromisingSynchronizer<BlockPromisePlusContainer>(n_threads) {
-        for (BlockPromisePlusContainer& container: this->_promises_store) {
+    IterationPromisePlusSynchronizer(int n_threads, int index_max, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) : 
+        IterationPromisingSynchronizer<Store>(n_threads) {
+        for (Store& container: this->_promises_store) {
             for (auto& promise: container) {
                 promise.set_wait_mode(wait_mode);
-                promise.set_max_index(nb_blocks);
+                promise.set_max_index(index_max);
             }
         }
     }
 };
 
+using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
+using JLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<JLinePromisePlusContainer>;
 
 template<class Synchronizer, class F, class... Args>
 static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
@@ -290,6 +293,9 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
 
 class SynchronizationTimeCollector {
 public:
+    static void add_time(std::string const& synchronizer, std::string const& function, uint64 time) {
+        SynchronizationTimeCollector::__times[std::make_pair(synchronizer, function)].push_back(time);
+    }
 
     static void collect_all() {
         // Fuck you OpenMP
@@ -304,19 +310,19 @@ public:
 
         AltBitSynchronizer altBit(n_threads);
         uint64 time = measure_time(altBit, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
-        SynchronizationTimeCollector::__times[std::make_pair("AltBitSynchronizer", "heat_cpu")].push_back(time);
+        SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu", time);
 
         IterationSynchronizer iterationSync(n_threads);
         time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
-        SynchronizationTimeCollector::__times[std::make_pair("IterationSynchronizer", "heat_cpu")].push_back(time);
+        SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu", time);
 
         AltBitSynchronizer altBitSwitchLoops(n_threads);
         time = measure_time(altBitSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
-        SynchronizationTimeCollector::__times[std::make_pair("AltBitSynchronizer", "heat_cpu_switch_loops")].push_back(time);
+        SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu_switch_loops", time);
 
         IterationSynchronizer iterationSyncSwitchLoops(n_threads);
         time = measure_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
-        SynchronizationTimeCollector::__times[std::make_pair("IterationSynchronizer", "heat_cpu_switch_loops")].push_back(time);
+        SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu_switch_loops", time);
 
         /* time = Collector<PointPromisingSynchronizer>::collect(std::bind(heat_cpu_point_promise, 
                                                                            std::placeholders::_1,
@@ -324,7 +330,7 @@ public:
                                                                            std::placeholders::_3,
                                                                            std::placeholders::_4),
                                                                   n_threads); 
-        SynchronizationTimeCollector::__times[std::make_pair("PointPromisingSynchronizer", "heat_cpu_point_promise")].push_back(time);                                                          
+        SynchronizationTimeCollector::add_time("PointPromisingSynchronizer", "heat_cpu_point_promise", time);                                                          
         */
 
         BlockPromisingSynchronizer blockPromise(n_threads);
@@ -333,7 +339,7 @@ public:
                                                     std::placeholders::_2,
                                                     std::placeholders::_3,
                                                     std::placeholders::_4));
-        SynchronizationTimeCollector::__times[std::make_pair("BlockPromisingSynchronizer", "heat_cpu_block_promise")].push_back(time);
+        SynchronizationTimeCollector::add_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", time);
 
         /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
                                                                                   std::placeholders::_1,
@@ -341,7 +347,7 @@ public:
                                                                                   std::placeholders::_3,
                                                                                   std::placeholders::_4),
                                                                         n_threads, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
-        SynchronizationTimeCollector::__times[std::make_pair("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise")].push_back(time); */
+        SynchronizationTimeCollector::add_time("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise", time); */
 
         JLinePromisingSynchronizer jLinePromise(n_threads);
         time = measure_time(jLinePromise, std::bind(heat_cpu_jline_promise,
@@ -349,7 +355,7 @@ public:
                                                     std::placeholders::_2,
                                                     std::placeholders::_3,
                                                     std::placeholders::_4));
-        SynchronizationTimeCollector::__times[std::make_pair("JLinePromisingSynchronizer", "heat_cpu_jline_promise")].push_back(time);
+        SynchronizationTimeCollector::add_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", time);
 
         IncreasingJLinePromisingSynchronizer increasingJLinePromise(n_threads, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
         time = measure_time(increasingJLinePromise, std::bind(heat_cpu_increasing_jline_promise,
@@ -357,7 +363,7 @@ public:
                                                               std::placeholders::_2,
                                                               std::placeholders::_3,
                                                               std::placeholders::_4));
-        SynchronizationTimeCollector::__times[std::make_pair("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise")].push_back(time); 
+        SynchronizationTimeCollector::add_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", time); 
 
         BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
         time = measure_time(blockPromisePlus, std::bind(heat_cpu_block_promise_plus, 
@@ -365,7 +371,15 @@ public:
                                                         std::placeholders::_2,
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
-        SynchronizationTimeCollector::__times[std::make_pair("PromisePlusSynchronizer", "heat_cpu_block_promise_plus")].push_back(time);
+        SynchronizationTimeCollector::add_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", time);
+
+        JLinePromisePlusSynchronizer jLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION);
+        time = measure_time(jLinePromisePlus, std::bind(heat_cpu_jline_promise_plus,
+                                                        std::placeholders::_1,
+                                                        std::placeholders::_2,
+                                                        std::placeholders::_3,
+                                                        std::placeholders::_3));
+        SynchronizationTimeCollector::add_time("JLinePromePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
     }
 
     static void print_times() {
