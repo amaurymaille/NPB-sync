@@ -7,6 +7,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 
@@ -31,9 +32,25 @@ private:
     std::uniform_int_distribution<IntType> _distribution;
 };
 
+class DeadlockDetector {
+public:
+    DeadlockDetector(uint64 limit);
+    void reset();
+    void run();
+    void stop();
+
+private:
+    uint64 _limit;
+    std::atomic<uint64> _tick;
+    std::atomic<bool> _running;
+};
+
 namespace Globals {
     extern RandomGenerator<unsigned int> sleep_generator;
     extern RandomGenerator<unsigned char> binary_generator;
+
+    extern DeadlockDetector deadlock_detector;
+    extern std::thread deadlock_detector_thread;
 }
 
 template<typename T, typename R>
@@ -50,6 +67,8 @@ const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
 void omp_debug();
 uint64 clock_diff(const struct timespec*, const struct timespec*);
+uint64 clock_to_ns(struct timespec const&);
+uint64 now_as_ns();
 
 template<typename T, typename F>
 std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optional<T> const& lhs, F const& fn) {

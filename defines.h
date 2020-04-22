@@ -18,7 +18,7 @@
 enum Tenths {
     TEN         = 10,
     HUNDRED     = TEN       * TEN,
-    THOUSAND    = HUNDRED   * 10,
+    THOUSAND    = HUNDRED   * TEN,
     MILLION     = THOUSAND  * THOUSAND,
     BILLION     = MILLION   * THOUSAND,
 };
@@ -30,9 +30,9 @@ enum SecondsTimes {
 };
 
 enum ToSecondsTimes {
-    MILLI   = THOUSAND,
-    MICRO   = MILLION,
-    NANO    = BILLION,
+    TO_MILLI   = THOUSAND,
+    TO_MICRO   = MILLION,
+    TO_NANO    = BILLION,
 };
 
 typedef uint64_t uint64;

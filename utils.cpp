@@ -88,7 +88,7 @@ void omp_debug() {
 
 // Computes a - b
 uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
-    return (a->tv_sec - b->tv_sec) * NANO + a->tv_nsec - b->tv_nsec;
+    return (a->tv_sec - b->tv_sec) * TO_NANO + a->tv_nsec - b->tv_nsec;
 }
 
 void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
@@ -106,5 +106,49 @@ void init_from_start_matrix(Matrix& matrix) {
 void init_expected_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
         heat_cpu(g_expected_matrix, i);
+    }
+}
+
+uint64 clock_to_ns(const struct timespec& clk) {
+    return clk.tv_sec * BILLION + clk.tv_nsec;
+}
+
+uint64 now_as_ns() {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    return clock_to_ns(now);
+}
+
+DeadlockDetector::DeadlockDetector(uint64 limit) : _limit(limit) {
+    _running.store(false, std::memory_order_relaxed);
+    _tick.store(0, std::memory_order_relaxed);
+}
+
+void DeadlockDetector::reset() {
+    _tick.store(now_as_ns(), std::memory_order_release);
+}
+
+void DeadlockDetector::stop() {
+    _running.store(false, std::memory_order_release);
+}
+
+void DeadlockDetector::run() {
+    if (_running.load(std::memory_order_relaxed)) {
+        throw std::runtime_error("Called run() on already running DeadlockDetector");
+    }
+
+    _running.store(true, std::memory_order_relaxed);
+
+    while (_running.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::nanoseconds(_limit));
+
+        uint64 last_tick = _tick.load(std::memory_order_acquire);
+        uint64 now = now_as_ns();
+
+        if (last_tick - now > _limit) {
+            std::cerr << "Deadlock detected, aborting" << std::endl;
+            std::terminate();
+        }
     }
 }

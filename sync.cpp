@@ -35,6 +35,12 @@ namespace g = Globals;
 Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
+namespace Globals {
+    // Abort if a **single** simulation takes more than one minute
+    DeadlockDetector deadlock_detector(1LL * MINUTES * TO_NANO);
+    std::thread deadlock_detector_thread;
+}
+
 class Synchronizer {
 protected:
     Synchronizer() : _matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]) {
@@ -302,6 +308,8 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
     synchronizer.run(f, std::forward<Args>(args)...);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
+    Globals::deadlock_detector.reset();
+
     synchronizer.assert_okay();
 
     uint64 diff = clock_diff(&end, &begin);
@@ -445,11 +453,14 @@ int main() {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
+    Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
     for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {
         SynchronizationTimeCollector::collect_all();
     }
 
     SynchronizationTimeCollector::print_times();
+    Globals::deadlock_detector.stop();
+    Globals::deadlock_detector_thread.join();
 
     // spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
