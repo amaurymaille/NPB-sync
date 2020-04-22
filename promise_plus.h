@@ -55,6 +55,10 @@ public:
 
     void set(int index, const T& value);
 
+    inline void set_nb_values(int nb_values) {
+        _values.resize(nb_values);
+    }
+
 private:
     std::vector<T> _values;
 };

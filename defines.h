@@ -122,7 +122,7 @@ typedef ThreadStore<PromisePlus<void>> JLinePromisePlusContainer;
 typedef OptionalReference<JLinePromisePlusContainer> JLinePromisePlusStore;
 
 // Increasing JLine PromisePlus synchronization
-typedef ThreadStore<std::vector<PromisePlus<size_t>>> IncreasingJLinePromisePlusContainer;
+typedef ThreadStore<PromisePlus<size_t>> IncreasingJLinePromisePlusContainer;
 typedef OptionalReference<IncreasingJLinePromisePlusContainer> IncreasingJLinePromisePlusStore;
 
 // The initial matrix

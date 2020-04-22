@@ -546,6 +546,92 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
     }
 }
 
-void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m, IncreasingJLinePromisePlusStore& dst, const IncreasingJLinePromisePlusStore& src) {
+void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m, 
+                                            IncreasingJLinePromisePlusStore& dst, 
+                                            const IncreasingJLinePromisePlusStore& src) {
+    namespace g = Globals;
 
+    int* ptr = array.data();
+    int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
+
+    // How many lines before we synchronize with our left neighbor (next get), i.e
+    // when we are out of lines to process
+    int remaining_lines = -1;
+    // How many lines we have processed since last synchronization with our right 
+    // neighbor (next set), i;e when we have processed enough lines
+    int processed_lines = 0;
+    // Total amount of lines we have processed to set the index in promises
+    int total_processed_lines = 0;
+    // In practice, remaining_lines and processed_lines are mirrors : 
+    // remaining_lines + processed_lines = nb_lines_for_neighbor. But it might
+    // be interesting to change that, for example by increasing the amount of lines
+    // we send to the neighbor as we progress.
+
+    // Somehow I'm convinced this is useful. Probably isn't.
+    int index = nb_lines_for_neighbor;
+
+
+    int thread_num = omp_get_thread_num();
+
+    if (thread_num)
+        remaining_lines = src->get()[thread_num - 1].get(nb_lines_for_neighbor);
+    else
+        remaining_lines = nb_lines_for_neighbor;
+
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        for (int j = 1; j < g::DIM_Y; ++j) {            
+            #pragma omp for schedule(static) nowait
+            for (int i = 1; i < g::DIM_X; ++i) {
+                size_t n = to1d(m, i, j, k);
+                size_t nm1 = to1d(m, i - 1, j, k);
+                size_t nm1j = to1d(m, i, j - 1, k);
+                size_t nm1m = to1d(m - 1, i, j, k);
+
+                int orig = ptr[n];
+                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
+
+                int result = orig + to_add;
+                ptr[n] = result;
+                
+                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
+                    // Sleep only in OMP parallel, speed up the sequential version
+                    if (omp_get_num_threads() != 1) {
+                        if (g::binary_generator()) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
+                        } else {
+                            std::this_thread::yield();
+                        }
+                    }
+                }
+            }
+        }
+
+        ++processed_lines;
+        --remaining_lines;
+
+        if (remaining_lines == 0) {
+            index += nb_lines_for_neighbor;
+
+            if (thread_num) { 
+                remaining_lines = src->get()[thread_num - 1].get(index);
+            }
+            else {
+                remaining_lines = nb_lines_for_neighbor;
+            }
+        }
+
+        if (processed_lines == nb_lines_for_neighbor) {
+            total_processed_lines += processed_lines;
+            if (thread_num < omp_get_num_threads() - 1)
+                dst->get()[thread_num].set(total_processed_lines, processed_lines);
+
+            processed_lines = 0;
+        }
+    }
+
+    if (remaining_lines != 0 && thread_num < omp_get_num_threads() - 1) {
+        total_processed_lines += processed_lines;
+        dst->get()[thread_num].set(total_processed_lines, processed_lines);
+    }
 }

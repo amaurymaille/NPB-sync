@@ -274,8 +274,25 @@ public:
     }
 };
 
+template<typename Store>
+class IterationValuesPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
+public:
+    IterationValuesPromisePlusSynchronizer(int n_threads, int nb_values, int index_max, 
+                                           PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) : 
+        IterationPromisingSynchronizer<Store>(n_threads) {
+        for (Store& container: this->_promises_store) {
+            for (auto& promise: container) {
+                promise.set_wait_mode(wait_mode);
+                promise.set_max_index(index_max);
+                promise.set_nb_values(nb_values);
+            }
+        }
+    }
+};
+
 using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
 using JLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<JLinePromisePlusContainer>;
+using IncreasingJLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingJLinePromisePlusContainer>;
 
 template<class Synchronizer, class F, class... Args>
 static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
@@ -380,6 +397,14 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
         SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
+
+        IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
+        time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_increasing_jline_promise_plus,
+                                                                  std::placeholders::_1,
+                                                                  std::placeholders::_2,
+                                                                  std::placeholders::_3,
+                                                                  std::placeholders::_4));
+        SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
     }
 
     static void print_times() {
