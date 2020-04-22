@@ -122,11 +122,11 @@ uint64 now_as_ns() {
 
 DeadlockDetector::DeadlockDetector(uint64 limit) : _limit(limit) {
     _running.store(false, std::memory_order_relaxed);
-    _tick.store(0, std::memory_order_relaxed);
+    _reset_count.store(0, std::memory_order_relaxed);
 }
 
 void DeadlockDetector::reset() {
-    _tick.store(now_as_ns(), std::memory_order_release);
+    _reset_count++;
 }
 
 void DeadlockDetector::stop() {
@@ -140,15 +140,20 @@ void DeadlockDetector::run() {
 
     _running.store(true, std::memory_order_relaxed);
 
+    uint64 time_since_reset = 0;
     while (_running.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(_limit));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
 
-        uint64 last_tick = _tick.load(std::memory_order_acquire);
-        uint64 now = now_as_ns();
+        if (_reset_count.load(std::memory_order_acquire) != 0) {
+            _reset_count.store(0, std::memory_order_release);
+            time_since_reset = 0;
+        } else {
+            time_since_reset += 5LL * TO_NANO;
 
-        if (last_tick - now > _limit) {
-            std::cerr << "Deadlock detected, aborting" << std::endl;
-            std::terminate();
+            if (time_since_reset > _limit) {
+                std::cerr << "Deadlock detected, aborting" << std::endl;
+                std::terminate();
+            }
         }
     }
 }

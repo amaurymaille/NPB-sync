@@ -41,7 +41,7 @@ public:
 
 private:
     uint64 _limit;
-    std::atomic<uint64> _tick;
+    std::atomic<unsigned int> _reset_count;
     std::atomic<bool> _running;
 };
 
