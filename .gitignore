@@ -1,0 +1,13 @@
+*.log
+*.log.*
+*.csv
+sync
+spdlog/*
+*.swp
+build/*
+CMakeCache.txt
+CMakeFiles/*
+.vscode/*
+cmake_install.cmake
+Makefile
+smart_promise/*
