@@ -46,6 +46,7 @@ typedef Matrix::element MatrixValue;
 template<typename T>
 using OptionalReference = std::optional<std::reference_wrapper<T>>;
 
+/// A vector of omp_get_num_threads() T
 template<typename T>
 using ThreadStore = std::vector<T>;
 
@@ -115,6 +116,14 @@ typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
 // Block PromisePlus synchronization
 typedef ThreadStore<PromisePlus<void>> BlockPromisePlusContainer;
 typedef OptionalReference<BlockPromisePlusContainer> BlockPromisePlusStore;
+
+// JLine PromisePlus synchronization
+typedef ThreadStore<PromisePlus<void>> JLinePromisePlusContainer;
+typedef OptionalReference<JLinePromisePlusContainer> JLinePromisePlusStore;
+
+// Increasing JLine PromisePlus synchronization
+typedef ThreadStore<std::vector<PromisePlus<size_t>>> IncreasingJLinePromisePlusContainer;
+typedef OptionalReference<IncreasingJLinePromisePlusContainer> IncreasingJLinePromisePlusStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;

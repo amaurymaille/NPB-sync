@@ -528,3 +528,50 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore&
     if (thread_num != omp_get_num_threads() - 1)
         dst->get()[thread_num].set(m);
 }
+
+void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore& dst, const JLinePromisePlusStore& src) {
+    namespace g = Globals;
+
+    int* ptr = array.data();
+    int thread_num = omp_get_thread_num();
+
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        if (src)
+            src->get()[thread_num - 1].get(k);
+
+        for (int j = 1; j < g::DIM_Y; ++j) {            
+            #pragma omp for schedule(static) nowait
+            for (int i = 1; i < g::DIM_X; ++i) {
+                size_t n = to1d(m, i, j, k);
+                size_t nm1 = to1d(m, i - 1, j, k);
+                size_t nm1j = to1d(m, i, j - 1, k);
+                size_t nm1m = to1d(m - 1, i, j, k);
+
+                int orig = ptr[n];
+                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
+                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
+
+                int result = orig + to_add;
+                ptr[n] = result;
+                
+                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
+                    // Sleep only in OMP parallel, speed up the sequential version
+                    if (omp_get_num_threads() != 1) {
+                        if (g::binary_generator()) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
+                        } else {
+                            std::this_thread::yield();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (dst)
+            dst->get()[thread_num].set(k);
+    }
+}
+
+void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m, IncreasingJLinePromisePlusStore& dst, const IncreasingJLinePromisePlusStore& src) {
+
+}
