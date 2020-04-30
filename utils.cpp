@@ -151,7 +151,7 @@ void DeadlockDetector::run() {
             time_since_reset += 5LL * TO_NANO;
 
             if (time_since_reset > _limit) {
-                std::cerr << "Deadlock detected, aborting" << std::endl;
+                std::cerr << "Deadlock detected, aborting (time since last reset: " << time_since_reset << ", limit: " << _limit << ")"  << std::endl;
                 std::terminate();
             }
         }
