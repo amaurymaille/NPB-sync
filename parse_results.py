@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import math
 import sys
 
 import numpy as np
@@ -38,8 +39,9 @@ def var(values, average=None):
 def compute_avg_var(values):
     average = avg(values)
     variance = var(values, average)
+    sigma = math.sqrt(variance)
 
-    return average, variance
+    return average, variance, sigma
 
 def process_groups(groups):
     results = {}
@@ -47,12 +49,12 @@ def process_groups(groups):
     for synchro in groups:
         for fn in groups[synchro]:
             times = groups[synchro][fn]
-            average, variance = compute_avg_var(times)
+            average, variance, sigma = compute_avg_var(times)
 
             if not synchro in results:
                 results[synchro] = {}
 
-            results[synchro][fn] = (average, variance)
+            results[synchro][fn] = (average, variance, sigma)
 
     return results
 
@@ -133,6 +135,58 @@ def compute_correlation_matrix(efficiencies):
     np.set_printoptions(linewidth=100)
     return names_to_int, data
 
+def display_avg(results):
+    longest_sync_len = -1
+    longest_fun_len = -1
+    longest_avg_len = -1
+    longest_var_len = -1
+    longest_sigma_len = -1
+
+    for synchro in results:
+        length = len(synchro)
+        if length > longest_sync_len:
+            longest_sync_len = length
+
+        for function in results[synchro]:
+            length = len(function)
+            if length > longest_fun_len:
+                longest_fun_len = length
+
+            avg, var, sigma = (str(x) for x in results[synchro][function])
+            length = len(avg)
+            if length > longest_avg_len:
+                longest_avg_len = length
+
+            length = len(var)
+            if length > longest_var_len:
+                longest_var_len = length
+            
+            length = len(sigma)
+            if length > longest_sigma_len:
+                longest_sigma_len = length
+
+    synchro = "Synchronization"
+    function = "Function"
+    avg = "Average"
+    var = "Variance"
+    sigma = "Deviation"
+    ratio = "Deviation / Average"
+
+    print (synchro, " " * (longest_sync_len - len(synchro) + 1), function, " " * (longest_fun_len - len(function) + 1), avg, " " * (longest_avg_len - len(avg) + 1), var, " " * (longest_var_len - len(var) + 1), sigma, " " * (longest_sigma_len - len(sigma) + 1), ratio, sep="")
+    
+    for synchro in results:
+        for function in results[synchro]:
+            _avg, _, _sigma = results[synchro][function]
+            avg, var, sigma = (str(x) for x in results[synchro][function])
+
+            remaining_sync_len = longest_sync_len - len(synchro)
+            remaining_fun_len = longest_fun_len - len(function)
+            remaining_avg_len = longest_avg_len - len(avg)
+            remaining_var_len = longest_var_len - len(var)
+            remaining_sigma_len = longest_sigma_len - len(sigma)
+
+            print (synchro, " " * (remaining_sync_len + 1), function, " " * (remaining_fun_len + 1), avg, " " * (remaining_avg_len + 1), var, " " * (remaining_var_len + 1), sigma, " " * (remaining_sigma_len + 1), _sigma / _avg, sep='')
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process logs produced by the sync application")
 
@@ -150,7 +204,6 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-    print (args)
     data = None
 
     if args.file is None:
@@ -163,7 +216,7 @@ def main():
     results = process_groups(groups)
 
     if args.avg:
-        print (results)
+        display_avg(results)
 
     if not args.ratios:
         return
