@@ -12,21 +12,29 @@ def positive_integer(helper, value):
     return int(value)
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Generate a dynamic_defines.h file with the given parameters")
+    parser = argparse.ArgumentParser(description="Generate a dynamic defines file with the given parameters")
 
     parser.add_argument("-w", "--dimw", help="Size of the problem (W dimension)", type=functools.partial(positive_integer, "W dimension"), default=8)
     parser.add_argument("-x", "--dimx", help="Size of the problem (X dimension)", type=functools.partial(positive_integer, "X dimension"), default=25)
     parser.add_argument("-y", "--dimy", help="Size of the problem (Y dimension)", type=functools.partial(positive_integer, "Y dimension"), default=30)
     parser.add_argument("-z", "--dimz", help="Size of the problem (Z dimension)", type=functools.partial(positive_integer, "Z dimension"), default=27)
     parser.add_argument("-l", "--loops", help="Number of global loops", type=functools.partial(positive_integer, "Global loops"), default=100000)
+    parser.add_argument("-f", "--file", help="File to which the configuration will be written", type=argparse.FileType("w"), required=True)
     
     return parser.parse_args()
 
 def main():
     args = parse_arguments()
 
-    with open("dynamic_defines.h", "w") as f:
-        f.write("""
+    print("""//Using these parameters:
+//    DIM_W = {}
+//    DIM_X = {}
+//    DIM_Y = {}
+//    DIM_Z = {}
+//    NB_GLOBAL_LOOPS = {}
+""".format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops))
+
+    print("""
 #ifndef DYNAMIC_DEFINES_H
 #define DYNAMIC_DEFINES_H
 
@@ -79,15 +87,7 @@ namespace Globals {{
 }}
 
 #endif // DYNAMIC_DEFINES_H
-""".format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops))
+""".format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops), file=args.file)
     
-    print("""Using these parameters:
-    DIM_W = {}
-    DIM_X = {}
-    DIM_Y = {}
-    DIM_Z = {}
-    NB_GLOBAL_LOOPS = {}
-""".format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops))
-
 if __name__ == "__main__":
     main()

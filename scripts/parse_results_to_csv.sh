@@ -12,4 +12,4 @@ then
 	exit 1
 fi
 
-grep -v '^//' "$1" | python3 parse_results.py > "${1/.log/.csv}"
+grep -v '^//' "$1" | python3 parse_results.py --ratios --csv-dst "${1/.log/.csv}"

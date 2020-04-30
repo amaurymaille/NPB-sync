@@ -2,7 +2,7 @@ find_path (SPDLOG_INCLUDE_DIR
   NAMES
     spdlog/spdlog.h
   PATHS
-    ${CMAKE_SOURCE_DIR}/spdlog/include
+    ${CMAKE_SOURCE_DIR}/lib/spdlog/include
     /usr/include
 )
 
@@ -11,6 +11,6 @@ if (NOT SPDLOG_HEADER_ONLY)
     NAMES
       libspdlog spdlog
     PATHS
-      ${CMAKE_SOURCE_DIR}/spdlog/build
+      ${CMAKE_SOURCE_DIR}/lib/spdlog/build
   )
 endif (NOT SPDLOG_HEADER_ONLY)

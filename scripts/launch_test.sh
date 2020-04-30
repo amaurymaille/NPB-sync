@@ -20,10 +20,7 @@ then
 	FULL_FILENAME=$FULL_FILENAME.$(expr 1 + $(ls -l $FULL_FILENAME.* | wc -l))
 fi
 
-if [[ ! -f sync ]]
-then
-    make || exit 1
-fi
+make -j 6
  
 echo "// OMP_NUM_THREADS=$OMP_NUM_THREADS" > $FULL_FILENAME
 cat increase.cpp | awk '{ print "//", $0 }' >> $FULL_FILENAME
