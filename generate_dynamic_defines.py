@@ -80,6 +80,14 @@ namespace Globals {{
 
 #endif // DYNAMIC_DEFINES_H
 """.format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops))
+    
+    print("""Using these parameters:
+    DIM_W = {}
+    DIM_X = {}
+    DIM_Y = {}
+    DIM_Z = {}
+    NB_GLOBAL_LOOPS = {}
+""".format(args.dimw, args.dimx, args.dimy, args.dimz, args.loops))
 
 if __name__ == "__main__":
     main()
