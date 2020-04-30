@@ -37,7 +37,7 @@ Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
 namespace Globals {
     // Abort if a **single** simulation takes more than one minute
-    DeadlockDetector deadlock_detector(1LL * MINUTES * TO_NANO);
+    DeadlockDetector deadlock_detector(2LL * MINUTES * TO_NANO);
     std::thread deadlock_detector_thread;
 }
 
@@ -310,7 +310,7 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
 
     Globals::deadlock_detector.reset();
 
-    synchronizer.assert_okay();
+    // synchronizer.assert_okay();
 
     uint64 diff = clock_diff(&end, &begin);
     return diff;
@@ -333,21 +333,31 @@ public:
             }
         }
 
+        uint64 time = 0;
+    
+        {
         AltBitSynchronizer altBit(n_threads);
-        uint64 time = measure_time(altBit, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
+        time = measure_time(altBit, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
         SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu", time);
+        }
 
+        {
         IterationSynchronizer iterationSync(n_threads);
         time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
         SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu", time);
+        }
 
+        /* {
         AltBitSynchronizer altBitSwitchLoops(n_threads);
         time = measure_time(altBitSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
         SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu_switch_loops", time);
+        } */
 
+        /* {
         IterationSynchronizer iterationSyncSwitchLoops(n_threads);
         time = measure_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
         SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu_switch_loops", time);
+        } */
 
         /* time = Collector<PointPromisingSynchronizer>::collect(std::bind(heat_cpu_point_promise, 
                                                                            std::placeholders::_1,
@@ -358,6 +368,7 @@ public:
         SynchronizationTimeCollector::add_time("PointPromisingSynchronizer", "heat_cpu_point_promise", time);                                                          
         */
 
+        {
         BlockPromisingSynchronizer blockPromise(n_threads);
         time = measure_time(blockPromise, std::bind(heat_cpu_block_promise, 
                                                     std::placeholders::_1,
@@ -365,6 +376,7 @@ public:
                                                     std::placeholders::_3,
                                                     std::placeholders::_4));
         SynchronizationTimeCollector::add_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", time);
+        }
 
         /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
                                                                                   std::placeholders::_1,
@@ -374,6 +386,7 @@ public:
                                                                         n_threads, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
         SynchronizationTimeCollector::add_time("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise", time); */
 
+        {
         JLinePromisingSynchronizer jLinePromise(n_threads);
         time = measure_time(jLinePromise, std::bind(heat_cpu_jline_promise,
                                                     std::placeholders::_1,
@@ -381,7 +394,9 @@ public:
                                                     std::placeholders::_3,
                                                     std::placeholders::_4));
         SynchronizationTimeCollector::add_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", time);
+        }
 
+        {
         IncreasingJLinePromisingSynchronizer increasingJLinePromise(n_threads, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
         time = measure_time(increasingJLinePromise, std::bind(heat_cpu_increasing_jline_promise,
                                                               std::placeholders::_1,
@@ -389,7 +404,9 @@ public:
                                                               std::placeholders::_3,
                                                               std::placeholders::_4));
         SynchronizationTimeCollector::add_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", time); 
+        }
 
+        {
         BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
         time = measure_time(blockPromisePlus, std::bind(heat_cpu_block_promise_plus, 
                                                         std::placeholders::_1,
@@ -397,7 +414,9 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
         SynchronizationTimeCollector::add_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", time);
+        }
 
+        {
         JLinePromisePlusSynchronizer jLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION);
         time = measure_time(jLinePromisePlus, std::bind(heat_cpu_jline_promise_plus,
                                                         std::placeholders::_1,
@@ -405,7 +424,9 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
         SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
+        }
 
+        {
         IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
         time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_increasing_jline_promise_plus,
                                                                   std::placeholders::_1,
@@ -413,6 +434,7 @@ public:
                                                                   std::placeholders::_3,
                                                                   std::placeholders::_4));
         SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
+        }
     }
 
     static void print_times() {
