@@ -11,3 +11,5 @@ CMakeFiles/*
 cmake_install.cmake
 Makefile
 smart_promise/*
+src/config.h
+src/dynamic_defines.h
