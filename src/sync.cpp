@@ -36,7 +36,7 @@ Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z])
 Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
 namespace Globals {
-    // Abort if a **single** simulation takes more than one minute
+    // Abort if a **single** simulation takes more than the given time
     DeadlockDetector deadlock_detector(2LL * MINUTES * TO_NANO);
     std::thread deadlock_detector_thread;
 }
@@ -515,11 +515,6 @@ std::map<std::pair<std::string, std::string>, std::vector<uint64>> Synchronizati
 
 int main(int argc, char** argv) {
     namespace g = Globals;
-
-    for (int i = 0; i < argc; ++i)
-        std::cout << argv[i] << std::endl;
-
-    return 0;
 
     if (!getenv("OMP_NUM_THREADS")) {
         std::cerr << "OMP_NUM_THREADS not set. Abort." << std::endl;

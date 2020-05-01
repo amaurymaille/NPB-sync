@@ -32,6 +32,10 @@ public:
 
 protected:
     int _max_index;
+    /* Index of the last get() we received.
+     * If a get asks for a lower index, get() returns immediately.
+     */
+    int _last_ready_index;
     PromisePlusWaitMode _wait_mode;
 
     std::atomic<int> _ready_index;

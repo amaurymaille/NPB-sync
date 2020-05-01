@@ -6,12 +6,14 @@ PromisePlusBase::PromisePlusBase() {
     _max_index = -1;
     _wait_mode = DEFAULT_WAIT_MODE;
     _ready_index.store(-1, std::memory_order_release);
+    _last_ready_index = -1;
 }
 
 PromisePlusBase::PromisePlusBase(int max_index, PromisePlusWaitMode wait_mode) {
     _max_index = max_index;
     _wait_mode = wait_mode;
     _ready_index.store(-1, std::memory_order_release);
+    _last_ready_index = -1;
 
     init_locks();
 }
@@ -39,6 +41,9 @@ PromisePlus<void>::PromisePlus(int max_index, PromisePlusWaitMode wait_mode) : P
 }
 
 void PromisePlus<void>::get(int index) {
+    if (index <= _last_ready_index)
+        return;
+
     if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
         while (!(_ready_index.load(std::memory_order_acquire) >= index))
             ;
@@ -47,6 +52,8 @@ void PromisePlus<void>::get(int index) {
         while (!(_ready_index.load(std::memory_order_acquire) >= index))
             _locks[index].second.wait(lck);
     }
+    
+    _last_ready_index = _ready_index.load(std::memory_order_acquire);
 }
 
 void PromisePlus<void>::get_slice(int begin, int end, int step) {
