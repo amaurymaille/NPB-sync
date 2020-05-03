@@ -71,7 +71,7 @@ def generate_ssh_command_for(machine, simulation):
     if simulation._promise_kind == "active":
         ssh_command += "-DACTIVE_PROMISES"
 
-    ssh_command += (" .. && cd ../scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} " + " ".join([ "--" + sync for sync in simulation._synchronizers ])).format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads)
+    ssh_command += (" .. && cd ../scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} " + " ".join([ "--" + sync for sync in simulation._synchronizers ]) + " && cd && rm -rf {}").format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads, dirname)
 
     return ssh_command
  
