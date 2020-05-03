@@ -34,9 +34,7 @@ def parse_args():
     return parser.parse_args()
 
 def run(threads, synchronizations, directory):
-    print (synchronizations)
     synchronizations = [ "--" + sync for sync in synchronizations ]
-    print (synchronizations)
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     hostname = socket.gethostname()
     log_file = open(os.path.expanduser("~/logs/{}.{}.log".format(now, hostname)), "w")
