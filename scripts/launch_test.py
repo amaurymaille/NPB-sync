@@ -50,7 +50,7 @@ def run(threads, synchronizations, directory):
     cat = subprocess.Popen(["cat", "../src/increase.cpp"], stdout=subprocess.PIPE)
     subprocess.run(["awk", "{print \"//\", $0 }"], stdout=log_file, stdin=cat.stdout)
 
-    subprocess.Popen(["../src/sync"] + synchronizations, stdout=log_file).wait()
+    subprocess.Popen(["./src/sync"] + synchronizations, stdout=log_file).wait()
 
     log_file.close()
 
