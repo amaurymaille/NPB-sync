@@ -78,8 +78,8 @@ def main():
     print("\tINIReader _reader;", file=output_file)
     print("", file=output_file)
 
-    print("\tConfig() : _reader(\"config.ini\") {", file=output_file)
-    print("\t\tif (_reader.ParseError() < 0) {\n\t\t\tstd::cerr << \"Error while parsing file config.ini\" << std::endl;\n\t\t}", file=output_file)
+    print("\tConfig() : _reader(\"{}\") {{".format(args.source.name), file=output_file)
+    print("\t\tif (_reader.ParseError() < 0) {{\n\t\t\tstd::cerr << \"Error while parsing file {}\" << std::endl;\n\t\t}}".format(args.source.name), file=output_file)
 
     for section, key, elem_type in all_elements:
         fn = None
