@@ -37,7 +37,7 @@ Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
 namespace Globals {
     // Abort if a **single** simulation takes more than the given time
-    DeadlockDetector deadlock_detector(2LL * MINUTES * TO_NANO);
+    DeadlockDetector deadlock_detector(10LL * MINUTES * TO_NANO);
     std::thread deadlock_detector_thread;
 }
 

@@ -93,13 +93,15 @@ def perform_run(run):
 async def perform_simulation_async(machine, simulation):
     ssh_command = generate_ssh_command_for(machine, simulation)
     process = await asyncio.create_subprocess_exec("ssh", machine, ssh_command)
-    await process.wait()
+    return process
 
 async def perform_run_async(run):
     machine = run._machine
 
     for simulation in run._simulations:
-        await perform_simulation_async(machine, simulation)
+        process = await perform_simulation_async(machine, simulation)
+        await process.wait()
+        time.sleep(1)
 
 async def perform_runs_local_sequentiality(runs):
     simulations_coros = []
