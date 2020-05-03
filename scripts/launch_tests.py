@@ -9,6 +9,7 @@ import pprint
 import shlex
 import socket
 import subprocess
+import time
 
 def assert_is_int(value):
     assert type(value) == type(0)
@@ -68,16 +69,16 @@ def perform_run(run):
     processes = []
 
     for simulation in run._simulations:
-        dirname = os.path.expanduser("~/NPB-sync") + "/{}.{}".format(socket.gethostname(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
-        ssh_command = "mkdir {} && cd {} && git clone git@github.com:amaurymaille/NPB-sync.git && mkdir build && cd build && cmake -DCMAKE_ADDITIONAL_DEFINITIONS=".format(dirname, dirname)
+        dirname = os.path.expanduser("~/NPB-sync") + "/{}.{}".format(machine, datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+        ssh_command = "mkdir {} && cd {} && git clone git@github.com:amaurymaille/NPB-sync.git && cd NPB-sync && mkdir build && cd build && cmake -DSPDLOG_INCLUDE_DIR={} -DSPDLOG_LIBRARY={} -DCMAKE_ADDITIONAL_DEFINITIONS=".format(dirname, dirname, os.path.expanduser("~/NPB-sync/spdlog/include"), os.path.expanduser("~/NPB-sync/spdlog/build/libspdlog.a"))
         if simulation._promise_kind == "active":
             ssh_command += "-DACTIVE_PROMISES"
 
-        ssh_command += (" .. && cd ../scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} " + " ".join([ "--" + sync for sync in simulation._synchronizers ])).format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, os.path.expanduser("~/NPB-sync/NPB-sync/build/src"), simulation._threads)
+        ssh_command += (" .. && cd ../scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} " + " ".join([ "--" + sync for sync in simulation._synchronizers ])).format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads)
         
-        # print ("ssh", shlex.quote(machine), shlex.quote(ssh_command))
         process = subprocess.Popen(["ssh", machine, ssh_command], shell=False)
         processes += [ process ]
+        time.sleep(1)
         # print (ssh_command)
 
     return processes

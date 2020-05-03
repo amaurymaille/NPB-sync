@@ -47,10 +47,10 @@ def run(threads, synchronizations, directory):
 
     log_file.write("// OMP_NUM_THREADS={}\n".format(threads))
     log_file.flush()
-    cat = subprocess.Popen(["cat", "increase.cpp"], stdout=subprocess.PIPE)
+    cat = subprocess.Popen(["cat", "../src/increase.cpp"], stdout=subprocess.PIPE)
     subprocess.run(["awk", "{print \"//\", $0 }"], stdout=log_file, stdin=cat.stdout)
 
-    subprocess.Popen(["./sync"] + synchronizations, stdout=log_file).wait()
+    subprocess.Popen(["../src/sync"] + synchronizations, stdout=log_file).wait()
 
     log_file.close()
 
