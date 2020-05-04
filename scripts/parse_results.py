@@ -118,6 +118,7 @@ def compute_correlation_matrix(efficiencies):
             names.add(fullname)
 
     data = np.zeros((len(names), len(names)))
+    data.fill(1.0)
     names_to_int = { n: i for n, i in zip(names, range(len(names))) }
 
     for synchro in efficiencies:
@@ -197,6 +198,7 @@ def parse_arguments():
     csv_group = parser.add_mutually_exclusive_group()
     csv_group.add_argument("--csv", action="store_true", help="Display ratios as CSV. No effect without --ratios")
     csv_group.add_argument("--csv-dst", type=argparse.FileType(mode="w"), metavar="filename", help="Write ratios to file. No effect without --ratios")
+    csv_group.add_argument("--csv-auto-rename", action="store_true", help="Output ratios to a .csv file named input_file[:-3] + .csv. No effect without --ratios. Ignored if input is stdin.")
 
     result = parser.parse_args()
     
@@ -226,8 +228,14 @@ def main():
     names, matrix = compute_correlation_matrix(efficiencies)
     ints_to_name = { names[name]: name for name in names }
 
-    if args.csv or args.csv_dst is not None:
-        output = sys.stdout if args.csv else args.csv_dst
+    if args.csv or args.csv_dst is not None or args.csv_auto_rename:
+        output = None 
+        if args.file is None or args.csv:
+            output = sys.stdout 
+        elif args.csv_dst:
+            output = csv_dst
+        else: # args.file is not None, not args.csv, not args.csv_dst -> args.csv_auto_rename
+            output = open(args.file.name[:-4] + ".csv", "w")
 
         print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]), file=output)
         for i in range(len(names)):
