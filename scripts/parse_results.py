@@ -212,6 +212,7 @@ def main():
         data = args.file.readlines()
         args.file.close()
 
+    data = filter(lambda s: not s.startswith("//"), data)
     groups = group_results(data)
     results = process_groups(groups)
 
