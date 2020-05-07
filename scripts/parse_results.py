@@ -192,13 +192,13 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Process logs produced by the sync application")
 
     parser.add_argument("file", type=argparse.FileType(mode="r"), help="File to process", nargs="?")
-    parser.add_argument("-a", "--avg", action="store_true", help="Display average values")
+    parser.add_argument("-a", "--avg", action="store_true", help="Compute average values")
     parser.add_argument("--ratios", action="store_true", help="Compute ratios")
     
     csv_group = parser.add_mutually_exclusive_group()
-    csv_group.add_argument("--csv", action="store_true", help="Display ratios as CSV. No effect without --ratios")
-    csv_group.add_argument("--csv-dst", type=argparse.FileType(mode="w"), metavar="filename", help="Write ratios to file. No effect without --ratios")
-    csv_group.add_argument("--csv-auto-rename", action="store_true", help="Output ratios to a .csv file named input_file[:-3] + .csv. No effect without --ratios. Ignored if input is stdin.")
+    csv_group.add_argument("--csv", action="store_true", help="Display ratios and/or averages as CSV. No effect without --ratios or --avg")
+    csv_group.add_argument("--csv-dst", type=argparse.FileType(mode="w"), metavar="filename", help="Write ratios and/or averages to file. No effect without --ratios or --avg")
+    csv_group.add_argument("--csv-auto-rename", action="store_true", help="Output ratios and/or averages to a .csv file named input_file[:-3] + .csv. No effect without --ratios or --avg. Ignored if input is stdin.")
 
     result = parser.parse_args()
     
@@ -218,15 +218,8 @@ def main():
     groups = group_results(data)
     results = process_groups(groups)
 
-    if args.avg:
-        display_avg(results)
-
-    if not args.ratios:
+    if not args.ratios and not args.avg:
         return
-
-    efficiencies = compute_efficiency(results)
-    names, matrix = compute_correlation_matrix(efficiencies)
-    ints_to_name = { names[name]: name for name in names }
 
     if args.csv or args.csv_dst is not None or args.csv_auto_rename:
         output = None 
@@ -237,9 +230,24 @@ def main():
         else: # args.file is not None, not args.csv, not args.csv_dst -> args.csv_auto_rename
             output = open(args.file.name[:-4] + ".csv", "w")
 
-        print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]), file=output)
-        for i in range(len(names)):
-            print (",".join([ints_to_name[i]] + [str(j) for j in matrix[i]]), file=output)
+        if args.avg:
+            print ("Synchronization, Function, Average, Variance, Deviation, Deviation / Average", file=output)
+            for synchro in results:
+                for function in results[synchro]:
+                    avg, var, dev = (str(x) for x in results[synchro][function])
+                    ratio = str(float(dev) / float(avg))
+                    print (synchro, function, avg, var, dev, ratio, sep=",", file=output)
+
+            print ("", file=output)
+
+        if args.ratios:
+            efficiencies = compute_efficiency(results)
+            names, matrix = compute_correlation_matrix(efficiencies)
+            ints_to_name = { names[name]: name for name in names }
+
+            print (",".join([""] + [ "\"{}\"".format(name.replace(" ", "\n")) for name in names ]), file=output)
+            for i in range(len(names)):
+                print (",".join([ints_to_name[i]] + [str(j) for j in matrix[i]]), file=output)
 
 if __name__ == "__main__":
    main()

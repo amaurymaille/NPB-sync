@@ -18,7 +18,7 @@ def add_synchronization(parser, name, help_msg):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the program with the given parameters")
-    parser.add_argument("-t", "--threads", help="Number of OpenMP threads", type=int, nargs="?", default=8)
+    parser.add_argument("-t", "--threads", help="Number of OpenMP threads", required=True, type=int, nargs="?", default=8)
     parser.add_argument("-d", "--directory", required=True, help="Directory in which to run the program", type=is_path)
     add_synchronization(parser, "--sequential", "Run sequential program")
     add_synchronization(parser, "--alt-bit", "Run with alternate bit synchronizer")
