@@ -17,13 +17,13 @@ namespace Globals {
 
 namespace g = Globals;
 
-int nb_points_for_iteration(int iteration) {
+int nb_points_for(int iteration, int i, int j, int k) {
     return iteration < g::INCREASING_POINTS_ITERATION_LIMIT ? 
            std::pow(g::INCREASING_POINTS_BASE_POWER, iteration - 1) : 
            g::NB_POINTS_PER_ITERATION;
 }
 
-int nb_jlines_for_iteration(int iteration) {
+int nb_jlines_for(int iteration, int k) {
     return iteration < g::INCREASING_LINES_ITERATION_LIMIT ?
            std::pow(g::INCREASING_LINES_BASE_POWER, iteration - 1) :
            g::NB_J_LINES_PER_ITERATION;

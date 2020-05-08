@@ -231,7 +231,7 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
     }; */
 
     // TODO: better way to do that ? More flexible maybe ?
-    int nb_elements_for_neighbor = nb_points_for_iteration(m);
+    int nb_elements_for_neighbor = nb_points_for(m, 0, 0, 0);
     // std::vector<MatrixValue> values_for_neighbor;
     size_t values_ready = 0;
     int nb_vectors_filled = 0;
@@ -370,10 +370,9 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
     namespace g = Globals;
 
     int* ptr = array.data();
-    int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
 
-    // How many lines before we synchronize with our left neighbor (next get), i.e
-    // when we are out of lines to process
+    // How many lines before we synchronize with our left neighbor (next get). Synchronization
+    // occurs when this reaches 0.
     int remaining_lines = -1;
     // Which promise holds the number of lines we need to compute before synchronizing
     // with left neighbor
@@ -381,19 +380,14 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
     // Which promise holds the number of lines the right neighbor will need to process
     // before synchronizing with us
     int dst_promise_index = 0;
-    // How many lines we have processed since last synchronization with our right 
-    // neighbor (next set), i;e when we have processed enough lines
+    // How many lines we have processed since the last time we synced (either right
+    // or left because we sync with both usually).
     int processed_lines = 0;
-
-    // In practice, remaining_lines and processed_lines are mirrors : 
-    // remaining_lines + processed_lines = nb_lines_for_neighbor. But it might
-    // be interesting to change that, for example by increasing the amount of lines
-    // we send to the neighbor as we progress.
 
     if (src)
         remaining_lines = src->get()[omp_get_thread_num()][src_promise_index].get_future().get();
     else
-        remaining_lines = nb_lines_for_neighbor;
+        remaining_lines = nb_jlines_for(m, 0);;
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         for (int j = 1; j < g::DIM_Y; ++j) {            
@@ -424,13 +418,13 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
             }
         }
 
-        ++processed_lines;
         --remaining_lines;
+        ++processed_lines;
 
         if (remaining_lines == 0) {
             ++src_promise_index;
 
-            if (src) { 
+            if (src && k != g::DIM_Z - 1) { 
                 auto& promises_array = src->get()[omp_get_thread_num()];
                 if (src_promise_index < promises_array.size())
                     remaining_lines = promises_array[src_promise_index].get_future().get();
@@ -438,15 +432,13 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
                     remaining_lines = -1;
             }
             else
-                remaining_lines = nb_lines_for_neighbor;
-        }
+                remaining_lines = nb_jlines_for(m, k + 1);
 
-        if (processed_lines == nb_lines_for_neighbor) {
             if (dst)
                 dst->get()[omp_get_thread_num() + 1][dst_promise_index].set_value(processed_lines);
 
-            ++dst_promise_index;
             processed_lines = 0;
+            ++dst_promise_index;
         }
     }
 
@@ -552,7 +544,6 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
     namespace g = Globals;
 
     int* ptr = array.data();
-    int nb_lines_for_neighbor = nb_jlines_for_iteration(m);
 
     // How many lines before we synchronize with our left neighbor (next get), i.e
     // when we are out of lines to process
@@ -560,10 +551,6 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
     // How many lines we have processed since last synchronization with our right 
     // neighbor (next set), i;e when we have processed enough lines
     int processed_lines = 0;
-    // In practice, remaining_lines and processed_lines are mirrors : 
-    // remaining_lines + processed_lines = nb_lines_for_neighbor. But it might
-    // be interesting to change that, for example by increasing the amount of lines
-    // we send to the neighbor as we progress.
 
     int thread_num = omp_get_thread_num();
 
@@ -573,7 +560,7 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
     if (thread_num)
         remaining_lines = src->get()[thread_num - 1].get(0);
     else
-        remaining_lines = nb_lines_for_neighbor;
+        remaining_lines = nb_jlines_for(m, 0);
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         for (int j = 1; j < g::DIM_Y; ++j) {            
@@ -614,11 +601,9 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
                 remaining_lines = src->get()[thread_num - 1].get(cons_index);
             }
             else {
-                remaining_lines = nb_lines_for_neighbor;
+                remaining_lines = nb_jlines_for(0, k + 1);
             }
-        }
 
-        if (processed_lines == nb_lines_for_neighbor) {
             if (thread_num < omp_get_num_threads() - 1) {
                 dst->get()[thread_num].set(prod_index, processed_lines);
                 prod_index += processed_lines;

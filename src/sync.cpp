@@ -279,12 +279,13 @@ public:
     IncreasingIterationPromisingSynchronizer(int n, F&& f, size_t MAX) : IterationPromisingSynchronizer<Store>(n) {
         for (int i = 1; i < this->_promises_store.size(); ++i) {
             Store& container = this->_promises_store[i];
-            int nb_elements_for_synchronization = f(i);
-            int nb_promises = MAX / nb_elements_for_synchronization;
 
-            if (nb_promises * nb_elements_for_synchronization < MAX) {
-                ++nb_promises;
-                assert(nb_promises * nb_elements_for_synchronization >= MAX);
+            int nb_promises = 0;
+
+            for (int k = 0; k < MAX; ) {
+                int nb_elements_for_synchronization = f(i, k);
+                nb_promises++;
+                k += nb_elements_for_synchronization;
             }
 
             for (int j = 0; j < container.size(); j++) {
@@ -426,7 +427,7 @@ public:
         if (authorized._iteration) {
             IterationSynchronizer iterationSync(n_threads);
             time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
-            SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu", time);
+            SynchronizationTimeCollector::add_time("CounterSynchronizer", "heat_cpu", time);
         }
 
         /* {
@@ -481,7 +482,7 @@ public:
         }
 
         if (authorized._increasing_jline) {
-            IncreasingJLinePromisingSynchronizer increasingJLinePromise(n_threads, &nb_jlines_for_iteration, g::NB_J_LINES_PER_ITERATION);
+            IncreasingJLinePromisingSynchronizer increasingJLinePromise(n_threads, nb_jlines_for, g::NB_J_LINES_PER_ITERATION);
             time = measure_time(increasingJLinePromise, std::bind(heat_cpu_increasing_jline_promise,
                                                                   std::placeholders::_1,
                                                                   std::placeholders::_2,
