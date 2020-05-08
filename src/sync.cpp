@@ -228,6 +228,7 @@ class IterationPromisingSynchronizer : public Synchronizer {
 public:
     IterationPromisingSynchronizer(int n) : Synchronizer() {
         _promises_store.reserve(g::ITERATIONS);
+        _times[0] = 0;
 
         for (int i = 0; i < g::ITERATIONS; ++i)
             _promises_store.push_back(T(n));
@@ -545,7 +546,7 @@ public:
                 int iter = 0;
                 for (uint64 const& time: times) {
                     lldiv_t result = lldiv(time, BILLION);
-                    std::cout << "// " << count << " " << iter << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                    std::cout << "// " << count << " " << iter << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
                     iter++;
                 }
                 count++;
@@ -590,6 +591,7 @@ int main(int argc, char** argv) {
     }
 
     SynchronizationTimeCollector::print_times();
+    SynchronizationTimeCollector::print_iterations_times();
     Globals::deadlock_detector.stop();
     Globals::deadlock_detector_thread.join();
 
