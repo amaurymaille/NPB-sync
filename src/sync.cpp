@@ -487,7 +487,7 @@ public:
             SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
         }
 
-        if (authorized._jline_plus) {
+        if (authorized._increasing_jline_plus) {
             IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_increasing_jline_promise_plus,
                                                                       std::placeholders::_1,
