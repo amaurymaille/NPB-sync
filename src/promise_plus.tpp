@@ -12,6 +12,9 @@ PromisePlus<T>::PromisePlus(int nb_values, int max_index, PromisePlusWaitMode wa
 
 template<typename T>
 T& PromisePlus<T>::get(int index) {
+    if (_last_ready_index <= index)
+        return _values[index];
+
     if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
         while (!(_ready_index.load(std::memory_order_acquire) >= index))
             ;
@@ -20,6 +23,8 @@ T& PromisePlus<T>::get(int index) {
         while (!(_ready_index.load(std::memory_order_acquire) >= index))
             _locks[index].second.wait(lck);
     }
+
+    _last_ready_index = _ready_index.load(std::memory_order_acquire);
 
     return _values[index];
 }

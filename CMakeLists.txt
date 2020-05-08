@@ -14,13 +14,14 @@ set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -Wall -Wextra -Wno-sign-compare ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")
 add_definitions ("${CMAKE_ADDITIONAL_DEFINITIONS}")
 
-add_custom_command(OUTPUT config.h COMMAND python3 config_generator.py DEPENDS config.ini)
-add_custom_command(OUTPUT dynamic_defines.h COMMAND python3 generate_dynamic_defines.py)
+include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}" lib/ src/)
 
-include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}")
-add_executable (sync functions.cpp sync.cpp utils.cpp config.h logging.cpp defines.cpp increase.cpp dynamic_defines.h active_promise.cpp promise_plus.cpp)
-if (NOT SPDLOG_HEADER_ONLY)
-    target_link_libraries (sync "${SPDLOG_LIBRARY}")
-endif (NOT SPDLOG_HEADER_ONLY)
+add_subdirectory (src)
 
-target_link_libraries (sync)
+#add_executable (sync src/functions.cpp src/sync.cpp src/utils.cpp src/config.h src/logging.cpp src/defines.cpp src/increase.cpp src/dynamic_defines.h src/active_promise.cpp src/promise_plus.cpp)
+
+#if (NOT SPDLOG_HEADER_ONLY)
+#    target_link_libraries (sync "${SPDLOG_LIBRARY}")
+#endif (NOT SPDLOG_HEADER_ONLY)
+
+# target_link_libraries (sync)
