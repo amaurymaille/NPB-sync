@@ -40,6 +40,7 @@ class Run:
             assert_are_ints(self._dimw, self._dimx, self._dimy, self._dimz, self._loops)
 
             self._synchronizers = json_data["synchronizers"]
+            self._increase_file = None if not "increase-file" in json_data else json_data["increase-file"]
 
     def __init__(self, json_data):
         self._machine = json_data["machine"]
@@ -67,12 +68,11 @@ def decode_to_runs(data):
 
 def generate_ssh_command_for(machine, simulation):
     dirname = os.path.expanduser("~/NPB-sync") + "/{}.{}".format(machine, datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
-    ssh_command = "mkdir {} && cd {} && git clone git@github.com:amaurymaille/NPB-sync.git && cd NPB-sync && mkdir build && cd build && cmake -DSPDLOG_INCLUDE_DIR={} -DSPDLOG_LIBRARY={} -DCMAKE_ADDITIONAL_DEFINITIONS=".format(dirname, dirname, os.path.expanduser("~/NPB-sync/spdlog/include"), os.path.expanduser("~/NPB-sync/spdlog/build/libspdlog.a"))
-    if simulation._promise_kind == "active":
-        ssh_command += "-DACTIVE_PROMISES"
+    ssh_command = "mkdir {} && cd {} && git clone git@github.com:amaurymaille/NPB-sync.git && cd NPB-sync && mkdir build && ".format(dirname, dirname)
 
-    ssh_command += (" .. && cd ../scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} " + " ".join([ "--" + sync for sync in simulation._synchronizers ]) + " && cd && rm -rf {}").format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads, dirname)
+    ssh_command += ("cd scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} {} {}" + " ".join([ "--" + sync for sync in simulation._synchronizers ]) + " && cd && rm -rf {}").format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads, "--active" if simulation._promise_kind == "active" else "--passive", "" if simulation._increase_file is None else "--increase-file {}".format(simulation._increase_file), dirname)
 
+    print (ssh_command)
     return ssh_command
  
 def perform_simulation(machine, simulation):

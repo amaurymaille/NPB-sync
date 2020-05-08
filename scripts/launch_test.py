@@ -9,7 +9,7 @@ import subprocess
 
 def is_path(path):
     if not os.path.exists(path):
-        raise RuntimeError("Directory {} does not exist".format(path))
+        raise RuntimeError("File {} does not exist".format(path))
 
     return path
 
@@ -20,6 +20,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the program with the given parameters")
     parser.add_argument("-t", "--threads", help="Number of OpenMP threads", required=True, type=int, nargs="?", default=8)
     parser.add_argument("-d", "--directory", required=True, help="Directory in which to run the program", type=is_path)
+    promise_mode = parser.add_mutually_exclusive_group(required=True)
+    promise_mode.add_argument("--active", help="Use active promises", action="store_true")
+    promise_mode.add_argument("--passive", help="Use passive promises", action="store_true")
+
+    parser.add_argument("--spdlog-include", help="spdlog include directory", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/include"))
+    parser.add_argument("--spdlog-lib", help="spdlog library file", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/build/libspdlog.a"))
+    parser.add_argument("--increase-file", help="CPP file used for the definition of the increase functions", type=is_path)
+
     add_synchronization(parser, "--sequential", "Run sequential program")
     add_synchronization(parser, "--alt-bit", "Run with alternate bit synchronizer")
     add_synchronization(parser, "--iteration", "Run with iteration synchronizer")
@@ -33,7 +41,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def run(threads, synchronizations, directory):
+def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active, increase_file):
     synchronizations = [ "--" + sync for sync in synchronizations ]
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     hostname = socket.gethostname()
@@ -41,6 +49,17 @@ def run(threads, synchronizations, directory):
 
     os.chdir(os.path.expanduser(directory))
 
+    cmake_command = ["cmake"]
+    if active:
+        cmake_command += ["-DCMAKE_ADDITIONAL_DEFINITIONS=-DACTIVE_PROMISES"]
+
+    cmake_command += ["-DSPDLOG_INCLUDE_DIR={}".format(spdlog_include), "-DSPDLOG_LIBRARY={}".format(spdlog_lib]
+
+    if increase_file:
+        cmake_command += ["-DSYNC_INCREASE_FILE={}".format(increase_file)]
+
+    cmake_command += [".."]
+    
     subprocess.Popen(["make", "-j", "6"]).wait()
 
     os.putenv("OMP_NUM_THREADS", str(threads))
@@ -72,7 +91,7 @@ def main():
         for synchronization in syncs:
             add_sync_if_exists(synchronizations, args, synchronization)
 
-    run(threads, synchronizations, directory)
+    run(threads, synchronizations, directory, args.spdlog_include, args.spdlog_lib, args.active, args.incrase_file)
 
 if __name__ == "__main__":
     main()
