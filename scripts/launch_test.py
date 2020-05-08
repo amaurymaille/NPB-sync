@@ -53,7 +53,7 @@ def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active
     if active:
         cmake_command += ["-DCMAKE_ADDITIONAL_DEFINITIONS=-DACTIVE_PROMISES"]
 
-    cmake_command += ["-DSPDLOG_INCLUDE_DIR={}".format(spdlog_include), "-DSPDLOG_LIBRARY={}".format(spdlog_lib]
+    cmake_command += ["-DSPDLOG_INCLUDE_DIR={}".format(spdlog_include), "-DSPDLOG_LIBRARY={}".format(spdlog_lib)]
 
     if increase_file:
         cmake_command += ["-DSYNC_INCREASE_FILE={}".format(increase_file)]
