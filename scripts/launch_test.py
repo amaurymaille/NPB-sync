@@ -60,6 +60,7 @@ def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active
 
     cmake_command += [".."]
     
+    subprocess.Popen(cmake_command).wait()
     subprocess.Popen(["make", "-j", "6"]).wait()
 
     os.putenv("OMP_NUM_THREADS", str(threads))
