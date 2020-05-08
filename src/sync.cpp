@@ -529,9 +529,25 @@ public:
         for (auto const& p: __times) {
             int count = 0;
             for (uint64 const& time: p.second) {
+                // Do not add the leading zeros the decimal part, because it is way too complicated to do in this god awful language
                 lldiv_t result = lldiv(time, BILLION);
-                std::cout << count << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << result.rem << std::endl;
+                std::cout << count << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
                 ++count;
+            }
+        }
+    }
+
+    static void print_iterations_times() {
+        for (auto const& p: __iterations_times) {
+            int count = 0;
+            for (std::array<uint64, g::ITERATIONS> const& times: p.second) {
+                int iter = 0;
+                for (uint64 const& time: times) {
+                    lldiv_t result = lldiv(time, BILLION);
+                    std::cout << "// " << count << " " << iter << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                    iter++;
+                }
+                count++;
             }
         }
     }

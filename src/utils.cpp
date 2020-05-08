@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <sstream>
 #include <string>
 #include <tuple>
 
@@ -155,5 +156,22 @@ void DeadlockDetector::run() {
                 std::terminate();
             }
         }
+    }
+}
+
+std::string ns_with_leading_zeros(uint64 ns) {
+    std::ostringstream str;
+    str << ns;
+
+    if (str.str().size() < 9) {
+        std::ostringstream prepend;
+        for (int i = 0; i < 9 - str.str().size(); ++i)
+            prepend << "0";
+        
+        prepend << str.str();
+
+        return prepend.str();
+    } else {
+        return str.str();
     }
 }

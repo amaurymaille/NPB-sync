@@ -69,6 +69,8 @@ void omp_debug();
 uint64 clock_diff(const struct timespec*, const struct timespec*);
 uint64 clock_to_ns(struct timespec const&);
 uint64 now_as_ns();
+// Add the leading zeros to ns
+std::string ns_with_leading_zeros(uint64 ns);
 
 template<typename T, typename F>
 std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optional<T> const& lhs, F const& fn) {
