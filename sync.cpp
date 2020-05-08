@@ -257,7 +257,8 @@ public:
             }
 
             for (int j = 0; j < container.size(); j++) {
-                container[j].resize(nb_promises);
+                std::vector<typename Store::value_type::value_type> v(nb_promises);
+                container[j] = std::move(v);
             }
         }
     }
