@@ -235,19 +235,36 @@ public:
 
     template<typename F, typename... Args>
     void run(F&& f, Args&&... args) {
+        struct timespec begin, end;
         #pragma omp parallel
         {
-            for (int m = 1; m < g::ITERATIONS; ++m) {
+            for (int m = 1; m < g::ITERATIONS; ++m) {                
                 auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
                 auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
 
+                #pragma omp master
+                {
+                    clock_gettime(CLOCK_MONOTONIC, &begin);
+                }
+
                 f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
+                #pragma omp master
+                {
+                    clock_gettime(CLOCK_MONOTONIC, &end);
+                    uint64 diff = clock_diff(&end, &begin);
+                    _times[m] = diff;
+                }
             }
         }
     }
 
+    std::array<uint64, g::ITERATIONS> const& get_iterations_times() const {
+        return _times;
+    }
+
 protected:
     std::vector<T> _promises_store;
+    std::array<uint64, g::ITERATIONS> _times;
 };
 
 using PointPromisingSynchronizer = IterationPromisingSynchronizer<PointPromiseContainer>;
@@ -377,6 +394,10 @@ public:
         SynchronizationTimeCollector::__times[std::make_pair(synchronizer, function)].push_back(time);
     }
 
+    static void add_iterations_time(std::string const& synchronizer, std::string const& function, std::array<uint64, g::ITERATIONS> const& times) {
+        SynchronizationTimeCollector::__iterations_times[std::make_pair(synchronizer, function)].push_back(times);
+    }
+
     static void collect_all(AuthorizedSynchronizers const& authorized) {
         // Fuck you OpenMP
         int n_threads = -1;
@@ -437,6 +458,7 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
             SynchronizationTimeCollector::add_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", time);
+            SynchronizationTimeCollector::add_iterations_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", blockPromise.get_iterations_times());
         }
 
         /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
@@ -455,6 +477,7 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
             SynchronizationTimeCollector::add_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", time);
+            SynchronizationTimeCollector::add_iterations_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", jLinePromise.get_iterations_times());
         }
 
         if (authorized._increasing_jline) {
@@ -465,6 +488,7 @@ public:
                                                                   std::placeholders::_3,
                                                                   std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", time); 
+            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", increasingJLinePromise.get_iterations_times()); 
         }
 
         if (authorized._block_plus) {
@@ -475,6 +499,7 @@ public:
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", blockPromisePlus.get_iterations_times());
         }
 
         if (authorized._jline_plus) {
@@ -485,6 +510,7 @@ public:
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._increasing_jline_plus) {
@@ -495,6 +521,7 @@ public:
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", increasingJLinePromisePlus.get_iterations_times());
         }
     }
 
@@ -510,9 +537,11 @@ public:
     }
 
     static std::map<std::pair<std::string, std::string>, std::vector<uint64>> __times;
+    static std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::ITERATIONS>>> __iterations_times;
 };
 
 std::map<std::pair<std::string, std::string>, std::vector<uint64>> SynchronizationTimeCollector::__times;
+std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::ITERATIONS>>> SynchronizationTimeCollector::__iterations_times;
 
 int main(int argc, char** argv) {
     namespace g = Globals;
