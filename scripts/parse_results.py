@@ -18,8 +18,9 @@ def group_results(data):
             times_by_fns[fn] = []
 
         times = times_by_fns[fn]
-        seconds, nanoseconds = time.split(".")
-        times += [float(seconds) + (int(nanoseconds) / 1000000000)]
+        # seconds, nanoseconds = time.split(".")
+        # times += [float(seconds) + (int(nanoseconds) / 1000000000)]
+        times += [float(time)]
 
     return times_by_fns_by_syncs
 
