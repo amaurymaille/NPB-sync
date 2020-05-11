@@ -151,9 +151,9 @@ private:
     }
 };
 
-class IterationSynchronizer : public Synchronizer {
+class CounterSynchronizer : public Synchronizer {
 public:
-    IterationSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
+    CounterSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
     
     }
 
@@ -299,6 +299,7 @@ public:
 
 using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
+using IncreasingKLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingKLinePromiseContainer>;
 
 template<typename Store>
 class IterationPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
@@ -332,7 +333,9 @@ public:
 
 using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
 using JLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<JLinePromisePlusContainer>;
+using KLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<KLinePromisePlusContainer>;
 using IncreasingJLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingJLinePromisePlusContainer>;
+using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingKLinePromisePlusContainer>;
 
 template<class Synchronizer, class F, class... Args>
 static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
@@ -353,39 +356,78 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
 struct AuthorizedSynchronizers {
     bool _sequential = false;
     bool _alt_bit = false;
-    bool _iteration = false;
+    bool _counter = false;
     bool _block = false;
     bool _block_plus = false;
     bool _jline = false;
     bool _jline_plus = false;
     bool _increasing_jline = false;
     bool _increasing_jline_plus = false;
+    bool _kline = false;
+    bool _kline_plus = false;
+    bool _increasing_kline = false;
+    bool _increasing_kline_plus = false;
+
+    bool set(const char* sync, const char* expected, bool& res) {
+        if (strcmp(sync, expected) == 0) {
+            res = true;
+            return true;
+        }
+
+        return false;
+    }
 };
 
+namespace Synchronizers {
+    static const char* sequential = "--sequential";
+    static const char* alt_bit = "--alt_bit";
+    static const char* counter = "--counter";
+    static const char* block = "--block";
+    static const char* block_plus = "--block_plus";
+    static const char* jline = "--jline";
+    static const char* jline_plus = "--jline_plus";
+    static const char* increasing_jline = "--increasing_jline";
+    static const char* increasing_jline_plus = "--increasing_jline_plus";
+    static const char* kline = "--kline";
+    static const char* kline_plus = "--kline_plus";
+    static const char* increasing_kline = "--increasing_kline";
+    static const char* increasing_kline_plus = "--increasing_kline_plus";
+}
+
 void parse_authorized_synchronizers(int argc, char** argv, AuthorizedSynchronizers& authorized) {
+    namespace s = Synchronizers;
+
+    std::map<const char*, bool*> assoc;
+    assoc[s::sequential] = &authorized._sequential;
+    assoc[s::alt_bit] = &authorized._alt_bit;
+    assoc[s::counter] = &authorized._counter;
+    assoc[s::block] = &authorized._block;
+    assoc[s::block_plus] = &authorized._block_plus;
+    assoc[s::jline] = &authorized._jline;
+    assoc[s::jline_plus] = &authorized._jline_plus;
+    assoc[s::increasing_jline] = &authorized._increasing_jline;
+    assoc[s::increasing_jline_plus] = &authorized._increasing_jline_plus;
+    assoc[s::kline] = &authorized._kline;
+    assoc[s::kline_plus] = &authorized._kline_plus;
+    assoc[s::increasing_kline] = &authorized._increasing_kline;
+    assoc[s::increasing_kline_plus] = &authorized._increasing_kline_plus;
+
+    std::vector<const char*> names = {
+        s::sequential, s::alt_bit, s::counter, s::block, s::block_plus, 
+        s::jline, s::jline_plus, s::increasing_jline, s::increasing_jline_plus,
+        s::kline, s::kline_plus, s::increasing_kline, s::increasing_kline_plus
+    };
+
     for (int i = 1; i < argc; ++i) {
         const char* sync = argv[i];
 
-        if (!strcmp(sync, "--sequential")) {
-            authorized._sequential = true;
-        } else if (!strcmp(sync, "--alt_bit")) {
-            authorized._alt_bit = true;
-        } else if (!strcmp(sync, "--iteration")) {
-            authorized._iteration = true;
-        } else if (!strcmp(sync, "--block")) {
-            authorized._block = true;
-        } else if (!strcmp(sync, "--block_plus")) {
-            authorized._block_plus = true;
-        } else if (!strcmp(sync, "--jline")) {
-            authorized._jline = true;
-        } else if (!strcmp(sync, "--jline_plus")) {
-            authorized._jline_plus = true;
-        } else if (!strcmp(sync, "--increasing_jline")) {
-            authorized._increasing_jline = true;
-        } else if (!strcmp(sync, "--increasing_jline_plus")) {
-            authorized._increasing_jline_plus = true;
-        } else {
+        int j = 0;
+        while (!authorized.set(sync, names[j], *(assoc[names[j]])))
+            j++;
+
+        if (j == names.size()) {
             std::cerr << "Received unknown argument " << sync << std::endl;
+            exit(-1);
         }
     }
 }
@@ -425,8 +467,8 @@ public:
             SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu", time);
         }
 
-        if (authorized._iteration) {
-            IterationSynchronizer iterationSync(n_threads);
+        if (authorized._counter) {
+            CounterSynchronizer iterationSync(n_threads);
             time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
             SynchronizationTimeCollector::add_time("CounterSynchronizer", "heat_cpu", time);
         }
@@ -438,9 +480,9 @@ public:
         } */
 
         /* {
-        IterationSynchronizer iterationSyncSwitchLoops(n_threads);
+        CounterSynchronizer iterationSyncSwitchLoops(n_threads);
         time = measure_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
-        SynchronizationTimeCollector::add_time("IterationSynchronizer", "heat_cpu_switch_loops", time);
+        SynchronizationTimeCollector::add_time("CounterSynchronizer", "heat_cpu_switch_loops", time);
         } */
 
         /* time = Collector<PointPromisingSynchronizer>::collect(std::bind(heat_cpu_point_promise, 
@@ -493,6 +535,28 @@ public:
             SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", increasingJLinePromise.get_iterations_times()); 
         }
 
+        if (authorized._kline) {
+            KLinePromisingSynchronizer kLinePromise(n_threads);
+            time = measure_time(kLinePromise, std::bind(heat_cpu_kline_promise,
+                                                        std::placeholders::_1,
+                                                        std::placeholders::_2,
+                                                        std::placeholders::_3,
+                                                        std::placeholders::_4));
+            SynchronizationTimeCollector::add_time("KLinePromisingSynchronizer", "heat_cpu_kline_promise", time);
+            SynchronizationTimeCollector::add_iterations_time("KLinePromisingSynchronizer", "heat_cpu_kline_promise", kLinePromise.get_iterations_times());
+        }
+
+        if (authorized._increasing_kline) {
+            IncreasingKLinePromisingSynchronizer increasingKLinePromise(n_threads, nb_klines_for, g::NB_K_LINES_PER_ITERATION);
+            time = measure_time(increasingKLinePromise, std::bind(heat_cpu_increasing_kline_promise,
+                                                                  std::placeholders::_1,
+                                                                  std::placeholders::_2,
+                                                                  std::placeholders::_3,
+                                                                  std::placeholders::_4));
+            SynchronizationTimeCollector::add_time("IncreasingKLinePromisingSynchronizer", "heat_cpu_increasing_kline_promise", time); 
+            SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisingSynchronizer", "heat_cpu_increasing_kline_promise", increasingKLinePromise.get_iterations_times()); 
+        }
+
         if (authorized._block_plus) {
             BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
             time = measure_time(blockPromisePlus, std::bind(heat_cpu_block_promise_plus, 
@@ -524,6 +588,28 @@ public:
                                                                       std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
             SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", increasingJLinePromisePlus.get_iterations_times());
+        }
+
+        if (authorized._kline_plus) {
+            KLinePromisePlusSynchronizer kLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION);
+            time = measure_time(kLinePromisePlus, std::bind(heat_cpu_kline_promise_plus,
+                                                            std::placeholders::_1,
+                                                            std::placeholders::_2,
+                                                            std::placeholders::_3,
+                                                            std::placeholders::_4));
+            SynchronizationTimeCollector::add_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", kLinePromisePlus.get_iterations_times());
+        }
+
+        if (authorized._increasing_kline_plus) {
+            IncreasingKLinePromisePlusSynchronizer increasingKLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION, g::NB_K_LINES_PER_ITERATION);
+            time = measure_time(increasingKLinePromisePlus, std::bind(heat_cpu_increasing_kline_promise_plus,
+                                                                      std::placeholders::_1,
+                                                                      std::placeholders::_2,
+                                                                      std::placeholders::_3,
+                                                                      std::placeholders::_4));
+            SynchronizationTimeCollector::add_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", increasingKLinePromisePlus.get_iterations_times());
         }
     }
 

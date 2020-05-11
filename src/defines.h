@@ -125,6 +125,13 @@ typedef OptionalReference<JLinePromisePlusContainer> JLinePromisePlusStore;
 typedef ThreadStore<PromisePlus<size_t>> IncreasingJLinePromisePlusContainer;
 typedef OptionalReference<IncreasingJLinePromisePlusContainer> IncreasingJLinePromisePlusStore;
 
+// KLine PromisePlus & Increasing KLine PromisePlus synchronizations
+typedef JLinePromisePlusContainer KLinePromisePlusContainer;
+typedef JLinePromisePlusStore KLinePromisePlusStore;
+
+typedef IncreasingJLinePromisePlusContainer IncreasingKLinePromisePlusContainer;
+typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore;
+
 // The initial matrix
 extern Matrix g_start_matrix;
 // The expected final matrix 

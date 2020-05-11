@@ -28,3 +28,9 @@ int nb_jlines_for(int iteration, int k) {
            std::pow(g::INCREASING_LINES_BASE_POWER, iteration - 1) :
            g::NB_J_LINES_PER_ITERATION;
 }
+
+int nb_klines_for(int iteration, int j) {
+    return iteration < g::INCREASING_LINES_ITERATION_LIMIT ?
+           std::pow(g::INCREASING_LINES_BASE_POWER, iteration - 1) :
+           g::NB_K_LINES_PER_ITERATION;
+}

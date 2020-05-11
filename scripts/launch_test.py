@@ -37,6 +37,10 @@ def parse_args():
     add_synchronization(parser, "--jline-plus", "Run with jline promising plus synchronizer")
     add_synchronization(parser, "--increasing-jline", "Run with increasing jline promising synchronizer")
     add_synchronization(parser, "--increasing-jline-plus", "Run with increasing jline promising plus synchronizer")
+    add_synchronization(parser, "--kline", "Run with kline promising synchronizer")
+    add_synchronization(parser, "--kline-plus", "Run with jline promising plus synchronizer")
+    add_synchronization(parser, "--increasing-kline", "Run with increasing kline promising synchronizer")
+    add_synchronization(parser, "--increasing-kline-plus", "Run with increasing kline promising plus synchronizer")
     parser.add_argument("-a", "--all", help="Run with all synchronizations", action="store_true")
     
     return parser.parse_args()
@@ -82,7 +86,7 @@ def main():
     args = parse_args()
     
     threads = args.threads
-    syncs = [ "sequential", "alt_bit", "iteration", "block", "block_plus", "jline", "jline_plus", "increasing_jline", "increasing_jline_plus" ]
+    syncs = [ "sequential", "alt_bit", "iteration", "block", "block_plus", "jline", "jline_plus", "increasing_jline", "increasing_jline_plus", "kline", "kline_plus", "increasing_kline", "increasing_kline_plus" ]
     synchronizations = []
     directory = args.directory
     
