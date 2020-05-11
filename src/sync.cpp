@@ -671,15 +671,15 @@ int main(int argc, char** argv) {
 
     AuthorizedSynchronizers authorized;
     parse_authorized_synchronizers(argc, argv, authorized);
-    Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
+    // Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
     for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {
         SynchronizationTimeCollector::collect_all(authorized);
     }
 
     SynchronizationTimeCollector::print_times();
     SynchronizationTimeCollector::print_iterations_times();
-    Globals::deadlock_detector.stop();
-    Globals::deadlock_detector_thread.join();
+    // Globals::deadlock_detector.stop();
+    // Globals::deadlock_detector_thread.join();
 
     // spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
