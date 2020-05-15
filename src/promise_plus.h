@@ -28,23 +28,31 @@ public:
         _wait_mode = mode;
     }
 
-    void set_max_index(int max_index);
+    inline bool passive() const {
+        return _wait_mode == PromisePlusWaitMode::PASSIVE;
+    }
+
+    inline bool active() const {
+        return _wait_mode == PromisePlusWaitMode::ACTIVE;
+    }
+
+    virtual void set_max_index(int max_index);
 
 protected:
     int _max_index;
     /* Index of the last get() we received.
-     * If a get asks for a lower index, get() returns immediately.
+     * If a get asks for a lower index, get() returns immediately without having
+     * to wait.
      */
     int _last_ready_index;
+
+    /// Wait on atomic if active, on condition variable if passive
     PromisePlusWaitMode _wait_mode;
-
-    std::atomic<int> _ready_index;
-    std::map<int, std::pair<std::mutex, std::condition_variable>> _locks;
-
-private:
-    void init_locks();
 };
 
+/**
+ * Base for PromisePlus
+ */
 template<typename T>
 class PromisePlus : public PromisePlusBase {
 public:
@@ -54,16 +62,17 @@ public:
     PromisePlus(PromisePlus<T> const&) = delete;
     PromisePlus<T>& operator=(PromisePlus<T> const&) = delete;
 
-    T& get(int index);
-    std::unique_ptr<T[]> get_slice(int begin, int end, int step = 1);
-
-    void set(int index, const T& value);
+    virtual T& get(int index) = 0;
+    virtual void set(int index, const T& value) = 0;
+    virtual void set(int index, T&& value) = 0;
+    virtual void set_final(int index, const T& value) = 0;
+    virtual void set_final(int index, T&& value) = 0;
 
     inline void set_nb_values(int nb_values) {
         _values.resize(nb_values);
     }
 
-private:
+protected:
     std::vector<T> _values;
 };
 
@@ -76,10 +85,15 @@ public:
     PromisePlus(PromisePlus<void> const&) = delete;
     PromisePlus<void>& operator=(PromisePlus<void> const&) = delete;
 
-    void get(int index);
-    void get_slice(int begin, int end, int step = 1);
+    virtual void get(int index) = 0;
+    virtual void set(int index) = 0;
+    virtual void set_final(int index) = 0;
+};
 
-    void set(int index);
+template<typename T>
+class PromisePlusBuilder {
+public:
+    virtual std::unique_ptr<PromisePlus<T>> new_promise() = 0;
 };
 
 #include "promise_plus.tpp"

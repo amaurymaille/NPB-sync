@@ -40,12 +40,14 @@ void heat_cpu_kline_promise(Matrix&, size_t, KLinePromiseStore&, const KLineProm
 void heat_cpu_increasing_jline_promise(Matrix&, size_t, IncreasingJLinePromiseStore&, const IncreasingJLinePromiseStore&);
 void heat_cpu_increasing_kline_promise(Matrix&, size_t, IncreasingKLinePromiseStore&, const IncreasingKLinePromiseStore&);
 
-void heat_cpu_block_promise_plus(Matrix&, size_t, BlockPromisePlusStore&, const BlockPromisePlusStore&);
+/* void heat_cpu_block_promise_plus(Matrix&, size_t, BlockPromisePlusStore&, const BlockPromisePlusStore&);
 
 void heat_cpu_jline_promise_plus(Matrix&, size_t, JLinePromisePlusStore&, const JLinePromisePlusStore&);
 void heat_cpu_kline_promise_plus(Matrix&, size_t, KLinePromisePlusStore&, const KLinePromisePlusStore&);
 
 void heat_cpu_increasing_jline_promise_plus(Matrix&, size_t, IncreasingJLinePromisePlusStore&, const IncreasingJLinePromisePlusStore&);
-void heat_cpu_increasing_kline_promise_plus(Matrix&, size_t, IncreasingKLinePromisePlusStore&, const IncreasingKLinePromisePlusStore&);
+void heat_cpu_increasing_kline_promise_plus(Matrix&, size_t, IncreasingKLinePromisePlusStore&, const IncreasingKLinePromisePlusStore&); */
+
+void heat_cpu_promise_plus(Matrix&, size_t, PromisePlusStore&, const PromisePlusStore&);
 
 #endif /* FUNCTIONS_H */

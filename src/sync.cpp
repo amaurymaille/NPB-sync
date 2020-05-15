@@ -8,6 +8,7 @@
 #include <future>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -301,6 +302,7 @@ using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchro
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 using IncreasingKLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingKLinePromiseContainer>;
 
+/*
 template<typename Store>
 class IterationPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
 public:
@@ -313,8 +315,9 @@ public:
             }
         }
     }
-};
+}; */
 
+/*
 template<typename Store>
 class IterationValuesPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
 public:
@@ -329,13 +332,56 @@ public:
             }
         }
     }
-};
+}; */
 
-using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
+/*using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
 using JLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<JLinePromisePlusContainer>;
 using KLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<KLinePromisePlusContainer>;
 using IncreasingJLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingJLinePromisePlusContainer>;
-using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingKLinePromisePlusContainer>;
+using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingKLinePromisePlusContainer>; */
+
+template<typename T>
+class PromisePlusSynchronizer : public Synchronizer {
+public:
+    PromisePlusSynchronizer(int n_threads, const PromisePlusBuilder<T>& builder) {
+        for (int i = 0; i < n_threads; ++i)
+            _promises_store.push_back(builder.new_promise());
+    }
+
+    template<typename F, typename... Args>
+    void run() {
+        struct timespec begin, end;
+        _times[0] = 0;
+
+        #pragma omp parallel
+        {
+            int thread_num = omp_get_thread_num();
+            int num_threads = omp_get_num_threads();
+
+            for (int i = 1; i < g::ITERATIONS; ++i) {
+                #pragma omp master
+                {
+                    clock_gettime(CLOCK_MONOTONIC, &begin);
+                }
+
+                auto src = thread_num != 0 ? std::make_optional(_promises_store[thread_num]) : std::nullopt;
+                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[thread_num + 1]) : std::nullopt;
+
+                f(_matrix, i, src, dst);
+
+                #pragma omp master
+                {
+                    clock_gettime(CLOCK_MONOTONIC, &end);
+                    _times[i] = clock_diff(&end, &begin);
+                }
+            }
+        }
+    }
+
+private:
+    std::vector<std::unique_ptr<PromisePlus<T>>> _promises_store;
+    std::array<uint64, g::ITERATIONS> _times;
+};
 
 template<class Synchronizer, class F, class... Args>
 static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
@@ -558,58 +604,58 @@ public:
         }
 
         if (authorized._block_plus) {
-            BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
+            /* BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
             time = measure_time(blockPromisePlus, std::bind(heat_cpu_block_promise_plus, 
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", blockPromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", blockPromisePlus.get_iterations_times()); */
         }
 
         if (authorized._jline_plus) {
-            JLinePromisePlusSynchronizer jLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION);
+            /* JLinePromisePlusSynchronizer jLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION);
             time = measure_time(jLinePromisePlus, std::bind(heat_cpu_jline_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times()); */
         }
 
         if (authorized._increasing_jline_plus) {
-            IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
+            /* IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_increasing_jline_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", increasingJLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", increasingJLinePromisePlus.get_iterations_times()); */
         }
 
         if (authorized._kline_plus) {
-            KLinePromisePlusSynchronizer kLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION);
+            /* KLinePromisePlusSynchronizer kLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION);
             time = measure_time(kLinePromisePlus, std::bind(heat_cpu_kline_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", kLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", kLinePromisePlus.get_iterations_times()); */
         }
 
         if (authorized._increasing_kline_plus) {
-            IncreasingKLinePromisePlusSynchronizer increasingKLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION, g::NB_K_LINES_PER_ITERATION);
+            /* IncreasingKLinePromisePlusSynchronizer increasingKLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION, g::NB_K_LINES_PER_ITERATION);
             time = measure_time(increasingKLinePromisePlus, std::bind(heat_cpu_increasing_kline_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", increasingKLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", increasingKLinePromisePlus.get_iterations_times()); */
         }
     }
 

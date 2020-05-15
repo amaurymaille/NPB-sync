@@ -7,7 +7,12 @@ else (NOT SYNC_INCREASE_FILE)
     set (INCREASE_SRC "${SYNC_INCREASE_FILE}")
 endif (NOT SYNC_INCREASE_FILE)
 
-add_executable (sync functions.cpp sync.cpp utils.cpp ${CMAKE_CURRENT_SOURCE_DIR}/config.h logging.cpp defines.cpp "${INCREASE_SRC}" ${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h active_promise.cpp promise_plus.cpp)
+file (GLOB PROMISE_FILES promises/*.cpp)
+add_executable (sync functions.cpp sync.cpp utils.cpp 
+                     ${CMAKE_CURRENT_SOURCE_DIR}/config.h logging.cpp 
+                     defines.cpp "${INCREASE_SRC}" 
+                     ${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h 
+                     active_promise.cpp promise_plus.cpp "${PROMISE_FILES}")
 
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (sync "${SPDLOG_LIBRARY}")

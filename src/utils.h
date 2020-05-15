@@ -45,6 +45,21 @@ private:
     std::atomic<bool> _running;
 };
 
+namespace notstd {
+    // Do nothing mutex
+    // Inspired by ACE_Null_Mutex
+    class null_mutex {
+    public:
+        null_mutex() { }
+        null_mutex(null_mutex const&) = delete;
+
+        null_mutex& operator=(null_mutex const&) = delete;
+
+        inline void lock() { }
+        inline void unlock() { }
+    };
+}
+
 namespace Globals {
     extern RandomGenerator<unsigned int> sleep_generator;
     extern RandomGenerator<unsigned char> binary_generator;

@@ -113,6 +113,7 @@ typedef OptionalReference<IncreasingJLinePromiseContainer> IncreasingJLinePromis
 typedef IncreasingJLinePromiseContainer IncreasingKLinePromiseContainer;
 typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
 
+/*
 // Block PromisePlus synchronization
 typedef ThreadStore<PromisePlus<void>> BlockPromisePlusContainer;
 typedef OptionalReference<BlockPromisePlusContainer> BlockPromisePlusStore;
@@ -130,7 +131,10 @@ typedef JLinePromisePlusContainer KLinePromisePlusContainer;
 typedef JLinePromisePlusStore KLinePromisePlusStore;
 
 typedef IncreasingJLinePromisePlusContainer IncreasingKLinePromisePlusContainer;
-typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore;
+typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore; */
+
+typedef ThreadStore<Promise<int>> PromisePlusContainer;
+typedef OptionalReference<PromisePlusContainer> PromisePlusStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;
