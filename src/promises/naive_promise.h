@@ -59,6 +59,9 @@ public:
     void set_final(int index);
 
 private:
+    bool ready_index(int index) const;
+    void assert_free_index(int index) const;
+
     NaivePromiseBase _base;
 };
 
@@ -67,8 +70,8 @@ class NaivePromiseBuilder : public PromisePlusBuilder<T> {
 public:
     NaivePromiseBuilder(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
 
-    std::unique_ptr<PromisePlus<T>> new_promise() {
-        return std::make_unique<PromisePlus<T>>(new NaivePromise<T>(_nb_values, _wait_mode));
+    PromisePlus<T>* new_promise() const {
+        return new NaivePromise<T>(_nb_values, _wait_mode);
     }
 
 private:

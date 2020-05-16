@@ -864,8 +864,11 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
 
     int* ptr = array.data();
 
-    for (int j = 1; j < g::DIM_Y; ++j) {
-        for (int k = 0; k < g::DIM_Z; ++k) {
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        if (src)
+            (*src)[omp_get_thread_num()]->get(k);
+
+        for (int j = 1; j < g::DIM_Y; ++j) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
                 size_t n = to1d(m, i, j, k);
@@ -890,6 +893,10 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
                     }
                 }
             }
+
         }
+
+        if (dst)
+            (*dst)[omp_get_thread_num() + 1]->set(k);
     }
 }
