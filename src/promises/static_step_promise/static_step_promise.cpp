@@ -65,7 +65,7 @@ void StaticStepPromise<void>::get(int index) {
 // STRONG ASSUMPTION : at most one thread in set() for all index values at the
 // same time
 void StaticStepPromise<void>::set(int index) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 
@@ -99,7 +99,7 @@ void StaticStepPromise<void>::set(int index) {
 }
 
 void StaticStepPromise<void>::set_final(int index) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 

@@ -10,9 +10,9 @@
 #include "utils.h"
 
 #ifndef NDEBUG
-    using SetMutex = notstd::null_mutex;
+    using NaiveSetMutex = notstd::null_mutex;
 #else
-    using SetMutex = std::mutex;
+    using NaiveSetMutex = std::mutex;
 #endif
 
 class NaivePromiseBase {
@@ -22,7 +22,7 @@ public:
     std::unique_ptr<std::atomic<bool>[]> _ready_strong;
     std::unique_ptr<bool[]> _ready_weak;
     std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
-    std::unique_ptr<SetMutex[]> _set_m;
+    std::unique_ptr<NaiveSetMutex[]> _set_m;
 };
 
 template<typename T>

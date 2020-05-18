@@ -27,7 +27,7 @@ T& StaticStepPromise<T>::get(int index) {
 // same time
 template<typename T>
 void StaticStepPromise<T>::set(int index, T&& value) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 
@@ -66,7 +66,7 @@ void StaticStepPromise<T>::set(int index, T&& value) {
 // same time
 template<typename T>
 void StaticStepPromise<T>::set(int index, const T& value) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 
@@ -103,7 +103,7 @@ void StaticStepPromise<T>::set(int index, const T& value) {
 
 template<typename T>
 void StaticStepPromise<T>::set_final(int index, T&& value) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 
@@ -127,7 +127,7 @@ void StaticStepPromise<T>::set_final(int index, T&& value) {
 
 template<typename T>
 void StaticStepPromise<T>::set_final(int index, const T& value) {
-    std::unique_lock<SetMutex> lck(_base._set_m);
+    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
     _base.assert_okay_index(index, this->passive());
 

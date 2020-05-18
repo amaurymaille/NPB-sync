@@ -29,6 +29,7 @@
 #include "logging.h"
 #include "promise_plus.h"
 #include "promises/naive_promise.h"
+#include "promises/static_step_promise.h"
 #include "utils.h"
 
 using Clock = std::chrono::system_clock;
@@ -636,19 +637,20 @@ public:
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
-            SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_promise_plus", jLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._increasing_jline_plus) {
-            /* IncreasingJLinePromisePlusSynchronizer increasingJLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION, g::NB_J_LINES_PER_ITERATION);
-            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_increasing_jline_promise_plus,
+            StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, 2);
+            PromisePlusSynchronizer<void> increasingJLinePromisePlus(n_threads, builder);
+            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
-            SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_increasing_jline_promise_plus", increasingJLinePromisePlus.get_iterations_times()); */
+            SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_promise_plus", time);
+            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_promise_plus", increasingJLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._kline_plus) {

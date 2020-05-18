@@ -8,7 +8,7 @@ NaivePromiseBase::NaivePromiseBase(int nb_values, PromisePlusWaitMode wait_mode)
         _ready_weak = std::make_unique<bool[]>(nb_values);
     }
 
-    _set_m = std::make_unique<SetMutex[]>(nb_values);
+    _set_m = std::make_unique<NaiveSetMutex[]>(nb_values);
 }
 
 NaivePromise<void>::NaivePromise(int nb_values, PromisePlusWaitMode wait_mode) :
@@ -44,7 +44,7 @@ void NaivePromise<void>::assert_free_index(int index) const {
 }
 
 void NaivePromise<void>::set(int index) {
-    std::unique_lock<SetMutex> lock_s(_base._set_m[index]);
+    std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
     assert_free_index(index);
 

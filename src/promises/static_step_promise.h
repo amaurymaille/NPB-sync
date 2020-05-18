@@ -9,10 +9,10 @@
 #include "promise_plus.h"
 #include "utils.h"
 
-#ifdef NDEBUG
-    using SetMutex = notstd::null_mutex;
+#ifndef NDEBUG
+    using StaticStepSetMutex = notstd::null_mutex;
 #else
-    using SetMutex = std::mutex;
+    using StaticStepSetMutex = std::mutex;
 #endif
 
 class StaticStepPromiseBase {
@@ -35,7 +35,7 @@ public:
 #endif
 
     std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
-    SetMutex _set_m;
+    StaticStepSetMutex _set_m;
     std::atomic<bool> _finalized;
 
     void assert_okay_index(int index, bool passive);

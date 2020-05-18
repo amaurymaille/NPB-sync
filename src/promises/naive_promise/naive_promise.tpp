@@ -39,7 +39,7 @@ void NaivePromise<T>::assert_free_index(int index) const {
 
 template<typename T>
 void NaivePromise<T>::set(int index, const T& value) {
-    std::unique_lock<SetMutex> lock_s(_base._set_m[index]);
+    std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
     assert_free_index(index);
 
@@ -56,7 +56,7 @@ void NaivePromise<T>::set(int index, const T& value) {
 
 template<typename T>
 void NaivePromise<T>::set(int index, T&& value) {
-    std::unique_lock<SetMutex> lock_s(_base._set_m[index]);
+    std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
     assert_free_index(index);
 
