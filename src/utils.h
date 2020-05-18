@@ -13,6 +13,15 @@
 
 #include "defines.h"
 
+#define NO_COPY_CTR(CLASS) CLASS(CLASS const&) = delete
+#define NO_COPY_OP(CLASS) CLASS& operator=(CLASS const&) = delete
+#define NO_COPY(CLASS) NO_COPY_CTR(CLASS); \
+                       NO_COPY_OP(CLASS)
+
+#define NO_COPY_CTR_T(CLASS, T) CLASS(CLASS<T> const&) = delete
+#define NO_COPY_OP_T(CLASS, T) NO_COPY_OP(CLASS<T>)
+#define NO_COPY_T(CLASS, T) NO_COPY_CTR_T(CLASS, T); NO_COPY_OP_T(CLASS, T)
+
 struct timespec;
 
 template<typename IntType>

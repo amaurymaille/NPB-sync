@@ -8,6 +8,8 @@
 #include <mutex>
 #include <vector>
 
+#include "utils.h"
+
 enum class PromisePlusWaitMode : unsigned char {
     PASSIVE,
     ACTIVE,
@@ -59,8 +61,7 @@ public:
     PromisePlus();
     PromisePlus(int nb_values, int max_index, PromisePlusWaitMode wait_mode = DEFAULT_WAIT_MODE);
 
-    PromisePlus(PromisePlus<T> const&) = delete;
-    PromisePlus<T>& operator=(PromisePlus<T> const&) = delete;
+    NO_COPY_T(PromisePlus, T);
 
     virtual T& get(int index) = 0;
     virtual void set(int index, const T& value) = 0;
@@ -82,8 +83,7 @@ public:
     PromisePlus();
     PromisePlus(int max_index, PromisePlusWaitMode wait_mode = DEFAULT_WAIT_MODE);
 
-    PromisePlus(PromisePlus<void> const&) = delete;
-    PromisePlus<void>& operator=(PromisePlus<void> const&) = delete;
+    NO_COPY_T(PromisePlus, void);
 
     virtual void get(int index) = 0;
     virtual void set(int index) = 0;

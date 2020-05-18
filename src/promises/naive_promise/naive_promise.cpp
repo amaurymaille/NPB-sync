@@ -1,4 +1,4 @@
-#include "naive_promise.h"
+#include "promises/naive_promise.h"
 
 NaivePromiseBase::NaivePromiseBase(int nb_values, PromisePlusWaitMode wait_mode) {
     if (wait_mode == PromisePlusWaitMode::ACTIVE) {

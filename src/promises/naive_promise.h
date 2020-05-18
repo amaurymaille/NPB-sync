@@ -30,8 +30,7 @@ class NaivePromise : public PromisePlus<T> {
 public:
     NaivePromise(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
 
-    NaivePromise(NaivePromise<T> const&) = delete;
-    NaivePromise<T>& operator=(NaivePromise<T> const&) = delete;
+    NO_COPY_T(NaivePromise, T);
 
     T& get(int index);
     void set(int index, const T& value);
@@ -51,8 +50,7 @@ class NaivePromise<void> : public PromisePlus<void> {
 public:
     NaivePromise(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
 
-    NaivePromise(NaivePromise<void> const&) = delete;
-    NaivePromise<void>& operator=(NaivePromise<void> const&) = delete;
+    NO_COPY_T(NaivePromise, void);
 
     void get(int index);
     void set(int index);
@@ -82,6 +80,6 @@ _nb_values(nb_values), _wait_mode(wait_mode) {
 
 }
 
-#include "naive_promise.tpp"
+#include "naive_promise/naive_promise.tpp"
 
 #endif // NAIVE_PROMISE_H

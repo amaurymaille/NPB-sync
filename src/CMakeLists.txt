@@ -7,7 +7,7 @@ else (NOT SYNC_INCREASE_FILE)
     set (INCREASE_SRC "${SYNC_INCREASE_FILE}")
 endif (NOT SYNC_INCREASE_FILE)
 
-file (GLOB PROMISE_FILES promises/*.cpp)
+file (GLOB PROMISE_FILES promises/*/*.cpp promises/*/*.tpp)
 add_executable (sync functions.cpp sync.cpp utils.cpp 
                      ${CMAKE_CURRENT_SOURCE_DIR}/config.h logging.cpp 
                      defines.cpp "${INCREASE_SRC}" 
