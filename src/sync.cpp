@@ -28,6 +28,7 @@
 #include "increase.h"
 #include "logging.h"
 #include "promise_plus.h"
+#include "promises/naive_promise.h"
 #include "utils.h"
 
 using Clock = std::chrono::system_clock;
@@ -344,12 +345,21 @@ template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
     PromisePlusSynchronizer(int n_threads, const PromisePlusBuilder<T>& builder) {
-        for (int i = 0; i < n_threads; ++i)
-            _promises_store.push_back(builder.new_promise());
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            for (int j = 0; j < n_threads; j++)
+                _promises_store[i].push_back(builder.new_promise());
+        }
+    }
+
+    ~PromisePlusSynchronizer() {
+        for (auto& store: _promises_store) {
+            for (PromisePlus<T>* promise: store)
+                delete promise;
+        }
     }
 
     template<typename F, typename... Args>
-    void run() {
+    void run(F&& f, Args&&... args) {
         struct timespec begin, end;
         _times[0] = 0;
 
@@ -364,10 +374,10 @@ public:
                     clock_gettime(CLOCK_MONOTONIC, &begin);
                 }
 
-                auto src = thread_num != 0 ? std::make_optional(_promises_store[thread_num]) : std::nullopt;
-                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[thread_num + 1]) : std::nullopt;
+                auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
+                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
-                f(_matrix, i, src, dst);
+                f(_matrix, i, dst, src);
 
                 #pragma omp master
                 {
@@ -378,8 +388,12 @@ public:
         }
     }
 
+    std::array<uint64, g::ITERATIONS> const& get_iterations_times() const {
+        return _times;
+    }
+
 private:
-    std::vector<std::unique_ptr<PromisePlus<T>>> _promises_store;
+    std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
     std::array<uint64, g::ITERATIONS> _times;
 };
 
@@ -615,14 +629,15 @@ public:
         }
 
         if (authorized._jline_plus) {
-            /* JLinePromisePlusSynchronizer jLinePromisePlus(n_threads, g::NB_J_LINES_PER_ITERATION);
-            time = measure_time(jLinePromisePlus, std::bind(heat_cpu_jline_promise_plus,
+            NaivePromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION);
+            PromisePlusSynchronizer<void> jLinePromisePlus(n_threads, builder);
+            time = measure_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times()); */
+            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_jline_promise_plus", jLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._increasing_jline_plus) {

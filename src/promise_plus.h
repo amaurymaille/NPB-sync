@@ -26,6 +26,8 @@ public:
     PromisePlusBase();
     PromisePlusBase(int max_index, PromisePlusWaitMode wait_mode);
 
+    virtual ~PromisePlusBase() { }
+
     inline void set_wait_mode(PromisePlusWaitMode mode) {
         _wait_mode = mode;
     }
@@ -93,7 +95,7 @@ public:
 template<typename T>
 class PromisePlusBuilder {
 public:
-    virtual std::unique_ptr<PromisePlus<T>> new_promise() = 0;
+    virtual PromisePlus<T>* new_promise() const = 0;
 };
 
 #include "promise_plus.tpp"

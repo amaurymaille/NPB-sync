@@ -133,8 +133,8 @@ typedef JLinePromisePlusStore KLinePromisePlusStore;
 typedef IncreasingJLinePromisePlusContainer IncreasingKLinePromisePlusContainer;
 typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore; */
 
-typedef ThreadStore<Promise<int>> PromisePlusContainer;
-typedef OptionalReference<PromisePlusContainer> PromisePlusStore;
+typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
+typedef std::optional<PromisePlusContainer> PromisePlusStore;
 
 // The initial matrix
 extern Matrix g_start_matrix;
