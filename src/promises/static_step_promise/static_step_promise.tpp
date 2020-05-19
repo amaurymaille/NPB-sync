@@ -105,8 +105,6 @@ template<typename T>
 void StaticStepPromise<T>::set_final(int index, T&& value) {
     std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
 
-    _base.assert_okay_index(index, this->passive());
-
     this->_values[index] = std::move(value);
 
     if (this->passive()) {

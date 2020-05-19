@@ -39,26 +39,35 @@ void NaivePromise<T>::assert_free_index(int index) const {
 
 template<typename T>
 void NaivePromise<T>::set(int index, const T& value) {
-    std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
-
-    assert_free_index(index);
-
-    if (this->passive()) {
-        std::unique_lock<std::mutex> lck(_base._wait_m[index].first);
-        this->_values[index] = value;
-        _base._ready_weak[index] = true;
-        _base._wait_m[index].second.notify_all();
-    } else if (this->active()) {
-        this->_values[index] = value;
-        _base._ready_strong[index].store(true, std::memory_order_consume);
-    }
+    set_maybe_check(index, value, true);
 }
 
 template<typename T>
 void NaivePromise<T>::set(int index, T&& value) {
+    set_maybe_check(index, std::move(value), true);
+}
+
+template<typename T>
+void NaivePromise<T>::set_final(int index, const T& value) {
+    set_maybe_check(index, value, false);
+}
+
+template<typename T>
+void NaivePromise<T>::set_final(int index, T&& value) {
+    set_maybe_check(index, std::move(value), false);
+}
+
+template<typename T>
+void NaivePromise<T>::set(int index, const T& value, bool check) {
+
+}
+
+template<typename T>
+void NaivePromise<T>::set(int index, T&& value, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
-    assert_free_index(index);
+    if (check)
+        assert_free_index(index);
 
     if (this->passive()) {
         std::unique_lock<std::mutex> lck(_base._wait_m[index].first);
@@ -69,16 +78,6 @@ void NaivePromise<T>::set(int index, T&& value) {
         this->_values[index] = std::move(value);
         _base._ready_strong[index].store(true, std::memory_order_consume);
     }
-}
-
-template<typename T>
-void NaivePromise<T>::set_final(int index, const T& value) {
-    set(index, value);
-}
-
-template<typename T>
-void NaivePromise<T>::set_final(int index, T&& value) {
-    set(index, std::move(value));
 }
 
 template<typename T>

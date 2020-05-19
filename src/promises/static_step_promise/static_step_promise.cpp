@@ -58,8 +58,6 @@ void StaticStepPromise<void>::get(int index) {
         while (_base._current_index_strong.load(std::memory_order_acquire) < index)
             ;
     }
-
-    return;
 }
 
 // STRONG ASSUMPTION : at most one thread in set() for all index values at the
@@ -100,8 +98,6 @@ void StaticStepPromise<void>::set(int index) {
 
 void StaticStepPromise<void>::set_final(int index) {
     std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
-
-    _base.assert_okay_index(index, this->passive());
 
     if (this->passive()) {
         std::unique_lock<std::mutex> lock(_base._wait_m[index].first);

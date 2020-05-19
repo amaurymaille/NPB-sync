@@ -41,6 +41,8 @@ public:
 private:
     bool ready_index(int index) const;
     void assert_free_index(int index) const;
+    void set_maybe_check(int index, const T& value, bool check);
+    void set_maybe_check(int index, T&& value, bool check);
 
     NaivePromiseBase _base;
 };
@@ -57,6 +59,7 @@ public:
     void set_final(int index);
 
 private:
+    void set_maybe_check(int index, bool check);
     bool ready_index(int index) const;
     void assert_free_index(int index) const;
 

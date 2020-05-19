@@ -44,9 +44,18 @@ void NaivePromise<void>::assert_free_index(int index) const {
 }
 
 void NaivePromise<void>::set(int index) {
+    set_maybe_check(index, true);
+}
+
+void NaivePromise<void>::set_final(int index) {
+    set_maybe_check(index, false);
+}
+
+void NativePromise<void>::set_maybe_check(int index, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
-    assert_free_index(index);
+    if (check)
+        assert_free_index(index);
 
     if (this->passive()) {
         std::unique_lock<std::mutex> lck(_base._wait_m[index].first);
@@ -55,10 +64,6 @@ void NaivePromise<void>::set(int index) {
     } else if (this->active()) {
         _base._ready_strong[index].store(true, std::memory_order_consume);
     }
-}
-
-void NaivePromise<void>::set_final(int index) {
-    set(index);
 }
 
 bool NaivePromise<void>::ready_index(int index) const {
