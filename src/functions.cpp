@@ -899,4 +899,7 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
         if (dst)
             (*dst)[omp_get_thread_num() + 1]->set(k);
     }
+
+    if (dst)
+        (*dst)[omp_get_thread_num() + 1]->set_final(g::DIM_Z - 1);
 }
