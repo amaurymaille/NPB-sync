@@ -51,7 +51,7 @@ void NaivePromise<void>::set_final(int index) {
     set_maybe_check(index, false);
 }
 
-void NativePromise<void>::set_maybe_check(int index, bool check) {
+void NaivePromise<void>::set_maybe_check(int index, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
     if (check)

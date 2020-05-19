@@ -58,12 +58,7 @@ void NaivePromise<T>::set_final(int index, T&& value) {
 }
 
 template<typename T>
-void NaivePromise<T>::set(int index, const T& value, bool check) {
-
-}
-
-template<typename T>
-void NaivePromise<T>::set(int index, T&& value, bool check) {
+void NaivePromise<T>::set_maybe_check(int index, T&& value, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._set_m[index]);
 
     if (check)
