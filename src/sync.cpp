@@ -22,8 +22,10 @@
 #include "spdlog/spdlog.h"
 
 #include "active_promise.h"
+#include "argv.h"
 #include "config.h"
 #include "defines.h"
+#include "dynamic_config.h"
 #include "functions.h"
 #include "increase.h"
 #include "logging.h"
@@ -414,85 +416,6 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
     return diff;
 }
 
-struct AuthorizedSynchronizers {
-    bool _sequential = false;
-    bool _alt_bit = false;
-    bool _counter = false;
-    bool _block = false;
-    bool _block_plus = false;
-    bool _jline = false;
-    bool _jline_plus = false;
-    bool _increasing_jline = false;
-    bool _increasing_jline_plus = false;
-    bool _kline = false;
-    bool _kline_plus = false;
-    bool _increasing_kline = false;
-    bool _increasing_kline_plus = false;
-
-    bool set(const char* sync, const char* expected, bool& res) {
-        if (strcmp(sync, expected) == 0) {
-            res = true;
-            return true;
-        }
-
-        return false;
-    }
-};
-
-namespace Synchronizers {
-    static const char* sequential = "--sequential";
-    static const char* alt_bit = "--alt_bit";
-    static const char* counter = "--counter";
-    static const char* block = "--block";
-    static const char* block_plus = "--block_plus";
-    static const char* jline = "--jline";
-    static const char* jline_plus = "--jline_plus";
-    static const char* increasing_jline = "--increasing_jline";
-    static const char* increasing_jline_plus = "--increasing_jline_plus";
-    static const char* kline = "--kline";
-    static const char* kline_plus = "--kline_plus";
-    static const char* increasing_kline = "--increasing_kline";
-    static const char* increasing_kline_plus = "--increasing_kline_plus";
-}
-
-void parse_authorized_synchronizers(int argc, char** argv, AuthorizedSynchronizers& authorized) {
-    namespace s = Synchronizers;
-
-    std::map<const char*, bool*> assoc;
-    assoc[s::sequential] = &authorized._sequential;
-    assoc[s::alt_bit] = &authorized._alt_bit;
-    assoc[s::counter] = &authorized._counter;
-    assoc[s::block] = &authorized._block;
-    assoc[s::block_plus] = &authorized._block_plus;
-    assoc[s::jline] = &authorized._jline;
-    assoc[s::jline_plus] = &authorized._jline_plus;
-    assoc[s::increasing_jline] = &authorized._increasing_jline;
-    assoc[s::increasing_jline_plus] = &authorized._increasing_jline_plus;
-    assoc[s::kline] = &authorized._kline;
-    assoc[s::kline_plus] = &authorized._kline_plus;
-    assoc[s::increasing_kline] = &authorized._increasing_kline;
-    assoc[s::increasing_kline_plus] = &authorized._increasing_kline_plus;
-
-    std::vector<const char*> names = {
-        s::sequential, s::alt_bit, s::counter, s::block, s::block_plus, 
-        s::jline, s::jline_plus, s::increasing_jline, s::increasing_jline_plus,
-        s::kline, s::kline_plus, s::increasing_kline, s::increasing_kline_plus
-    };
-
-    for (int i = 1; i < argc; ++i) {
-        const char* sync = argv[i];
-
-        int j = 0;
-        while (!authorized.set(sync, names[j], *(assoc[names[j]])))
-            j++;
-
-        if (j == names.size()) {
-            std::cerr << "Received unknown argument " << sync << std::endl;
-            exit(-1);
-        }
-    }
-}
-
 class SynchronizationTimeCollector {
 public:
     static void add_time(std::string const& synchronizer, std::string const& function, uint64 time) {
@@ -503,7 +426,7 @@ public:
         SynchronizationTimeCollector::__iterations_times[std::make_pair(synchronizer, function)].push_back(times);
     }
 
-    static void collect_all(AuthorizedSynchronizers const& authorized) {
+    static void collect_all() {
         // Fuck you OpenMP
         int n_threads = -1;
         #pragma omp parallel
@@ -514,6 +437,7 @@ public:
             }
         }
 
+        DynamicConfig::SynchronizationPatterns const& authorized = sDynamicConfig._patterns;
         uint64 time = 0;
 
         if (authorized._sequential) {
@@ -713,6 +637,9 @@ std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::
 int main(int argc, char** argv) {
     namespace g = Globals;
 
+    parse_command_line(argc, argv);
+    return 0;
+
     if (!getenv("OMP_NUM_THREADS")) {
         std::cerr << "OMP_NUM_THREADS not set. Abort." << std::endl;
         exit(EXIT_FAILURE);
@@ -732,11 +659,9 @@ int main(int argc, char** argv) {
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
     init_expected_matrix_once();
 
-    AuthorizedSynchronizers authorized;
-    parse_authorized_synchronizers(argc, argv, authorized);
     // Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
     for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {
-        SynchronizationTimeCollector::collect_all(authorized);
+        SynchronizationTimeCollector::collect_all();
     }
 
     SynchronizationTimeCollector::print_times();

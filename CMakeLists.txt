@@ -7,7 +7,7 @@ list (APPEND CMAKE_MODULE_PATH
 find_package (OpenMP REQUIRED)
 find_package (Threads REQUIRED)
 find_package (spdlog REQUIRED)
-find_package (Boost REQUIRED)
+find_package (Boost REQUIRED COMPONENTS program_options)
 
 set (CMAKE_BUILD_TYPE "Debug")
 set (CMAKE_CXX_STANDARD 17)
