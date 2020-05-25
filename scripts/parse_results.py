@@ -2,9 +2,11 @@
 
 import argparse
 import math
-import sys
-
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn
+import sys
 
 def group_results(data):
     times_by_fns_by_syncs = {}
@@ -195,6 +197,11 @@ def parse_arguments():
     parser.add_argument("file", type=argparse.FileType(mode="r"), help="File to process", nargs="?")
     parser.add_argument("-a", "--avg", action="store_true", help="Compute average values")
     parser.add_argument("--ratios", action="store_true", help="Compute ratios")
+    parser.add_argument("--graph", action="store_true", help="Draw graph of the average time of each run of each pattern")
+
+    graph_group = parser.add_mutually_exclusive_group()
+    graph_group.add_argument("--graph-dst", metavar="path", help="Pathname of the file that will store the averages graph. No effect without --graph")
+    graph_group.add_argument("--graph-auto-rename", action="store_true", help="Output averages graph to a .png file named after the input_file. No effect without --graph. Ignored if input is stdin")
     
     csv_group = parser.add_mutually_exclusive_group()
     csv_group.add_argument("--csv", action="store_true", help="Display ratios and/or averages as CSV. No effect without --ratios or --avg")
@@ -204,6 +211,19 @@ def parse_arguments():
     result = parser.parse_args()
     
     return result
+
+def generate_graph(data, dst):
+    datas = []
+    count = 0
+    for synchro in data:
+        for function in data[synchro]:
+            for i, value in zip(range(len(data[synchro][function])), data[synchro][function]):
+                datas.append({"Iteration": i, "Time": value, "Pattern":  function})
+
+    df = pd.DataFrame(datas)
+    plot = seaborn.scatterplot(data=df, x="Iteration", y="Time", hue="Pattern")
+
+    plt.savefig(dst)
 
 def main():
     args = parse_arguments()
@@ -219,6 +239,15 @@ def main():
     groups = group_results(data)
     results = process_groups(groups)
 
+    if args.graph:
+        output_filename = None
+        if args.graph_auto_rename or not args.graph.graph_dst:
+            output_filename = args.file.name[:-4] + ".png"
+        else:
+            output_filename = args.graph.graph_dst
+
+        generate_graph(groups, output_filename)
+ 
     if not args.ratios and not args.avg:
         return
 
