@@ -26,7 +26,7 @@ namespace Options {
 
         namespace Extra {
             static const char* increasing_jline_step = "increasing-jline-step";
-            static const char* increasing_jline_plus_step = "increasing-jline-plus-step";
+            static const char* static_step_jline_plus = "static-step-jline-plus";
         }
     }
 
@@ -47,6 +47,7 @@ static void populate_options(po::options_description& options);
 static void process_files(DynamicConfig::Files& files,
                           po::variables_map const& vm);
 static void init_outfile_if(const char* option, po::variables_map const& vm, std::function<void(std::ostream&)> f);
+static void process_extra(DynamicConfig::Extra& extra, po::variables_map const& vm);
 
 void parse_command_line(int argc, char** argv) {
     DynamicConfig& config = DynamicConfig::_instance();
@@ -67,6 +68,7 @@ void parse_command_line(int argc, char** argv) {
 
     process_files(config._files, vm);
     process_patterns(config._patterns, vm);
+    process_extra(config._extra, vm);
 }
 
 void process_patterns(DynamicConfig::SynchronizationPatterns& authorized,
@@ -128,7 +130,7 @@ void populate_options(po::options_description& options) {
     po::options_description promises_extra("Arguments for synchronization patterns");
     promises_extra.add_options()
         (se::increasing_jline_step, po::value<unsigned int>()->default_value(1), "Minimum number of lines that need to be ready before synchronization occurs")
-        (se::increasing_jline_plus_step, po::value<unsigned int>()->default_value(1), "Minimum number of lines that need to be ready before synchronization occurs (PromisePlus version)");
+        (se::static_step_jline_plus, po::value<unsigned int>()->default_value(1), "Minimum number of lines that need to be ready before synchronization occurs (PromisePlus version)");
 
     options.add(generic);
     options.add(synchro);
@@ -144,8 +146,18 @@ void process_files(DynamicConfig::Files& files,
 
 void init_outfile_if(const char* option, po::variables_map const& vm, std::function<void(std::ostream&)> f) {
     if (vm.count(option)) {
-        f(*(new std::ofstream(vm[option].as<std::string>(), std::ios::in)));
+        f(*(new std::ofstream(vm[option].as<std::string>(), std::ios::out)));
     } else {
         f(std::cout);
+    }
+}
+
+void process_extra(DynamicConfig::Extra& extra, po::variables_map const& vm) {
+    if (vm.count(se::increasing_jline_step)) {
+        extra._increasing_jline_step = vm[se::increasing_jline_step].as<unsigned int>();
+    }
+
+    if (vm.count(se::static_step_jline_plus)) {
+        extra._static_step_jline_plus = vm[se::static_step_jline_plus].as<unsigned int>();
     }
 }

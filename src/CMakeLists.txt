@@ -13,7 +13,7 @@ add_executable (sync functions.cpp sync.cpp utils.cpp
                      defines.cpp "${INCREASE_SRC}" 
                      ${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h 
                      active_promise.cpp promise_plus.cpp "${PROMISE_FILES}"
-                     argv.cpp)
+                     argv.cpp dynamic_config.cpp)
 
 target_link_libraries (sync "${Boost_PROGRAM_OPTIONS_LIBRARY}")
 if (NOT SPDLOG_HEADER_ONLY)

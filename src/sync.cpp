@@ -566,7 +566,7 @@ public:
         }
 
         if (authorized._increasing_jline_plus) {
-            StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, 2);
+            StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, sDynamicConfigExtra._static_step_jline_plus);
             PromisePlusSynchronizer<void> increasingJLinePromisePlus(n_threads, builder);
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
@@ -606,7 +606,7 @@ public:
             for (uint64 const& time: p.second) {
                 // Do not add the leading zeros the decimal part, because it is way too complicated to do in this god awful language
                 lldiv_t result = lldiv(time, BILLION);
-                std::cout << count << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                ExtraConfig::runs_times_file() << count << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
                 ++count;
             }
         }
@@ -619,7 +619,7 @@ public:
                 int iter = 0;
                 for (uint64 const& time: times) {
                     lldiv_t result = lldiv(time, BILLION);
-                    std::cout << "// " << count << " " << iter << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                    ExtraConfig::iterations_times_file() << count << " " << iter << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
                     iter++;
                 }
                 count++;
@@ -638,7 +638,6 @@ int main(int argc, char** argv) {
     namespace g = Globals;
 
     parse_command_line(argc, argv);
-    return 0;
 
     if (!getenv("OMP_NUM_THREADS")) {
         std::cerr << "OMP_NUM_THREADS not set. Abort." << std::endl;

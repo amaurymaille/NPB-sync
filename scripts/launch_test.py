@@ -20,6 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the program with the given parameters")
     parser.add_argument("-t", "--threads", help="Number of OpenMP threads", required=True, type=int, nargs="?", default=8)
     parser.add_argument("-d", "--directory", required=True, help="Directory in which to run the program", type=is_path)
+
     promise_mode = parser.add_mutually_exclusive_group(required=True)
     promise_mode.add_argument("--active", help="Use active promises", action="store_true")
     promise_mode.add_argument("--passive", help="Use passive promises", action="store_true")
@@ -27,6 +28,7 @@ def parse_args():
     parser.add_argument("--spdlog-include", help="spdlog include directory", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/include"))
     parser.add_argument("--spdlog-lib", help="spdlog library file", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/build/libspdlog.a"))
     parser.add_argument("--increase-file", help="CPP file used for the definition of the increase functions", type=is_path)
+    parser.add_argument("--args", help="Additional arguments passed to the program")
 
     add_synchronization(parser, "--sequential", "Run sequential program")
     add_synchronization(parser, "--alt-bit", "Run with alternate bit synchronizer")
@@ -45,12 +47,10 @@ def parse_args():
     
     return parser.parse_args()
 
-def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active, increase_file):
+def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active, increase_file, extra_args):
     synchronizations = [ "--" + sync for sync in synchronizations ]
     now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     hostname = socket.gethostname()
-    log_file = open(os.path.expanduser("~/logs/{}.{}.log".format(now, hostname)), "w")
-
     os.chdir(os.path.expanduser(directory))
 
     cmake_command = ["cmake"]
@@ -69,14 +69,16 @@ def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active
 
     os.putenv("OMP_NUM_THREADS", str(threads))
 
-    log_file.write("// OMP_NUM_THREADS={}\n".format(threads))
-    log_file.flush()
-    cat = subprocess.Popen(["cat", "../src/increase.cpp"], stdout=subprocess.PIPE)
-    subprocess.run(["awk", "{print \"//\", $0 }"], stdout=log_file, stdin=cat.stdout)
+    with open(os.path.expanduser("~/logs/{}.{}.log".format(now, hostname)), "w") as log_file:
+        iterations_filename = os.path.expanduser("~/logs/{}.{}.iterations.log".format(now, hostname))
+        runs_filename = os.path.expanduser("~/logs/{}.{}.runs.log".format(now, hostname))
 
-    subprocess.Popen(["./src/sync"] + synchronizations, stdout=log_file).wait()
+        log_file.write("// OMP_NUM_THREADS={}\n".format(threads))
+        log_file.flush()
+        cat = subprocess.Popen(["cat", "../src/increase.cpp"], stdout=subprocess.PIPE)
+        subprocess.run(["awk", "{print \"//\", $0 }"], stdout=log_file, stdin=cat.stdout)
 
-    log_file.close()
+        subprocess.Popen(["./src/sync"] + synchronizations + extra_args.split(" ") + ["--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename]).wait()
 
 def main():
     def add_sync_if_exists(synchronizations, args, synchronization):
@@ -96,7 +98,7 @@ def main():
         for synchronization in syncs:
             add_sync_if_exists(synchronizations, args, synchronization)
 
-    run(threads, synchronizations, directory, args.spdlog_include, args.spdlog_lib, args.active, args.increase_file)
+    run(threads, synchronizations, directory, args.spdlog_include, args.spdlog_lib, args.active, args.increase_file, args.args)
 
 if __name__ == "__main__":
     main()

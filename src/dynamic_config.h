@@ -7,6 +7,11 @@
 
 #include "utils.h"
 
+namespace ExtraConfig {
+    std::ostream& runs_times_file();
+    std::ostream& iterations_times_file();
+}
+
 class DynamicConfig {
 public:
     struct SynchronizationPatterns {
@@ -58,7 +63,11 @@ public:
             }
 
             std::ostream& operator*() {
-                return *_stream.get();
+                if (_stream) {
+                    return *_stream.get();
+                } else {
+                    return std::cout;
+                }
             }
 
             void reset(std::ostream& o) {
@@ -75,11 +84,18 @@ public:
         EitherCoutOr _iterations_times_file;
     };
 
+    struct Extra {
+        unsigned int _increasing_jline_step;
+        unsigned int _static_step_jline_plus;
+    };
+
 public:
     NO_COPY(DynamicConfig);
 
     friend void parse_command_line(int, char**);
     friend void parse_environ();
+    friend std::ostream& ExtraConfig::runs_times_file();
+    friend std::ostream& ExtraConfig::iterations_times_file();
 
     static inline const DynamicConfig& instance() {
         return _instance();
@@ -87,6 +103,7 @@ public:
 
     SynchronizationPatterns _patterns;
     Files _files;
+    Extra _extra;
 
 private:
     DynamicConfig() { }
@@ -97,8 +114,10 @@ private:
     }
 };
 
+
+
 #define sDynamicConfig DynamicConfig::instance()
 #define sDynamicConfigPatterns sDynamicConfig._patterns
-#define sDynamicConfigFiles sDynamicConfig._files
+#define sDynamicConfigExtra sDynamicConfig._extra
 
 #endif // DYNAMIC_CONFIG_H
