@@ -613,6 +613,7 @@ public:
     }
 
     static void print_iterations_times() {
+        ExtraConfig::iterations_times_file() << "Global" << " " << "Local" << " " << "Synchronizer" << " " << "Function" << " " << "Time" << std::endl; 
         for (auto const& p: __iterations_times) {
             int count = 0;
             for (std::array<uint64, g::ITERATIONS> const& times: p.second) {
