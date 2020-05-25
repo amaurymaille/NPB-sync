@@ -36,7 +36,7 @@ class Run:
             self._dimy = json_data["dimy"]
             self._dimz = json_data["dimz"]
             self._loops = json_data["loops"]
-            self._args = json.data["args"]
+            self._args = json_data["args"]
 
             assert_are_ints(self._dimw, self._dimx, self._dimy, self._dimz, self._loops)
 
@@ -71,7 +71,7 @@ def generate_ssh_command_for(machine, simulation):
     dirname = os.path.expanduser("~/NPB-sync") + "/{}.{}".format(machine, datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
     ssh_command = "mkdir {} && cd {} && git clone git@github.com:amaurymaille/NPB-sync.git && cd NPB-sync && mkdir build && ".format(dirname, dirname)
 
-    ssh_command += ("cd scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} {} {} --args \"{}\"" + " ".join([ "--" + sync for sync in simulation._synchronizers ]) + " && cd && rm -rf {}").format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads, "--active" if simulation._promise_kind == "active" else "--passive", "" if simulation._increase_file is None else "--increase-file {}".format(simulation._increase_file), " ".join(simulation._args), dirname)
+    ssh_command += ("cd scripts && python3 generate_dynamic_defines.py -w {} -x {} -y {} -z {} -l {} -f ../src/dynamic_defines.h && python3 launch_test.py -d {} -t {} {} {} --args \"{}\" " + " ".join([ "--" + sync for sync in simulation._synchronizers ]) + " && cd && rm -rf {}").format(simulation._dimw, simulation._dimx, simulation._dimy, simulation._dimz, simulation._loops, dirname + "/NPB-sync/build", simulation._threads, "--active" if simulation._promise_kind == "active" else "--passive", "" if simulation._increase_file is None else "--increase-file {}".format(simulation._increase_file), " ".join(simulation._args), dirname)
 
     print (ssh_command)
     return ssh_command
