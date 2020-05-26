@@ -95,7 +95,10 @@ void StaticStepPromise<void>::set_final(int index) {
 
     if (this->passive()) {
         std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
+        unsigned int old_index = _base._current_index_weak;
         _base._current_index_weak = index;
+        for (int i = old_index; i <= _base._current_index_weak; ++i)
+            _base._wait_m[i].second.notify_all();
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
 #endif
