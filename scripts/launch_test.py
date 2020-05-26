@@ -98,7 +98,7 @@ def main():
         for synchronization in syncs:
             add_sync_if_exists(synchronizations, args, synchronization)
 
-    run(threads, synchronizations, directory, args.spdlog_include, args.spdlog_lib, args.active, args.increase_file, args.args)
+    run(threads, synchronizations, directory, args.spdlog_include, args.spdlog_lib, args.active, args.increase_file, args.args or "")
 
 if __name__ == "__main__":
     main()

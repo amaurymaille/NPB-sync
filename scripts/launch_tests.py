@@ -36,7 +36,7 @@ class Run:
             self._dimy = json_data["dimy"]
             self._dimz = json_data["dimz"]
             self._loops = json_data["loops"]
-            self._args = json_data["args"]
+            self._args = "" if not "args" in json_data else json_data["args"]
 
             assert_are_ints(self._dimw, self._dimx, self._dimy, self._dimz, self._loops)
 
