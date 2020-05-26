@@ -74,8 +74,11 @@ def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active
         runs_filename = os.path.expanduser("~/logs/{}.{}.runs.log".format(now, hostname))
 
         log_file.write("// OMP_NUM_THREADS={}\n".format(threads))
+        log_file.write("// Active promise: {}\n".format(active))
+        log_file.write("// Synchronizations: " + " ".join(synchronizations) + "\n")
+        log_file.write("// Extra args: " + extra_args + "\n")
         log_file.flush()
-        cat = subprocess.Popen(["cat", "../src/increase.cpp"], stdout=subprocess.PIPE)
+        cat = subprocess.Popen(["cat", "../src/dynamic_defines.h"], stdout=subprocess.PIPE)
         subprocess.run(["awk", "{print \"//\", $0 }"], stdout=log_file, stdin=cat.stdout)
 
         subprocess.Popen(["./src/sync"] + synchronizations + extra_args.split(" ") + ["--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename]).wait()
