@@ -70,12 +70,10 @@ void StaticStepPromise<void>::set(int index) {
     if (this->passive()) {
         std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
         if (index >= _base._current_index_weak + _base._step) {
-            // 0 based arrays YO !
-            if (index + 1 % _base._step == 0) {
-                _base._current_index_weak = index;
-            } else {
-                _base._current_index_weak = index - (index % _base._step) - 1;
-            }
+            unsigned int old_index = _base._current_index_weak;
+            _base._current_index_weak = index;
+            for (int i = old_index; i <= index; ++i)
+                _base._wait_m[i].second.notify_all();
         }
 
 #ifndef NDEBUG
@@ -83,11 +81,7 @@ void StaticStepPromise<void>::set(int index) {
 #endif
     } else {
         if (index >= _base._current_index_strong.load(std::memory_order_acquire)) {
-            if (index + 1 % _base._step == 0) {
-                _base._current_index_strong.store(index, std::memory_order_release);
-            } else {
-                _base._current_index_strong.store(index - (index % _base._step) - 1, std::memory_order_release);
-            }
+            _base._current_index_strong.store(index, std::memory_order_release);
         }
 
 #ifndef NDEBUG
