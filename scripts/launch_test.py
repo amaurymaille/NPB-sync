@@ -53,9 +53,9 @@ def run(threads, synchronizations, directory, spdlog_include, spdlog_lib, active
     hostname = socket.gethostname()
     os.chdir(os.path.expanduser(directory))
 
-    cmake_command = ["cmake"]
+    cmake_command = ["cmake", "-DCMAKE_ADDITIONAL_DEFINITIONS="]
     if active:
-        cmake_command += ["-DCMAKE_ADDITIONAL_DEFINITIONS=-DACTIVE_PROMISES"]
+        cmake_command[-1] += "-DACTIVE_PROMISES"
 
     cmake_command += ["-DSPDLOG_INCLUDE_DIR={}".format(spdlog_include), "-DSPDLOG_LIBRARY={}".format(spdlog_lib)]
 

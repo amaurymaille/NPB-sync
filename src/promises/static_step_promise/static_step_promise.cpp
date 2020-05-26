@@ -72,8 +72,11 @@ void StaticStepPromise<void>::set(int index) {
         if (index >= _base._current_index_weak + _base._step) {
             unsigned int old_index = _base._current_index_weak;
             _base._current_index_weak = index;
-            for (int i = old_index; i <= index; ++i)
+            for (int i = old_index; i < index; ++i) {
+                std::unique_lock<std::mutex> lck(_base._wait_m[i].first);
                 _base._wait_m[i].second.notify_all();
+            }
+            _base._wait_m[index].second.notify_all();
         }
 
 #ifndef NDEBUG
@@ -97,8 +100,12 @@ void StaticStepPromise<void>::set_final(int index) {
         std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
         unsigned int old_index = _base._current_index_weak;
         _base._current_index_weak = index;
-        for (int i = old_index; i <= _base._current_index_weak; ++i)
+        for (int i = old_index; i < _base._current_index_weak; ++i) {
+            // KILL ME
+            std::unique_lock<std::mutex> lck(_base._wait_m[i].first);
             _base._wait_m[i].second.notify_all();
+        }
+        _base._wait_m[index].second.notify_all();
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
 #endif
