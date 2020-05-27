@@ -34,12 +34,14 @@ public:
     int _current_index_internal_weak;
 #endif
 
-    std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
+    // std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
     StaticStepSetMutex _set_m;
     std::atomic<bool> _finalized;
 
     void assert_okay_index(int index, bool passive);
     bool ready_index(int index, bool passive);
+    std::mutex _index_m;
+    std::condition_variable _cond_m;
 };
 
 /**

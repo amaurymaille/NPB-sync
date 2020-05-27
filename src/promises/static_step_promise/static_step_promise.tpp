@@ -12,9 +12,9 @@ T& StaticStepPromise<T>::get(int index) {
         return this->_values[index];
 
     if (this->passive()) {
-        std::unique_lock<std::mutex> lck(_base._wait_m[index].first);
+        std::unique_lock<std::mutex> lck(_base._index_m);
         while (_base._current_index_weak < index)
-            _base._wait_m[index].second.wait(lck);
+            _base._cond_m.wait(lck);
     } else {
         while (_base._current_index_strong.load(std::memory_order_acquire) < index)
             ;
@@ -34,15 +34,16 @@ void StaticStepPromise<T>::set(int index, T&& value) {
     this->_values[index] = std::move(value);
 
     if (this->passive()) {
-        std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
-        if (index >= _base._current_index_weak + _base._step) {
-            // 0 based arrays YO !
-            if (index + 1 % _base._step == 0) {
-                _base._current_index_weak = index;
-            } else {
-                _base._current_index_weak = index - (index % _base._step) - 1;
+        {
+            if (index >= _base._current_index_weak + _base._step) {
+                {
+                    std::unique_lock<std::mutex> lock(_base._index_m);
+                    _base._current_index_weak = index;
+                }
+
+                _base._cond_m.notify_all();
             }
-        }
+        } 
 
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
@@ -73,16 +74,16 @@ void StaticStepPromise<T>::set(int index, const T& value) {
     this->_values[index] = value;
 
     if (this->passive()) {
-        std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
-        if (index >= _base._current_index_weak + _base._step) {
-            // 0 based arrays YO !
-            if (index + 1 % _base._step == 0) {
-                _base._current_index_weak = index;
-            } else {
-                _base._current_index_weak = index - (index % _base._step) - 1;
+        {
+            if (index >= _base._current_index_weak + _base._step) {
+                {
+                    std::unique_lock<std::mutex> lock(_base._index_m);
+                    _base._current_index_weak = index;
+                }
+
+                _base._cond_m.notify_all();
             }
         }
-
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
 #endif
@@ -108,8 +109,11 @@ void StaticStepPromise<T>::set_final(int index, T&& value) {
     this->_values[index] = std::move(value);
 
     if (this->passive()) {
-        std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
-        _base._current_index_weak = index;
+        {
+            std::unique_lock<std::mutex> lock(_base._index_m);
+            _base._current_index_weak = index;
+        }
+        _base._cond_m.notify_all();
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
 #endif
@@ -132,8 +136,12 @@ void StaticStepPromise<T>::set_final(int index, const T& value) {
     this->_values[index] = value;
 
     if (this->passive()) {
-        std::unique_lock<std::mutex> lock(_base._wait_m[index].first);
-        _base._current_index_weak = index;
+        {
+            std::unique_lock<std::mutex> lock(_base._index_m);
+            _base._current_index_weak = index;
+        }
+        _base._cond_m.notify_all();
+
 #ifndef NDEBUG
         _base._current_index_internal_weak = index;
 #endif
