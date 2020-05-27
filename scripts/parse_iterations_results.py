@@ -46,7 +46,7 @@ def main():
         df = pd.DataFrame(d)
         print ("Argh")
         plot = seaborn.lineplot(data=df, x="Iteration", y="Time", hue="courbe")
-        plt.savefig(os.path.expanduser("~/toto" + str(count)))
+        plt.savefig(os.path.expanduser(args.file.name[:-4] + str(count) + ".png"))
         plt.clf()
         count += 1
 
