@@ -865,8 +865,9 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
     int* ptr = array.data();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
-        if (src)
+        if (src) {
             (*src)[omp_get_thread_num()]->get(k);
+        }
 
         for (int j = 1; j < g::DIM_Y; ++j) {
             #pragma omp for schedule(static) nowait
