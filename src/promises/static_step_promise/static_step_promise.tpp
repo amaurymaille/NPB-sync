@@ -2,7 +2,7 @@
 
 template<typename T>
 StaticStepPromise<T>::StaticStepPromise(int nb_values, unsigned int step, PromisePlusWaitMode wait_mode) : 
-    PromisePlus<T>(nb_values, wait_mode), _base(nb_values, step) {
+    PromisePlus<T>(nb_values), _base(nb_values, step) {
 
 }
 

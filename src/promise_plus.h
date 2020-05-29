@@ -10,9 +10,9 @@
 
 #include "utils.h"
 
-enum class PromisePlusWaitMode : unsigned char {
+enum class PromisePlusWaitMode {
     PASSIVE,
-    ACTIVE,
+    ACTIVE
 };
 
 class PromisePlusBase {
@@ -24,21 +24,9 @@ public:
 #endif
 
     PromisePlusBase();
-    PromisePlusBase(int max_index, PromisePlusWaitMode wait_mode);
+    PromisePlusBase(int max_index);
 
     virtual ~PromisePlusBase() { }
-
-    inline void set_wait_mode(PromisePlusWaitMode mode) {
-        _wait_mode = mode;
-    }
-
-    inline bool passive() const {
-        return _wait_mode == PromisePlusWaitMode::PASSIVE;
-    }
-
-    inline bool active() const {
-        return _wait_mode == PromisePlusWaitMode::ACTIVE;
-    }
 
     virtual void set_max_index(int max_index);
 
@@ -49,9 +37,6 @@ protected:
      * to wait.
      */
     int _last_ready_index;
-
-    /// Wait on atomic if active, on condition variable if passive
-    PromisePlusWaitMode _wait_mode;
 };
 
 /**
@@ -61,7 +46,7 @@ template<typename T>
 class PromisePlus : public PromisePlusBase {
 public:
     PromisePlus();
-    PromisePlus(int nb_values, int max_index, PromisePlusWaitMode wait_mode = DEFAULT_WAIT_MODE);
+    PromisePlus(int nb_values, int max_index);
 
     NO_COPY_T(PromisePlus, T);
 
@@ -83,7 +68,7 @@ template<>
 class PromisePlus<void> : public PromisePlusBase {
 public:
     PromisePlus();
-    PromisePlus(int max_index, PromisePlusWaitMode wait_mode = DEFAULT_WAIT_MODE);
+    PromisePlus(int max_index);
 
     NO_COPY_T(PromisePlus, void);
 

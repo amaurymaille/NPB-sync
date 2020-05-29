@@ -6,7 +6,7 @@ PromisePlus<T>::PromisePlus() : PromisePlusBase() {
 }
 
 template<typename T>
-PromisePlus<T>::PromisePlus(int nb_values, int max_index, PromisePlusWaitMode wait_mode) : PromisePlusBase(max_index, wait_mode) {
+PromisePlus<T>::PromisePlus(int nb_values, int max_index) : PromisePlusBase(max_index) {
     _values.resize(nb_values);
 }
 

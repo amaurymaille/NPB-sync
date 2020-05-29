@@ -15,22 +15,42 @@
     using NaiveSetMutex = std::mutex;
 #endif
 
-class NaivePromiseBase {
-public:
-    NaivePromiseBase(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
-
-    std::unique_ptr<std::atomic<bool>[]> _ready_strong;
-    std::unique_ptr<bool[]> _ready_weak;
-    std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
+struct NaivePromiseCommonBase {
+    NaivePromiseCommonBase(int nb_values);
     std::unique_ptr<NaiveSetMutex[]> _set_m;
 };
 
-template<typename T>
-class NaivePromise : public PromisePlus<T> {
-public:
-    NaivePromise(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+struct NaivePromiseBase {
+    // Strong check
+    virtual bool ready_index(int index) const = 0;
+    void assert_free_index(int index) const;
+};
 
-    NO_COPY_T(NaivePromise, T);
+struct ActiveNaivePromiseBase : public NaivePromiseBase {
+    ActiveNaivePromiseBase(int nb_values);
+
+    std::unique_ptr<std::atomic<bool>[]> _ready;
+    NaivePromiseCommonBase _common;
+
+    bool ready_index(int index) const final;
+};
+
+struct PassiveNaivePromiseBase : public NaivePromiseBase {
+    PassiveNaivePromiseBase(int nb_values);
+
+    std::unique_ptr<bool[]> _ready;
+    std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait;
+    NaivePromiseCommonBase _common;
+
+    bool ready_index(int index) const final;
+};
+
+template<typename T>
+class ActiveNaivePromise : public PromisePlus<T> {
+public:
+    ActiveNaivePromise(int nb_values);
+
+    NO_COPY_T(ActiveNaivePromise, T);
 
     T& get(int index);
     void set(int index, const T& value);
@@ -39,20 +59,38 @@ public:
     void set_final(int index, T&& value);
 
 private:
-    bool ready_index(int index) const;
-    void assert_free_index(int index) const;
     void set_maybe_check(int index, const T& value, bool check);
     void set_maybe_check(int index, T&& value, bool check);
 
-    NaivePromiseBase _base;
+    ActiveNaivePromiseBase _base;
+};
+
+template<typename T>
+class PassiveNaivePromise : public PromisePlus<T> {
+public:
+    PassiveNaivePromise(int nb_values);
+
+    NO_COPY_T(PassiveNaivePromise, T);
+
+    T& get(int index);
+    void set(int index, const T& value);
+    void set(int index, T&& value);
+    void set_final(int index, const T& value);
+    void set_final(int index, T&& value);
+
+private:
+    void set_maybe_check(int index, const T& value, bool check);
+    void set_maybe_check(int index, T&& value, bool check);
+
+    PassiveNaivePromiseBase _base;
 };
 
 template<>
-class NaivePromise<void> : public PromisePlus<void> {
+class ActiveNaivePromise<void> : public PromisePlus<void> {
 public:
-    NaivePromise(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    ActiveNaivePromise(int nb_values);
 
-    NO_COPY_T(NaivePromise, void);
+    NO_COPY_T(ActiveNaivePromise, void);
 
     void get(int index);
     void set(int index);
@@ -60,10 +98,25 @@ public:
 
 private:
     void set_maybe_check(int index, bool check);
-    bool ready_index(int index) const;
-    void assert_free_index(int index) const;
 
-    NaivePromiseBase _base;
+    ActiveNaivePromiseBase _base;
+};
+
+template<>
+class PassiveNaivePromise<void> : public PromisePlus<void> {
+public:
+    PassiveNaivePromise(int nb_values);
+
+    NO_COPY_T(PassiveNaivePromise, void);
+
+    void get(int index);
+    void set(int index);
+    void set_final(int index);
+
+private:
+    void set_maybe_check(int index, bool check);
+
+    PassiveNaivePromiseBase _base;
 };
 
 template<typename T>
@@ -72,7 +125,10 @@ public:
     NaivePromiseBuilder(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
 
     PromisePlus<T>* new_promise() const {
-        return new NaivePromise<T>(_nb_values, _wait_mode);
+        if (_wait_mode == PromisePlusWaitMode::ACTIVE)
+            return new ActiveNaivePromise<T>(_nb_values);
+        else
+            return new PassiveNaivePromise<T>(_nb_values);
     }
 
 private:

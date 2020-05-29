@@ -35,13 +35,13 @@ void StaticStepPromiseBase::assert_okay_index(int index, bool passive) {
 #endif 
 }
 
-bool StaticStepPromiseBase::ready_index(int index) {
+bool StaticStepPromiseBase::ready_index(int index, bool passive) {
     return ((passive && _current_index_weak >= index) || 
             _current_index_strong.load(std::memory_order_acquire) >= index);
 }
 
 StaticStepPromise<void>::StaticStepPromise(int nb_values, unsigned int step, PromisePlusWaitMode wait_mode) : 
-    PromisePlus<void>(nb_values, wait_mode), _base(nb_values, step) {
+    PromisePlus<void>(nb_values), _base(nb_values, step) {
 
 }
 

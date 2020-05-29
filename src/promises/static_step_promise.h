@@ -66,6 +66,8 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
+    bool passive() const { return true; }
+
 private:
     StaticStepPromiseBase _base;
 };
@@ -81,6 +83,8 @@ public:
     void get(int index);
     void set(int index);
     void set_final(int index);
+
+    bool passive() const { return true; }
 
 private:
     StaticStepPromiseBase _base;
