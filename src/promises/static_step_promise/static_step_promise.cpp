@@ -22,7 +22,7 @@ bool ActiveStaticStepPromiseBase::ready_index_strong(int index) {
 }
 
 bool ActiveStaticStepPromiseBase::ready_index_weak(int index) {
-    if (!(*_common._current_index_weak))
+    if (!_common._current_index_weak.get())
         _common._current_index_weak.reset(new int(-1));
         
     return *_common._current_index_weak >= index;
@@ -39,7 +39,7 @@ bool PassiveStaticStepPromiseBase::ready_index_strong(int index) {
 }
 
 bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
-    if (!(*_common._current_index_weak))
+    if (!_common._current_index_weak.get())
         _common._current_index_weak.reset(new int(-1));
         
     return *_common._current_index_weak >= index;
@@ -99,7 +99,7 @@ void PassiveStaticStepPromise<void>::set(int index) {
 
     _base.assert_free_index_weak(index);
 
-    if (index - _base._current_index_strong) {
+    if (index - _base._current_index_strong >= _base._common._step) {
         std::unique_lock<std::mutex> index_lck(_base._index_m);
         _base._current_index_strong = index;
         _base._index_c.notify_all();
