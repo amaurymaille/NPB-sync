@@ -26,8 +26,8 @@ struct ActiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
     std::unique_ptr<std::atomic<bool>[]> _ready;
     NaivePromiseCommonBase _common;
 
-    bool ready_index_strong(int index) const final;
-    bool ready_index_weak(int index) const final;
+    bool ready_index_strong(int index) final;
+    bool ready_index_weak(int index) final;
 };
 
 struct PassiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
@@ -37,8 +37,8 @@ struct PassiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
     std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait;
     NaivePromiseCommonBase _common;
 
-    bool ready_index_strong(int index) const final;
-    bool ready_index_weak(int index) const final;
+    bool ready_index_strong(int index) final;
+    bool ready_index_weak(int index) final;
 };
 
 template<typename T>

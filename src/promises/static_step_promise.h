@@ -37,8 +37,8 @@ struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
     StaticStepPromiseCommonBase _common;
     std::atomic<int>            _current_index_strong;
 
-    bool ready_index_strong(int index) const final;
-    bool ready_index_weak(int index) const final;
+    bool ready_index_strong(int index) final;
+    bool ready_index_weak(int index) final;
 };
 
 struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
@@ -51,8 +51,8 @@ struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
     mutable std::mutex          _index_m;
     std::condition_variable     _index_c;
 
-    bool ready_index_strong(int index) const final;
-    bool ready_index_weak(int index) const final;
+    bool ready_index_strong(int index) final;
+    bool ready_index_weak(int index) final;
 };
 
 /**

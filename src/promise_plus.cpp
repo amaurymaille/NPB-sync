@@ -27,7 +27,7 @@ PromisePlus<void>::PromisePlus(int max_index) : PromisePlusBase(max_index) {
     
 }
 
-void PromisePlusAbstractReadyCheck::assert_free_index_strong(int index) const {
+void PromisePlusAbstractReadyCheck::assert_free_index_strong(int index) {
 #ifndef NDEBUG
     if (ready_index_strong(index)) {
         assert_free_index_throw(index, "strong");
@@ -35,7 +35,7 @@ void PromisePlusAbstractReadyCheck::assert_free_index_strong(int index) const {
 #endif
 }
 
-void PromisePlusAbstractReadyCheck::assert_free_index_weak(int index) const {
+void PromisePlusAbstractReadyCheck::assert_free_index_weak(int index) {
 #ifndef NDEBUG
     if (ready_index_weak(index)) {
         assert_free_index_throw(index, "weak");

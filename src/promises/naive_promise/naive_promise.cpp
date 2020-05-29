@@ -12,12 +12,12 @@ PassiveNaivePromiseBase::PassiveNaivePromiseBase(int nb_values) : _common(nb_val
     _ready = std::make_unique<bool[]>(nb_values);
 }
 
-bool PassiveNaivePromiseBase::ready_index_strong(int index) const {
+bool PassiveNaivePromiseBase::ready_index_strong(int index) {
     std::unique_lock<std::mutex> lck(_wait[index].first);
     return _ready[index];
 }
 
-bool PassiveNaivePromiseBase::ready_index_weak(int index) const {
+bool PassiveNaivePromiseBase::ready_index_weak(int index) {
     return _ready[index];
 }
 
@@ -25,11 +25,11 @@ ActiveNaivePromiseBase::ActiveNaivePromiseBase(int nb_values) : _common(nb_value
     _ready = std::make_unique<std::atomic<bool>[]>(nb_values);
 }
 
-bool ActiveNaivePromiseBase::ready_index_strong(int index) const {
+bool ActiveNaivePromiseBase::ready_index_strong(int index) {
     return _ready[index].load(std::memory_order_acquire);
 }
 
-bool ActiveNaivePromiseBase::ready_index_weak(int index) const {
+bool ActiveNaivePromiseBase::ready_index_weak(int index) {
     return _ready[index].load(std::memory_order_relaxed);
 }
 

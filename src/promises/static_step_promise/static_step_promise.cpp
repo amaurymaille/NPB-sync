@@ -17,11 +17,14 @@ ActiveStaticStepPromiseBase::ActiveStaticStepPromiseBase(unsigned int step) : _c
 
 }
 
-bool ActiveStaticStepPromiseBase::ready_index_strong(int index) const {
+bool ActiveStaticStepPromiseBase::ready_index_strong(int index) {
     return _current_index_strong.load(std::memory_order_release) >= index;
 }
 
-bool ActiveStaticStepPromiseBase::ready_index_weak(int index) const {
+bool ActiveStaticStepPromiseBase::ready_index_weak(int index) {
+    if (!(*_common._current_index_weak))
+        _common._current_index_weak.reset(new int(-1));
+        
     return *_common._current_index_weak >= index;
 }
 
@@ -30,12 +33,15 @@ PassiveStaticStepPromiseBase::PassiveStaticStepPromiseBase(unsigned int step) : 
 
 }
 
-bool PassiveStaticStepPromiseBase::ready_index_strong(int index) const {
+bool PassiveStaticStepPromiseBase::ready_index_strong(int index) {
     std::unique_lock<std::mutex> lck(_index_m);
     return _current_index_strong >= index;
 }
 
-bool PassiveStaticStepPromiseBase::ready_index_weak(int index) const {
+bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
+    if (!(*_common._current_index_weak))
+        _common._current_index_weak.reset(new int(-1));
+        
     return *_common._current_index_weak >= index;
 }
 
