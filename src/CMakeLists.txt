@@ -15,7 +15,8 @@ add_executable (sync functions.cpp sync.cpp utils.cpp
                      active_promise.cpp promise_plus.cpp "${PROMISE_FILES}"
                      argv.cpp dynamic_config.cpp)
 
-target_link_libraries (sync "${Boost_PROGRAM_OPTIONS_LIBRARY}")
+target_link_libraries (sync "${Boost_PROGRAM_OPTIONS_LIBRARY}"
+                            "${Boost_THREAD_LIBRARY}")
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (sync "${SPDLOG_LIBRARY}")
 endif (NOT SPDLOG_HEADER_ONLY)

@@ -6,6 +6,8 @@
 #include <memory>
 #include <mutex>
 
+#include <boost/thread/tss.hpp>
+
 #include "promise_plus.h"
 #include "utils.h"
 
@@ -15,33 +17,42 @@
     using StaticStepSetMutex = std::mutex;
 #endif
 
-class StaticStepPromiseBase {
-public:
-    StaticStepPromiseBase(int nb_values, unsigned int step);
+template<typename T>
+using tss = boost::thread_specific_ptr<T>;
 
-    unsigned int _step;
-    // Will increase when enough set()s are performed
-    std::atomic<int> _current_index_strong;
+struct StaticStepPromiseCommonBase {
+    StaticStepPromiseCommonBase(unsigned int step);
 
-#ifndef NDEBUG
-    // Will increase as set()s are performed
-    std::atomic<int> _current_index_internal_strong;
-#endif
+    StaticStepSetMutex  _set_m;
+    const unsigned int  _step;
 
-    int _current_index_weak;
+    tss<int>            _current_index_weak;
+};
 
-#ifndef NDEBUG
-    int _current_index_internal_weak;
-#endif
+struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
+    
 
-    // std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait_m;
-    StaticStepSetMutex _set_m;
-    std::atomic<bool> _finalized;
+    ActiveStaticStepPromiseBase(unsigned int step);
 
-    void assert_okay_index(int index, bool passive);
-    bool ready_index(int index, bool passive);
-    std::mutex _index_m;
-    std::condition_variable _cond_m;
+    StaticStepPromiseCommonBase _common;
+    std::atomic<int>            _current_index_strong;
+
+    bool ready_index_strong(int index) const final;
+    bool ready_index_weak(int index) const final;
+};
+
+struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
+    PassiveStaticStepPromiseBase(unsigned int step);
+
+    StaticStepPromiseCommonBase _common;
+    int                         _current_index_strong;
+    // Yes, so, locking a mutex is modifying it, even though ready_index_strong 
+    // is const. Thanks, I hate it.
+    mutable std::mutex          _index_m;
+    std::condition_variable     _index_c;
+
+    bool ready_index_strong(int index) const final;
+    bool ready_index_weak(int index) const final;
 };
 
 /**
@@ -53,12 +64,11 @@ public:
  * mode not performing set()s in the right order will result in undefined behaviour.
  */
 template<typename T>
-class StaticStepPromise : public PromisePlus<T> {
+class ActiveStaticStepPromise : public PromisePlus<T> {
 public:
-    StaticStepPromise(int nb_values, unsigned int step, 
-                      PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    ActiveStaticStepPromise(int nb_values, unsigned int step);
     
-    NO_COPY_T(StaticStepPromise, T);
+    NO_COPY_T(ActiveStaticStepPromise, T);
 
     T& get(int index);
     void set(int index, const T& value);
@@ -66,28 +76,55 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
-    bool passive() const { return true; }
-
 private:
-    StaticStepPromiseBase _base;
+    ActiveStaticStepPromiseBase _base;
 };
 
 template<>
-class StaticStepPromise<void> : public PromisePlus<void> {
+class ActiveStaticStepPromise<void> : public PromisePlus<void> {
 public:
-    StaticStepPromise(int nb_values, unsigned int step, 
-                      PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    ActiveStaticStepPromise(int nb_values, unsigned int step);
     
-    NO_COPY_T(StaticStepPromise, void);
+    NO_COPY_T(ActiveStaticStepPromise, void);
 
     void get(int index);
     void set(int index);
     void set_final(int index);
 
-    bool passive() const { return true; }
+private:
+    ActiveStaticStepPromiseBase _base;
+};
+
+template<typename T>
+class PassiveStaticStepPromise : public PromisePlus<T> {
+public:
+    PassiveStaticStepPromise(int nb_values, unsigned int step);
+    
+    NO_COPY_T(PassiveStaticStepPromise, T);
+
+    T& get(int index);
+    void set(int index, const T& value);
+    void set(int index, T&& value);
+    void set_final(int index, const T& value);
+    void set_final(int index, T&& value);
 
 private:
-    StaticStepPromiseBase _base;
+    PassiveStaticStepPromiseBase _base;
+};
+
+template<>
+class PassiveStaticStepPromise<void> : public PromisePlus<void> {
+public:
+    PassiveStaticStepPromise(int nb_values, unsigned int step);
+    
+    NO_COPY_T(PassiveStaticStepPromise, void);
+
+    void get(int index);
+    void set(int index);
+    void set_final(int index);
+
+private:
+    PassiveStaticStepPromiseBase _base;
 };
 
 template<typename T>
@@ -101,7 +138,11 @@ public:
     }
 
     PromisePlus<T>* new_promise() const {
-        return new StaticStepPromise<T>(_nb_values, _step, _wait_mode);
+        if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
+            return new ActiveStaticStepPromise<T>(_nb_values, _step);
+        } else {
+            return new PassiveStaticStepPromise<T>(_nb_values, _step);
+        }
     }
 
 private:

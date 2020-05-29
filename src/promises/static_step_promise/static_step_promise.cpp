@@ -5,111 +5,116 @@
 
 #include "promises/static_step_promise.h"
 
-StaticStepPromiseBase::StaticStepPromiseBase(int nb_values, unsigned int step) : _step(step) {
+// -----------------------------------------------------------------------------
+// Bases
+
+StaticStepPromiseCommonBase::StaticStepPromiseCommonBase(unsigned int step) : _step(step) {
     assert(step != 0);
-    _current_index_strong.store(-1, std::memory_order_relaxed);
-    _current_index_weak = -1;
-
-#ifndef NDEBUG
-    _current_index_internal_strong.store(-1, std::memory_order_relaxed);
-    _current_index_internal_weak = -1;
-#endif
-
-    _finalized.store(false, std::memory_order_relaxed);
 }
 
-void StaticStepPromiseBase::assert_okay_index(int index, bool passive) {
-#ifndef NDEBUG
-    if ((passive && index <= _current_index_internal_weak) || 
-         index <= _current_index_internal_strong.load(std::memory_order_acquire)) {
-        std::stringstream str;
-        str << "StaticStepPromise: index " << index << " already fulfiled" << std::endl;
-        throw std::runtime_error(str.str());
+
+ActiveStaticStepPromiseBase::ActiveStaticStepPromiseBase(unsigned int step) : _common(step) {
+
+}
+
+bool ActiveStaticStepPromiseBase::ready_index_strong(int index) const {
+    return _current_index_strong.load(std::memory_order_release) >= index;
+}
+
+bool ActiveStaticStepPromiseBase::ready_index_weak(int index) const {
+    return *_common._current_index_weak >= index;
+}
+
+
+PassiveStaticStepPromiseBase::PassiveStaticStepPromiseBase(unsigned int step) : _common(step) {
+
+}
+
+bool PassiveStaticStepPromiseBase::ready_index_strong(int index) const {
+    std::unique_lock<std::mutex> lck(_index_m);
+    return _current_index_strong >= index;
+}
+
+bool PassiveStaticStepPromiseBase::ready_index_weak(int index) const {
+    return *_common._current_index_weak >= index;
+}
+
+// -----------------------------------------------------------------------------
+// StaticStepPromise<void>
+
+ActiveStaticStepPromise<void>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
+    PromisePlus<void>(nb_values), _base(step) {
+
+}
+
+PassiveStaticStepPromise<void>::PassiveStaticStepPromise(int nb_values, unsigned int step) : 
+    PromisePlus<void>(nb_values), _base(step) {
+
+}
+
+void ActiveStaticStepPromise<void>::get(int index) {
+    if (!_base.ready_index_weak(index)) {
+        int ready_index = _base._current_index_strong.load(std::memory_order_acquire);
+        while (ready_index < index)
+            ready_index = _base._current_index_strong.load(std::memory_order_acquire);
+
+        // Not sure...
+        *_base._common._current_index_weak = _base._current_index_strong.load(std::memory_order_acquire);
     }
-
-    if (_finalized.load(std::memory_order_acquire)) {
-        std::stringstream str;
-        str << "StaticStepPromise: promise has been finalized, can't set value at index " << index << std::endl;
-        throw std::runtime_error(str.str());
-    }
-#endif 
 }
 
-bool StaticStepPromiseBase::ready_index(int index, bool passive) {
-    return ((passive && _current_index_weak >= index) || 
-            _current_index_strong.load(std::memory_order_acquire) >= index);
-}
-
-StaticStepPromise<void>::StaticStepPromise(int nb_values, unsigned int step, PromisePlusWaitMode wait_mode) : 
-    PromisePlus<void>(nb_values), _base(nb_values, step) {
-
-}
-
-void StaticStepPromise<void>::get(int index) {
-    if (_base.ready_index(index, this->passive()))
-        return;
-
-    if (this->passive()) {
+void PassiveStaticStepPromise<void>::get(int index) {
+    if (!_base.ready_index_weak(index)) {
         std::unique_lock<std::mutex> lck(_base._index_m);
-        while (_base._current_index_weak < index)
-            _base._cond_m.wait(lck);
-    } else {
-        while (_base._current_index_strong.load(std::memory_order_acquire) < index)
-            ;
+        while (_base._current_index_strong > index)
+            _base._index_c.wait(lck);
+
+        *_base._common._current_index_weak = _base._current_index_strong;
     }
 }
 
-// STRONG ASSUMPTION : at most one thread in set() for all index values at the
-// same time
-void StaticStepPromise<void>::set(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
+void ActiveStaticStepPromise<void>::set(int index) {
+    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
-    _base.assert_okay_index(index, this->passive());
+    _base.assert_free_index_weak(index);
 
-    if (this->passive()) {
-        {
-            if (index >= _base._current_index_weak + _base._step) {
-                {
-                    std::unique_lock<std::mutex> lock(_base._index_m);
-                    _base._current_index_weak = index;
-                }
-
-                _base._cond_m.notify_all();
-            }
-        }
-
-#ifndef NDEBUG
-        _base._current_index_internal_weak = index;
-#endif
-    } else {
-        if (index >= _base._current_index_strong.load(std::memory_order_acquire)) {
-            _base._current_index_strong.store(index, std::memory_order_release);
-        }
-
-#ifndef NDEBUG
-        _base._current_index_internal_strong = index;
-#endif
-    }
-}
-
-void StaticStepPromise<void>::set_final(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._set_m);
-
-    if (this->passive()) {
-        {
-            std::unique_lock<std::mutex> lock(_base._index_m);
-            _base._current_index_weak = index;
-        }
-        _base._cond_m.notify_all();
-#ifndef NDEBUG
-        _base._current_index_internal_weak = index;
-#endif
-    } else {
+    // In THEORY : thread T + 1 will always perform a get before a set (at least
+    // in our synchronization pattern). get already has a strong memory ordering
+    // so we should be able to read the proper value even if we use a relaxed 
+    // memory ordering. 
+    if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
+        _base._common._step) {
         _base._current_index_strong.store(index, std::memory_order_release);
-#ifndef NDEBUG
-        _base._current_index_internal_strong.store(index, std::memory_order_release);
-#endif
     }
+}
 
-    _base._finalized.store(true, std::memory_order_release);
+void PassiveStaticStepPromise<void>::set(int index) {
+    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+
+    _base.assert_free_index_weak(index);
+
+    if (index - _base._current_index_strong) {
+        std::unique_lock<std::mutex> index_lck(_base._index_m);
+        _base._current_index_strong = index;
+        _base._index_c.notify_all();
+    }
+}
+
+void ActiveStaticStepPromise<void>::set_final(int index) {
+    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+
+    _base.assert_free_index_weak(index);
+
+    // Should I use relaxed instead ?
+    _base._current_index_strong.store(index, std::memory_order_release);
+}
+
+void PassiveStaticStepPromise<void>::set_final(int index) {
+    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+
+    _base.assert_free_index_weak(index);
+
+    std::unique_lock<std::mutex> index_lck(_base._index_m);
+    _base._current_index_strong = index;
+    _base._index_c.notify_all();
 }

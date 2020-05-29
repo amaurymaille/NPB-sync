@@ -561,8 +561,8 @@ public:
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
-            SynchronizationTimeCollector::add_time("JLinePromisePlusSynchronizer", "heat_cpu_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("JLinePromisePlusSynchronizer", "heat_cpu_promise_plus", jLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_time("NaivePromisePlus", "heat_cpu_promise_plus (jline)", time);
+            SynchronizationTimeCollector::add_iterations_time("NaivePromisePlus", "heat_cpu_promise_plus (jline)", jLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._increasing_jline_plus) {
@@ -573,8 +573,8 @@ public:
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
-            SynchronizationTimeCollector::add_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_promise_plus", time);
-            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisePlusSynchronizer", "heat_cpu_promise_plus", increasingJLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_time("StaticStepPromisePlus", "heat_cpu_promise_plus (jline)", time);
+            SynchronizationTimeCollector::add_iterations_time("StaticStepPromisePlus", "heat_cpu_promise_plus (jline)", increasingJLinePromisePlus.get_iterations_times());
         }
 
         if (authorized._kline_plus) {

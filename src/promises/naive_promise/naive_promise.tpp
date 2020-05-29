@@ -16,7 +16,7 @@ ActiveNaivePromise<T>::ActiveNaivePromise(int nb_values) :
 
 template<typename T>
 T& PassiveNaivePromise<T>::get(int index) {
-    if (!_base.ready_index(index)) {
+    if (!_base.ready_index_strong(index)) {
         std::unique_lock<std::mutex> lck(_base._wait[index].first);
         while (!_base._ready[index])
             _base._wait[index].second.wait(lck);
@@ -27,7 +27,7 @@ T& PassiveNaivePromise<T>::get(int index) {
 
 template<typename T>
 T& ActiveNaivePromise<T>::get(int index) {
-    if (!_base.ready_index(index)) {
+    if (!_base.ready_index_strong(index)) {
         while (!_base._ready[index].load(std::memory_order_acquire))
             ;
     }
@@ -80,7 +80,7 @@ void PassiveNaivePromise<T>::set_maybe_check(int index, T const& value, bool che
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     std::unique_lock<std::mutex> lck(_base._wait[index].first);
     this->_values[index] = value;
@@ -93,7 +93,7 @@ void PassiveNaivePromise<T>::set_maybe_check(int index, T&& value, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     std::unique_lock<std::mutex> lck(_base._wait[index].first);
     this->_values[index] = std::move(value);
@@ -106,7 +106,7 @@ void ActiveNaivePromise<T>::set_maybe_check(int index, T const& value, bool chec
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     this->_values[index] = value;
     _base._ready[index].store(true, std::memory_order_release);
@@ -117,7 +117,7 @@ void ActiveNaivePromise<T>::set_maybe_check(int index, T&& value, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     this->_values[index] = std::move(value);
     _base._ready[index].store(true, std::memory_order_release);

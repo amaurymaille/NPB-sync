@@ -20,29 +20,25 @@ struct NaivePromiseCommonBase {
     std::unique_ptr<NaiveSetMutex[]> _set_m;
 };
 
-struct NaivePromiseBase {
-    // Strong check
-    virtual bool ready_index(int index) const = 0;
-    void assert_free_index(int index) const;
-};
-
-struct ActiveNaivePromiseBase : public NaivePromiseBase {
+struct ActiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
     ActiveNaivePromiseBase(int nb_values);
 
     std::unique_ptr<std::atomic<bool>[]> _ready;
     NaivePromiseCommonBase _common;
 
-    bool ready_index(int index) const final;
+    bool ready_index_strong(int index) const final;
+    bool ready_index_weak(int index) const final;
 };
 
-struct PassiveNaivePromiseBase : public NaivePromiseBase {
+struct PassiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
     PassiveNaivePromiseBase(int nb_values);
 
     std::unique_ptr<bool[]> _ready;
     std::unique_ptr<std::pair<std::mutex, std::condition_variable>[]> _wait;
     NaivePromiseCommonBase _common;
 
-    bool ready_index(int index) const final;
+    bool ready_index_strong(int index) const final;
+    bool ready_index_weak(int index) const final;
 };
 
 template<typename T>

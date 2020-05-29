@@ -7,35 +7,30 @@ NaivePromiseCommonBase::NaivePromiseCommonBase(int nb_values) {
     _set_m = std::make_unique<NaiveSetMutex[]>(nb_values);
 }
 
-
-void NaivePromiseBase::assert_free_index(int index) const {
-#ifndef NDEBUG
-    if (ready_index(index)) {
-        std::stringstream str;
-        str << "NaivePromise: index " << index << " already fulfiled" << std::endl;
-        throw std::runtime_error(str.str());
-    }
-#endif
-}
-
-
 PassiveNaivePromiseBase::PassiveNaivePromiseBase(int nb_values) : _common(nb_values) {
     _wait = std::make_unique<std::pair<std::mutex, std::condition_variable>[]>(nb_values);
     _ready = std::make_unique<bool[]>(nb_values);
 }
 
-bool PassiveNaivePromiseBase::ready_index(int index) const {
+bool PassiveNaivePromiseBase::ready_index_strong(int index) const {
     std::unique_lock<std::mutex> lck(_wait[index].first);
     return _ready[index];
 }
 
+bool PassiveNaivePromiseBase::ready_index_weak(int index) const {
+    return _ready[index];
+}
 
 ActiveNaivePromiseBase::ActiveNaivePromiseBase(int nb_values) : _common(nb_values) {
     _ready = std::make_unique<std::atomic<bool>[]>(nb_values);
 }
 
-bool ActiveNaivePromiseBase::ready_index(int index) const {
+bool ActiveNaivePromiseBase::ready_index_strong(int index) const {
     return _ready[index].load(std::memory_order_acquire);
+}
+
+bool ActiveNaivePromiseBase::ready_index_weak(int index) const {
+    return _ready[index].load(std::memory_order_relaxed);
 }
 
 // -----------------------------------------------------------------------------
@@ -50,7 +45,7 @@ ActiveNaivePromise<void>::ActiveNaivePromise(int nb_values) : PromisePlus<void>(
 }
 
 void PassiveNaivePromise<void>::get(int index) {
-    if (!_base.ready_index(index)) {
+    if (!_base.ready_index_strong(index)) {
         std::unique_lock<std::mutex> lck(_base._wait[index].first);
         while (!_base._ready[index])
             _base._wait[index].second.wait(lck);
@@ -58,7 +53,7 @@ void PassiveNaivePromise<void>::get(int index) {
 }
 
 void ActiveNaivePromise<void>::get(int index) {
-    if (!_base.ready_index(index)) {
+    if (!_base.ready_index_strong(index)) {
         while (!_base._ready[index].load(std::memory_order_acquire))
             ;
     }
@@ -84,7 +79,7 @@ void PassiveNaivePromise<void>::set_maybe_check(int index, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     std::unique_lock<std::mutex> lck(_base._wait[index].first);
     _base._ready[index] = true;
@@ -95,7 +90,7 @@ void ActiveNaivePromise<void>::set_maybe_check(int index, bool check) {
     std::unique_lock<NaiveSetMutex> lock_s(_base._common._set_m[index]);
 
     if (check)
-        _base.assert_free_index(index);
+        _base.assert_free_index_strong(index);
 
     _base._ready[index].store(true, std::memory_order_release);
 }

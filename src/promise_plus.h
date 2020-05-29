@@ -32,11 +32,6 @@ public:
 
 protected:
     int _max_index;
-    /* Index of the last get() we received.
-     * If a get asks for a lower index, get() returns immediately without having
-     * to wait.
-     */
-    int _last_ready_index;
 };
 
 /**
@@ -75,6 +70,14 @@ public:
     virtual void get(int index) = 0;
     virtual void set(int index) = 0;
     virtual void set_final(int index) = 0;
+};
+
+struct PromisePlusAbstractReadyCheck {
+    virtual bool ready_index_strong(int index) const = 0;
+    virtual bool ready_index_weak(int index) const = 0;
+
+    void assert_free_index_strong(int index) const;
+    void assert_free_index_weak(int index) const;
 };
 
 template<typename T>
