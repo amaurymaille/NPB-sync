@@ -72,7 +72,7 @@ void ActiveStaticStepPromise<void>::get(int index) {
 void PassiveStaticStepPromise<void>::get(int index) {
     if (!_base.ready_index_weak(index)) {
         std::unique_lock<std::mutex> lck(_base._index_m);
-        while (_base._current_index_strong > index)
+        while (_base._current_index_strong < index)
             _base._index_c.wait(lck);
 
         *_base._common._current_index_weak = _base._current_index_strong;
