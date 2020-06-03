@@ -61,7 +61,6 @@ void ActiveStaticStepPromise<void>::get(int index) {
         while (ready_index < index)
             ready_index = _base._current_index_strong.load(std::memory_order_acquire);
 
-        // Not sure...
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
     }
 }
@@ -81,10 +80,6 @@ void ActiveStaticStepPromise<void>::set(int index) {
 
     _base.assert_free_index_weak(index);
 
-    // In THEORY : thread T + 1 will always perform a get before a set (at least
-    // in our synchronization pattern). get already has a strong memory ordering
-    // so we should be able to read the proper value even if we use a relaxed 
-    // memory ordering. 
     if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
         _base._common._step) {
         _base._current_index_strong.store(index, std::memory_order_release);
@@ -108,7 +103,6 @@ void ActiveStaticStepPromise<void>::set_final(int index) {
 
     _base.assert_free_index_weak(index);
 
-    // Should I use relaxed instead ?
     _base._current_index_strong.store(index, std::memory_order_release);
 }
 

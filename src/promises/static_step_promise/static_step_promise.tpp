@@ -22,6 +22,8 @@ T& ActiveStaticStepPromise<T>::get(int index) {
         // Not sure...
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
     }
+
+    return this->_values[index];
 }
 
 template<typename T>
@@ -33,6 +35,8 @@ T& PassiveStaticStepPromise<T>::get(int index) {
 
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong;
     }
+
+    return this->_values[index];
 }
 
 template<typename T>
@@ -42,10 +46,7 @@ void ActiveStaticStepPromise<T>::set(int index, const T& value) {
     _base.assert_free_index_weak(index);
 
     this->_value[index] = value;
-    // In THEORY : thread T + 1 will always perform a get before a set (at least
-    // in our synchronization pattern). get already has a strong memory ordering
-    // so we should be able to read the proper value even if we use a relaxed 
-    // memory ordering. 
+    
     if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
         _base._common._step) {
         _base._current_index_strong.store(index, std::memory_order_release);
@@ -74,10 +75,7 @@ void ActiveStaticStepPromise<T>::set(int index, T&& value) {
     _base.assert_free_index_weak(index);
 
     this->_value[index] = std::move(value);
-    // In THEORY : thread T + 1 will always perform a get before a set (at least
-    // in our synchronization pattern). get already has a strong memory ordering
-    // so we should be able to read the proper value even if we use a relaxed 
-    // memory ordering. 
+    
     if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
         _base._common._step) {
         _base._current_index_strong.store(index, std::memory_order_release);
@@ -106,7 +104,7 @@ void ActiveStaticStepPromise<T>::set_final(int index, const T& value) {
     _base.assert_free_index_weak(index);
 
     this->_value[index] = value;
-    // Should I use relaxed instead ?
+    
     _base._current_index_strong.store(index, std::memory_order_release);
 }
 
@@ -130,7 +128,7 @@ void ActiveStaticStepPromise<T>::set_final(int index, T&& value) {
     _base.assert_free_index_weak(index);
 
     this->_value[index] = std::move(value);
-    // Should I use relaxed instead ?
+    
     _base._current_index_strong.store(index, std::memory_order_release);
 }
 
