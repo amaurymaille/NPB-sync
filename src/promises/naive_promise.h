@@ -28,6 +28,9 @@ struct ActiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
 
     bool ready_index_strong(int index) final;
     bool ready_index_weak(int index) final;
+
+    int index_strong() final { return -1; }
+    int index_weak() final { return -1; }
 };
 
 struct PassiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
@@ -39,6 +42,9 @@ struct PassiveNaivePromiseBase : public PromisePlusAbstractReadyCheck {
 
     bool ready_index_strong(int index) final;
     bool ready_index_weak(int index) final;
+
+    int index_strong() final { return -1; }
+    int index_weak() final { return -1; }
 };
 
 template<typename T>

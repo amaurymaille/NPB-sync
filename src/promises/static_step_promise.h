@@ -5,8 +5,8 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <vector>
 
-#include <boost/thread/tss.hpp>
 
 #include "promise_plus.h"
 #include "utils.h"
@@ -18,7 +18,17 @@
 #endif
 
 template<typename T>
-using tss = boost::thread_specific_ptr<T>;
+class StaticStepPromiseBuilder : public PromisePlusBuilder<T> {
+public:
+    StaticStepPromiseBuilder(int, unsigned int, unsigned int, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    PromisePlus<T>* new_promise() const;
+
+private:
+    int _nb_values;
+    PromisePlusWaitMode _wait_mode;
+    unsigned int _step;
+    unsigned int _n_threads;
+};
 
 struct StaticStepPromiseCommonBase {
     StaticStepPromiseCommonBase(unsigned int step);
@@ -26,12 +36,10 @@ struct StaticStepPromiseCommonBase {
     StaticStepSetMutex  _set_m;
     const unsigned int  _step;
 
-    tss<int>            _current_index_weak;
+    std::vector<int>    _current_index_weak;
 };
 
 struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
-    
-
     ActiveStaticStepPromiseBase(unsigned int step);
 
     StaticStepPromiseCommonBase _common;
@@ -39,6 +47,9 @@ struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
 
     bool ready_index_strong(int index) final;
     bool ready_index_weak(int index) final;
+
+    int index_strong() final { return _current_index_strong.load(std::memory_order_acquire); }
+    int index_weak() final { return _common._current_index_weak[omp_get_thread_num()]; }
 };
 
 struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
@@ -46,13 +57,14 @@ struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
 
     StaticStepPromiseCommonBase _common;
     int                         _current_index_strong;
-    // Yes, so, locking a mutex is modifying it, even though ready_index_strong 
-    // is const. Thanks, I hate it.
-    mutable std::mutex          _index_m;
+    std::mutex                  _index_m;
     std::condition_variable     _index_c;
 
     bool ready_index_strong(int index) final;
     bool ready_index_weak(int index) final;
+
+    int index_strong() final { std::unique_lock<std::mutex> lck(_index_m); return _current_index_strong; }
+    int index_weak() final { return _common._current_index_weak[omp_get_thread_num()]; }
 };
 
 /**
@@ -76,6 +88,8 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
+    friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
+
 private:
     ActiveStaticStepPromiseBase _base;
 };
@@ -90,6 +104,8 @@ public:
     void get(int index);
     void set(int index);
     void set_final(int index);
+
+    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
 
 private:
     ActiveStaticStepPromiseBase _base;
@@ -108,6 +124,8 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
+    friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
+
 private:
     PassiveStaticStepPromiseBase _base;
 };
@@ -123,32 +141,10 @@ public:
     void set(int index);
     void set_final(int index);
 
+    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
+
 private:
     PassiveStaticStepPromiseBase _base;
-};
-
-template<typename T>
-class StaticStepPromiseBuilder : public PromisePlusBuilder<T> {
-public:
-    StaticStepPromiseBuilder(int nb_values, unsigned int step, 
-                             PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) {
-        _nb_values = nb_values;
-        _step = step;
-        _wait_mode = wait_mode;
-    }
-
-    PromisePlus<T>* new_promise() const {
-        if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
-            return new ActiveStaticStepPromise<T>(_nb_values, _step);
-        } else {
-            return new PassiveStaticStepPromise<T>(_nb_values, _step);
-        }
-    }
-
-private:
-    int _nb_values;
-    PromisePlusWaitMode _wait_mode;
-    unsigned int _step;
 };
 
 #include "static_step_promise/static_step_promise.tpp"

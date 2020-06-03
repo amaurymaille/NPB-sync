@@ -228,49 +228,47 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
+typedef std::array<std::vector<uint64>, g::ITERATIONS> IterationTimeByThreadStore;
+
 template<typename T>
 class IterationPromisingSynchronizer : public Synchronizer {
 public:
     IterationPromisingSynchronizer(int n) : Synchronizer() {
         _promises_store.reserve(g::ITERATIONS);
-        _times[0] = 0;
 
-        for (int i = 0; i < g::ITERATIONS; ++i)
+        for (int i = 0; i < g::ITERATIONS; ++i) {
             _promises_store.push_back(T(n));
+            _iterations_times_by_thread[i].resize(n, 0);
+        }
     }
 
     template<typename F, typename... Args>
     void run(F&& f, Args&&... args) {
-        struct timespec begin, end;
         #pragma omp parallel
         {
+            struct timespec thread_begin, thread_end;
+
             for (int m = 1; m < g::ITERATIONS; ++m) {                
                 auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
                 auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
 
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &begin);
-                }
 
+                clock_gettime(CLOCK_MONOTONIC, &thread_begin);
                 f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &end);
-                    uint64 diff = clock_diff(&end, &begin);
-                    _times[m] = diff;
-                }
+                clock_gettime(CLOCK_MONOTONIC, &thread_end);
+
+                _iterations_times_by_thread[m][omp_get_thread_num()] = clock_diff(&thread_end, &thread_begin);
             }
         }
     }
 
-    std::array<uint64, g::ITERATIONS> const& get_iterations_times() const {
-        return _times;
+    IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
+        return _iterations_times_by_thread;
     }
 
 protected:
     std::vector<T> _promises_store;
-    std::array<uint64, g::ITERATIONS> _times;
+    IterationTimeByThreadStore _iterations_times_by_thread;
 };
 
 using PointPromisingSynchronizer = IterationPromisingSynchronizer<PointPromiseContainer>;
@@ -344,6 +342,7 @@ using KLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<KLinePromi
 using IncreasingJLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingJLinePromisePlusContainer>;
 using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingKLinePromisePlusContainer>; */
 
+
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
@@ -351,6 +350,10 @@ public:
         for (int i = 0; i < g::ITERATIONS; ++i) {
             for (int j = 0; j < n_threads; j++)
                 _promises_store[i].push_back(builder.new_promise());
+        }
+
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            _times_by_thread[i].resize(n_threads);
         }
     }
 
@@ -363,41 +366,35 @@ public:
 
     template<typename F, typename... Args>
     void run(F&& f, Args&&... args) {
-        struct timespec begin, end;
-        _times[0] = 0;
-
         #pragma omp parallel
         {
+            struct timespec thread_begin, thread_end;
             int thread_num = omp_get_thread_num();
             int num_threads = omp_get_num_threads();
 
             for (int i = 1; i < g::ITERATIONS; ++i) {
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &begin);
-                }
+                
 
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
+                clock_gettime(CLOCK_MONOTONIC, &thread_begin);
+
                 f(_matrix, i, dst, src);
 
-                #pragma omp master
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &end);
-                    _times[i] = clock_diff(&end, &begin);
-                }
+                clock_gettime(CLOCK_MONOTONIC, &thread_end);
+
+                _times_by_thread[i][omp_get_thread_num()] = clock_diff(&thread_end, &thread_begin);
             }
         }
     }
 
-    std::array<uint64, g::ITERATIONS> const& get_iterations_times() const {
-        return _times;
+    IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
+        return _times_by_thread;
     }
-
 private:
     std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
-    std::array<uint64, g::ITERATIONS> _times;
+    IterationTimeByThreadStore _times_by_thread;
 };
 
 template<class Synchronizer, class F, class... Args>
@@ -422,8 +419,12 @@ public:
         SynchronizationTimeCollector::__times[std::make_pair(synchronizer, function)].push_back(time);
     }
 
-    static void add_iterations_time(std::string const& synchronizer, std::string const& function, std::array<uint64, g::ITERATIONS> const& times) {
+    /* static void add_iterations_time(std::string const& synchronizer, std::string const& function, std::array<uint64, g::ITERATIONS> const& times) {
         SynchronizationTimeCollector::__iterations_times[std::make_pair(synchronizer, function)].push_back(times);
+    } */
+
+    static void add_iterations_times_by_thread(std::string const& synchronizer, std::string const& function, IterationTimeByThreadStore const& times) {
+        SynchronizationTimeCollector::__iterations_times_by_thread[std::make_pair(synchronizer, function)].push_back(times);
     }
 
     static void collect_all() {
@@ -487,7 +488,7 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
             SynchronizationTimeCollector::add_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", time);
-            SynchronizationTimeCollector::add_iterations_time("BlockPromisingSynchronizer", "heat_cpu_block_promise", blockPromise.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_times_by_thread("BlockPromisingSynchronizer", "heat_cpu_block_promise", blockPromise.get_iterations_times_by_thread());
         }
 
         /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
@@ -506,7 +507,7 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
             SynchronizationTimeCollector::add_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", time);
-            SynchronizationTimeCollector::add_iterations_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", jLinePromise.get_iterations_times());
+            // SynchronizationTimeCollector::add_iterations_time("JLinePromisingSynchronizer", "heat_cpu_jline_promise", jLinePromise.get_iterations_times());
         }
 
         if (authorized._increasing_jline) {
@@ -517,7 +518,7 @@ public:
                                                                   std::placeholders::_3,
                                                                   std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", time); 
-            SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", increasingJLinePromise.get_iterations_times()); 
+            // SynchronizationTimeCollector::add_iterations_time("IncreasingJLinePromisingSynchronizer", "heat_cpu_increasing_jline_promise", increasingJLinePromise.get_iterations_times()); 
         }
 
         if (authorized._kline) {
@@ -528,7 +529,7 @@ public:
                                                         std::placeholders::_3,
                                                         std::placeholders::_4));
             SynchronizationTimeCollector::add_time("KLinePromisingSynchronizer", "heat_cpu_kline_promise", time);
-            SynchronizationTimeCollector::add_iterations_time("KLinePromisingSynchronizer", "heat_cpu_kline_promise", kLinePromise.get_iterations_times());
+            // SynchronizationTimeCollector::add_iterations_time("KLinePromisingSynchronizer", "heat_cpu_kline_promise", kLinePromise.get_iterations_times());
         }
 
         if (authorized._increasing_kline) {
@@ -539,7 +540,7 @@ public:
                                                                   std::placeholders::_3,
                                                                   std::placeholders::_4));
             SynchronizationTimeCollector::add_time("IncreasingKLinePromisingSynchronizer", "heat_cpu_increasing_kline_promise", time); 
-            SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisingSynchronizer", "heat_cpu_increasing_kline_promise", increasingKLinePromise.get_iterations_times()); 
+            // SynchronizationTimeCollector::add_iterations_time("IncreasingKLinePromisingSynchronizer", "heat_cpu_increasing_kline_promise", increasingKLinePromise.get_iterations_times()); 
         }
 
         if (authorized._block_plus) {
@@ -562,11 +563,11 @@ public:
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             SynchronizationTimeCollector::add_time("NaivePromisePlus", "heat_cpu_promise_plus (jline)", time);
-            SynchronizationTimeCollector::add_iterations_time("NaivePromisePlus", "heat_cpu_promise_plus (jline)", jLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_times_by_thread("NaivePromisePlus", "heat_cpu_promise_plus (jline)", jLinePromisePlus.get_iterations_times_by_thread());
         }
 
         if (authorized._increasing_jline_plus) {
-            StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, sDynamicConfigExtra._static_step_jline_plus);
+            StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, sDynamicConfigExtra._static_step_jline_plus, n_threads);
             PromisePlusSynchronizer<void> increasingJLinePromisePlus(n_threads, builder);
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
@@ -574,7 +575,7 @@ public:
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
             SynchronizationTimeCollector::add_time("StaticStepPromisePlus", "heat_cpu_promise_plus (jline)", time);
-            SynchronizationTimeCollector::add_iterations_time("StaticStepPromisePlus", "heat_cpu_promise_plus (jline)", increasingJLinePromisePlus.get_iterations_times());
+            SynchronizationTimeCollector::add_iterations_times_by_thread("StaticStepPromisePlus", "heat_cpu_promise_plus (jline)", increasingJLinePromisePlus.get_iterations_times_by_thread());
         }
 
         if (authorized._kline_plus) {
@@ -614,26 +615,31 @@ public:
 
     static void print_iterations_times() {
         ExtraConfig::iterations_times_file() << "Global" << " " << "Local" << " " << "Synchronizer" << " " << "Function" << " " << "Time" << std::endl; 
-        for (auto const& p: __iterations_times) {
-            int count = 0;
-            for (std::array<uint64, g::ITERATIONS> const& times: p.second) {
+        for (auto const& p: __iterations_times_by_thread) {
+            int run = 0;
+            for (IterationTimeByThreadStore const& store: p.second) {
                 int iter = 0;
-                for (uint64 const& time: times) {
-                    lldiv_t result = lldiv(time, BILLION);
-                    ExtraConfig::iterations_times_file() << count << " " << iter << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                for (std::vector<uint64> const& times: store) {
+                    int thread = 0;
+                    for (uint64 const& time: times) {
+                        lldiv_t result = lldiv(time, BILLION);
+                        ExtraConfig::iterations_times_file() << run << " " << iter << " " << " " << thread << " " << p.first.first << " " << p.first.second << " " << result.quot << "." << ns_with_leading_zeros(result.rem) << std::endl;
+                        thread++;
+                    }
                     iter++;
                 }
-                count++;
+                run++;
             }
         }
     }
 
     static std::map<std::pair<std::string, std::string>, std::vector<uint64>> __times;
-    static std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::ITERATIONS>>> __iterations_times;
+    static std::map<std::pair<std::string, std::string>, std::vector<IterationTimeByThreadStore>> __iterations_times_by_thread;
 };
 
 std::map<std::pair<std::string, std::string>, std::vector<uint64>> SynchronizationTimeCollector::__times;
-std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::ITERATIONS>>> SynchronizationTimeCollector::__iterations_times;
+// std::map<std::pair<std::string, std::string>, std::vector<std::array<uint64, g::ITERATIONS>>> SynchronizationTimeCollector::__iterations_times;
+std::map<std::pair<std::string, std::string>, std::vector<IterationTimeByThreadStore>> SynchronizationTimeCollector::__iterations_times_by_thread;
 
 int main(int argc, char** argv) {
     namespace g = Globals;
@@ -661,6 +667,7 @@ int main(int argc, char** argv) {
 
     // Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
     for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {
+        std::cout << "Beginning iteration " << i << std::endl;
         SynchronizationTimeCollector::collect_all();
     }
 

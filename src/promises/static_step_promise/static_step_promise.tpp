@@ -20,7 +20,7 @@ T& ActiveStaticStepPromise<T>::get(int index) {
             ready_index = _base._current_index_strong.load(std::memory_order_acquire);
 
         // Not sure...
-        _base._common._current_index_weak = _base._current_index_strong.load(std::memory_order_acquire);
+        _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
     }
 }
 
@@ -31,7 +31,7 @@ T& PassiveStaticStepPromise<T>::get(int index) {
         while (_base._current_index_strong > index)
             _base._index_c.wait(lck);
 
-        *_base._common._current_index_weak = _base._current_index_strong;
+        _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong;
     }
 }
 
@@ -146,3 +146,26 @@ void PassiveStaticStepPromise<T>::set_final(int index, T&& value) {
     _base._current_index_strong = index;
     _base._index_c.notify_all();
 }
+
+template<typename T>
+StaticStepPromiseBuilder<T>::StaticStepPromiseBuilder(int nb_values, unsigned int step, unsigned int n_threads,
+                                                      PromisePlusWaitMode wait_mode) {
+    _nb_values = nb_values;
+    _step = step;
+    _n_threads = n_threads;
+    _wait_mode = wait_mode;
+}
+
+template<typename T>
+PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const {
+    if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
+        ActiveStaticStepPromise<T>* ptr = new ActiveStaticStepPromise<T>(_nb_values, _step);
+        ptr->_base._common._current_index_weak.resize(_n_threads, -1);
+        return ptr;
+    } else {
+        PassiveStaticStepPromise<T>* ptr = new PassiveStaticStepPromise<T>(_nb_values, _step);
+        ptr->_base._common._current_index_weak.resize(_n_threads, -1);
+        return ptr;
+    }
+}
+

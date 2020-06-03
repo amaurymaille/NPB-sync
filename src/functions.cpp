@@ -147,17 +147,16 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
     namespace g = Globals;
 
     int* ptr = array.data();
-    int last_i = -1;
 
     /* std::optional<std::vector<MatrixValue>*> values = 
         src ? std::make_optional(src->get()[omp_get_thread_num()].get_future().get()) : std::nullopt; */
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
 
-    #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X; ++i) {
+    for (int k = 0; k < g::DIM_Z; ++k) {
         for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
+            #pragma omp for schedule(static) nowait
+            for (int i = 1; i < g::DIM_X; ++i) {
                 // int promise_pos = j * g::DIM_Z + k;
 
                 size_t n = to1d(m, i, j, k);
@@ -185,11 +184,9 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
                 
             }
         }
-
-        last_i = i;
     }
 
-    if (dst && last_i != -1) {
+    if (dst) {
         // printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
         /* std::vector<MatrixValue>* arr = new std::vector<MatrixValue>(g::NB_VALUES_PER_BLOCK);
         for (int j = 1; j < g::DIM_Y; ++j) {

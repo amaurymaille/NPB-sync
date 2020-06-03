@@ -3,6 +3,9 @@
 #include <stdexcept>
 #include <sstream>
 
+#include <omp.h>
+
+#include "dynamic_defines.h"
 #include "promises/static_step_promise.h"
 
 // -----------------------------------------------------------------------------
@@ -14,7 +17,7 @@ StaticStepPromiseCommonBase::StaticStepPromiseCommonBase(unsigned int step) : _s
 
 
 ActiveStaticStepPromiseBase::ActiveStaticStepPromiseBase(unsigned int step) : _common(step) {
-
+    _current_index_strong.store(-1, std::memory_order_release);
 }
 
 bool ActiveStaticStepPromiseBase::ready_index_strong(int index) {
@@ -22,15 +25,12 @@ bool ActiveStaticStepPromiseBase::ready_index_strong(int index) {
 }
 
 bool ActiveStaticStepPromiseBase::ready_index_weak(int index) {
-    if (!_common._current_index_weak.get())
-        _common._current_index_weak.reset(new int(-1));
-        
-    return *_common._current_index_weak >= index;
+    return _common._current_index_weak[omp_get_thread_num()] >= index;
 }
 
 
 PassiveStaticStepPromiseBase::PassiveStaticStepPromiseBase(unsigned int step) : _common(step) {
-
+    _current_index_strong = -1;
 }
 
 bool PassiveStaticStepPromiseBase::ready_index_strong(int index) {
@@ -39,10 +39,7 @@ bool PassiveStaticStepPromiseBase::ready_index_strong(int index) {
 }
 
 bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
-    if (!_common._current_index_weak.get())
-        _common._current_index_weak.reset(new int(-1));
-        
-    return *_common._current_index_weak >= index;
+    return _common._current_index_weak[omp_get_thread_num()] >= index;
 }
 
 // -----------------------------------------------------------------------------
@@ -65,7 +62,7 @@ void ActiveStaticStepPromise<void>::get(int index) {
             ready_index = _base._current_index_strong.load(std::memory_order_acquire);
 
         // Not sure...
-        *_base._common._current_index_weak = _base._current_index_strong.load(std::memory_order_acquire);
+        _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
     }
 }
 
@@ -75,7 +72,7 @@ void PassiveStaticStepPromise<void>::get(int index) {
         while (_base._current_index_strong < index)
             _base._index_c.wait(lck);
 
-        *_base._common._current_index_weak = _base._current_index_strong;
+        _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong;
     }
 }
 

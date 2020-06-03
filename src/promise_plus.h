@@ -76,6 +76,9 @@ struct PromisePlusAbstractReadyCheck {
     virtual bool ready_index_strong(int index) = 0;
     virtual bool ready_index_weak(int index) = 0;
 
+    virtual int index_strong() = 0;
+    virtual int index_weak() = 0;
+
     void assert_free_index_strong(int index);
     void assert_free_index_weak(int index);
 };
