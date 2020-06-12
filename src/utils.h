@@ -2,6 +2,8 @@
 #define UTILS_H
 
 #include <atomic>
+#include <array>
+#include <initializer_list>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -52,6 +54,17 @@ private:
     uint64 _limit;
     std::atomic<unsigned int> _reset_count;
     std::atomic<bool> _running;
+};
+
+template<size_t N>
+class DimensionConverter {
+public:
+    DimensionConverter(std::initializer_list<size_t> const& dimensions);
+    size_t to_1d(std::initializer_list<size_t> const& values);
+    std::array<size_t, N> from_1d(size_t pos);
+
+private:
+    std::array<size_t, N> _dimensions_sizes;
 };
 
 namespace notstd {
@@ -111,5 +124,7 @@ void init_start_matrix_once();
 void init_from_start_matrix(Matrix&);
 
 void init_expected_matrix_once();
+
+#include "utils.tpp"
 
 #endif /* UTILS_H */
