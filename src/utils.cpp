@@ -22,6 +22,37 @@ namespace Globals {
     RandomGenerator<unsigned char> binary_generator(0, 1);
 }
 
+DimensionConverter<4>::DimensionConverter(std::initializer_list<size_t> const& init) {
+    assert(init.size() == 4);
+
+    std::copy(init.begin(), init.end(), _dimensions_sizes.begin());
+}
+
+size_t DimensionConverter<4>::to_1d(std::initializer_list<size_t> const& values) {
+    assert (values.size() == 4);
+
+    auto iter = values.begin();
+    size_t w = *iter, x = *(iter + 1), y = *(iter + 2), z = *(iter + 3);
+    auto [_, dimx, dimy, dimz] = _dimensions_sizes;
+
+    return w * dimx * dimy  * dimz +
+           x        * dimy  * dimz + 
+           y                * dimz +
+           z;
+}
+
+std::array<size_t, 4> DimensionConverter<4>::from_1d(size_t pos) {
+    auto [_, dimx, dimy, dimz] = _dimensions_sizes;
+
+    size_t z = pos % dimz;
+    size_t y = ((pos - z) / dimz) % dimy;
+    size_t x = ((pos - z - y * dimz) / (dimy * dimz)) % dimx;
+    size_t w = (pos - z - y * dimz - x * dimy * dimz) / (dimx * dimy * dimz);
+
+    std::array<size_t, 4> result = {w, x, y ,z};
+    return result;
+}
+
 size_t to1d(size_t w, size_t x, size_t y, size_t z) {
     namespace g = Globals;
     return w * g::DIM_X * g::DIM_Y  * g::DIM_Z +

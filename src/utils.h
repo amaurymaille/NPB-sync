@@ -67,6 +67,17 @@ private:
     std::array<size_t, N> _dimensions_sizes;
 };
 
+template<>
+class DimensionConverter<4> {
+public:
+    DimensionConverter(std::initializer_list<size_t> const& dimensions);
+    size_t to_1d(std::initializer_list<size_t> const& values);
+    std::array<size_t, 4> from_1d(size_t pos);
+
+private:
+    std::array<size_t, 4> _dimensions_sizes;
+};
+
 namespace notstd {
     // Do nothing mutex
     // Inspired by ACE_Null_Mutex
