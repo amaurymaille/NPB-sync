@@ -40,6 +40,9 @@ namespace g = Globals;
 Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
+Matrix g_expected_reordered_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
+Matrix g_reordered_start_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
+
 namespace Globals {
     // Abort if a **single** simulation takes more than the given time
     DeadlockDetector deadlock_detector(10LL * MINUTES * TO_NANO);
@@ -663,7 +666,13 @@ int main(int argc, char** argv) {
     init_start_matrix_once();
     init_from_start_matrix(g_expected_matrix);
     assert_matrix_equals(g_start_matrix, g_expected_matrix);
+
+    init_reordered_start_matrix_once();
+    init_from_reordered_start_matrix(g_expected_reordered_matrix);
+    assert_matrix_equals(g_reordered_start_matrix, g_expected_reordered_matrix);
+
     init_expected_matrix_once();
+    init_expected_reordered_matrix_once();
 
     // Globals::deadlock_detector_thread = std::thread(&DeadlockDetector::run, &(Globals::deadlock_detector));
     for (int i = 0; i < g::NB_GLOBAL_LOOPS; ++i) {

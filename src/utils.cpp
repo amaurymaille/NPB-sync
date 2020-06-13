@@ -78,6 +78,22 @@ void init_matrix(int* ptr) {
     }
 }
 
+void init_reordered_matrix(Matrix& matrix) {
+    namespace g = Globals;
+
+    int value = 0;
+    for (int i = 0; i < g::DIM_W; ++i) {
+        for (int j = 0; j < g::DIM_X; ++j) {
+            for (int k = 0; k < g::DIM_Y; ++k) {
+                for (int l = 0; l < g::DIM_Z; ++l) {
+                    matrix[i][l][k][j] = value % 10;
+                    value++;
+                }
+            }
+        }
+    }
+}
+
 void assert_okay_init(Matrix const& matrix) {
     namespace g = Globals;
     assert_matrix_equals(matrix, g_start_matrix);
@@ -127,17 +143,35 @@ void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
     assert(memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) == 0);
 }
 
+void init_matrix_from(Matrix& matrix, Matrict const& src) {
+    memcpy(matrix.data(), src.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue));
+}
+
 void init_start_matrix_once() {
     init_matrix(g_start_matrix.data());
 }
 
+void init_reordered_start_matrix_once() {
+    init_reordered_matrix(g_reordered_start_matrix);
+}
+
 void init_from_start_matrix(Matrix& matrix) {
-    memcpy(matrix.data(), g_start_matrix.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue));
+    init_matrix_from(matrix, g_start_matrix);
+}
+
+void init_from_reordered_start_matrix(Matrix& matrix) {
+    init_matrix_from(matrix, g_reordered_start_matrix);
 }
 
 void init_expected_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
         heat_cpu(g_expected_matrix, i);
+    }
+}
+
+void init_expected_reordered_matrix_once() {
+    for (int i = 1; i < Globals::ITERATIONS; ++i) {
+        
     }
 }
 

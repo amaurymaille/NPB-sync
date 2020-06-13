@@ -141,4 +141,9 @@ extern Matrix g_start_matrix;
 // The expected final matrix 
 extern Matrix g_expected_matrix;
 
+// The initial reordered matrix
+extern Matrix g_reordered_start_matrix;
+// The expected final reordered matrix
+extern Matrix g_expected_reordered_matrix;
+
 #endif /* DEFINES_H */
