@@ -22,32 +22,22 @@ namespace Globals {
     RandomGenerator<unsigned char> binary_generator(0, 1);
 }
 
-DimensionConverter<4>::DimensionConverter(std::initializer_list<size_t> const& init) {
-    assert(init.size() == 4);
-
-    std::copy(init.begin(), init.end(), _dimensions_sizes.begin());
+DimensionConverter<4>::DimensionConverter(size_t dimw, size_t dimx, size_t dimy, size_t dimz) :
+    _dimw(dimw), _dimx(dimx), _dimy(dimy), _dimz(dimz) {
 }
 
-size_t DimensionConverter<4>::to_1d(std::initializer_list<size_t> const& values) {
-    assert (values.size() == 4);
-
-    auto iter = values.begin();
-    size_t w = *iter, x = *(iter + 1), y = *(iter + 2), z = *(iter + 3);
-    auto [_, dimx, dimy, dimz] = _dimensions_sizes;
-
-    return w * dimx * dimy  * dimz +
-           x        * dimy  * dimz + 
-           y                * dimz +
+size_t DimensionConverter<4>::to_1d(size_t w, size_t x, size_t y, size_t z) {
+    return w * _dimx * _dimy  * _dimz +
+           x        * _dimy  * _dimz + 
+           y                * _dimz +
            z;
 }
 
 std::array<size_t, 4> DimensionConverter<4>::from_1d(size_t pos) {
-    auto [_, dimx, dimy, dimz] = _dimensions_sizes;
-
-    size_t z = pos % dimz;
-    size_t y = ((pos - z) / dimz) % dimy;
-    size_t x = ((pos - z - y * dimz) / (dimy * dimz)) % dimx;
-    size_t w = (pos - z - y * dimz - x * dimy * dimz) / (dimx * dimy * dimz);
+    size_t z = pos % _dimz;
+    size_t y = ((pos - z) / _dimz) % _dimy;
+    size_t x = ((pos - z - y * _dimz) / (_dimy * _dimz)) % _dimx;
+    size_t w = (pos - z - y * _dimz - x * _dimy * _dimz) / (_dimx * _dimy * _dimz);
 
     std::array<size_t, 4> result = {w, x, y ,z};
     return result;

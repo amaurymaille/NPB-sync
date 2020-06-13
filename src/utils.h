@@ -70,12 +70,12 @@ private:
 template<>
 class DimensionConverter<4> {
 public:
-    DimensionConverter(std::initializer_list<size_t> const& dimensions);
-    size_t to_1d(std::initializer_list<size_t> const& values);
+    DimensionConverter(size_t dimw, size_t dimx, size_t dimy, size_t dimz);
+    size_t to_1d(size_t w, size_t x, size_t y, size_t z);
     std::array<size_t, 4> from_1d(size_t pos);
 
 private:
-    std::array<size_t, 4> _dimensions_sizes;
+    size_t _dimw, _dimx, _dimy, _dimz;
 };
 
 namespace notstd {

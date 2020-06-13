@@ -21,10 +21,10 @@ void heat_cpu(Matrix& array, size_t m) {
     for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
@@ -65,10 +65,10 @@ void heat_cpu_switch_loops(Matrix& array, size_t m) {
         for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j ,k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j ,k);
 
                 int orig = ptr[n];
                 int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
@@ -111,10 +111,10 @@ void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, con
                     used_value = true;
                 }
 
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -159,10 +159,10 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
             for (int i = 1; i < g::DIM_X; ++i) {
                 // int promise_pos = j * g::DIM_Z + k;
 
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_values || !values ? ptr[nm1] : (**values)[promise_pos]) + ptr[nm1j] + ptr[nm1m];
@@ -191,7 +191,7 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
         /* std::vector<MatrixValue>* arr = new std::vector<MatrixValue>(g::NB_VALUES_PER_BLOCK);
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t ptr_pos = to1d(m, last_i, j, k);
+                size_t ptr_pos = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, last_i, j, k);
                 size_t arr_pos = j * g::DIM_Z + k;
                 (*arr)[arr_pos] = ptr[ptr_pos];
             }
@@ -244,10 +244,10 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
                     // printf("[Thread %d] Getting (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, i - 1, j, k, **values_iter);
                 } */
 
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : (**values_iter)) + ptr[nm1j] + ptr[nm1m];
@@ -290,7 +290,7 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
             }
 
             if (dst && last_i != -1) {
-                // size_t pos = to1d(m, last_i, j, k);
+                // size_t pos = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, last_i, j, k);
                 // std::vector<std::promise<std::vector<MatrixValue>>>& target = dst->get()[omp_get_thread_num() + 1];
                 std::vector<Promise<size_t>>& target = dst->get()[omp_get_thread_num() + 1];
 
@@ -324,10 +324,10 @@ void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, con
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -366,10 +366,10 @@ void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, con
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -425,10 +425,10 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -510,10 +510,10 @@ void heat_cpu_increasing_kline_promise(Matrix& array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -580,10 +580,10 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore&
     for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
@@ -622,10 +622,10 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -665,10 +665,10 @@ void heat_cpu_kline_promise_plus(Matrix& array, size_t m, KLinePromisePlusStore&
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -723,10 +723,10 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -803,10 +803,10 @@ void heat_cpu_increasing_kline_promise_plus(Matrix& array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
@@ -869,10 +869,10 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
         for (int j = 1; j < g::DIM_Y; ++j) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = to1d(m, i, j, k);
-                size_t nm1 = to1d(m, i - 1, j, k);
-                size_t nm1j = to1d(m, i, j - 1, k);
-                size_t nm1m = to1d(m - 1, i, j, k);
+                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
+                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
+                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
 
                 int orig = ptr[n];
                 int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
