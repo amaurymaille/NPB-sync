@@ -108,10 +108,10 @@ void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore&
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
 
-    for (int k = 0; k < g::DIM_Z; ++k) {
+    #pragma omp for schedule(static) nowait
+    for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
-            #pragma omp for schedule(static) nowait
-            for (int i = 1; i < g::DIM_X; ++i) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
