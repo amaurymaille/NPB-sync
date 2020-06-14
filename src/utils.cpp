@@ -85,8 +85,11 @@ void init_reordered_matrix(Matrix& matrix) {
 }
 
 void assert_okay_init(Matrix const& matrix) {
-    namespace g = Globals;
     assert_matrix_equals(matrix, g_start_matrix);
+}
+
+void assert_okay_reordered_init(Matrix const& matrix) {
+    assert_matrix_equals(matrix, g_reordered_start_matrix);
 }
 
 std::string get_time_fmt(const char* fmt) {
@@ -133,7 +136,7 @@ void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
     assert(memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) == 0);
 }
 
-void init_matrix_from(Matrix& matrix, Matrict const& src) {
+void init_matrix_from(Matrix& matrix, Matrix const& src) {
     memcpy(matrix.data(), src.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue));
 }
 
@@ -155,13 +158,13 @@ void init_from_reordered_start_matrix(Matrix& matrix) {
 
 void init_expected_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
-        heat_cpu(g_expected_matrix, i);
+        heat_cpu(*g_expected_matrix, i);
     }
 }
 
 void init_expected_reordered_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
-        
+        heat_cpu(*g_expected_reordered_matrix, i);
     }
 }
 
@@ -229,4 +232,59 @@ std::string ns_with_leading_zeros(uint64 ns) {
     } else {
         return str.str();
     }
+}
+
+MatrixReorderer::MatrixReorderer(size_t w, size_t x, size_t y, size_t z) : 
+    _matrix(boost::extents[w][x][y][z]) {
+
+}
+
+MatrixReorderer::~MatrixReorderer() {
+    
+}
+
+Matrix& MatrixReorderer::get_matrix() {
+    return _matrix;
+}
+
+
+StandardMatrixReorderer::StandardMatrixReorderer(size_t w, size_t x, size_t y, size_t z) : MatrixReorderer(w, x, y, z) {
+
+}
+
+void StandardMatrixReorderer::init() {
+    init_from_start_matrix(_matrix);
+}
+
+void StandardMatrixReorderer::assert_okay_init() {
+    assert_matrix_equals(_matrix, g_start_matrix);
+}
+
+void StandardMatrixReorderer::assert_okay_compute() {
+    assert_matrix_equals(_matrix, g_expected_matrix->get_matrix());
+}
+
+MatrixValue& StandardMatrixReorderer::operator()(size_t i, size_t j, size_t k, size_t l) {
+    return _matrix[i][j][k][l];
+}
+
+
+JLinePromiseMatrixReorderer::JLinePromiseMatrixReorderer(size_t w, size_t x, size_t y, size_t z) : MatrixReorderer(w, z, y, x) {
+
+}
+
+void JLinePromiseMatrixReorderer::init() {
+    init_from_reordered_start_matrix(_matrix);
+}
+
+void JLinePromiseMatrixReorderer::assert_okay_init() {
+    assert_matrix_equals(_matrix, g_reordered_start_matrix);
+}
+
+void JLinePromiseMatrixReorderer::assert_okay_compute() {
+    assert_matrix_equals(_matrix, g_expected_reordered_matrix->get_matrix());
+}
+
+MatrixValue& JLinePromiseMatrixReorderer::operator()(size_t i, size_t j, size_t k, size_t l) {
+    return _matrix[i][l][k][j];
 }

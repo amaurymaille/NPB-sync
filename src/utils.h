@@ -64,7 +64,7 @@ public:
     std::array<size_t, N> from_1d(size_t pos);
 
 private:
-    size_t _dimw, _dimx, _dimy, _dimz;
+    std::array<size_t, N> _dimensions_sizes;
 };
 
 template<>
@@ -109,12 +109,6 @@ auto count_duration_cast(std::chrono::duration<R> const& tp) {
 size_t to1d(size_t w, size_t x, size_t y, size_t z);
 std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n);
 
-void init_matrix(int* ptr);
-void init_reordered_matrix(Matrix& matrix);
-
-void assert_okay_init(Matrix const& matrix);
-void assert_okay_reordered_init(Matrix const& matrix);
-
 std::string get_time_fmt(const char* fmt);
 const char* get_time_fmt_cstr(const char* fmt);
 const char* get_time_default_fmt();
@@ -139,6 +133,12 @@ std::optional<typename std::result_of<F(T const&)>::type> operator>>=(std::optio
 
 void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs);
 
+void init_matrix(int* ptr);
+void init_reordered_matrix(Matrix& matrix);
+
+void assert_okay_init(Matrix const& matrix);
+void assert_okay_reordered_init(Matrix const& matrix);
+
 void init_from(Matrix&, const Matrix&);
 
 void init_start_matrix_once();
@@ -152,8 +152,15 @@ void init_expected_reordered_matrix_once();
 
 class MatrixReorderer {
 public:
+    MatrixReorderer(size_t w, size_t x, size_t y, size_t z);
+
+    virtual ~MatrixReorderer();
+
     virtual void init() = 0;
-    virtual MatrixValue operator()(size_t, size_t, size_t, size_t) = 0;
+    virtual void assert_okay_init() = 0;
+    virtual void assert_okay_compute() = 0;
+    virtual MatrixValue& operator()(size_t, size_t, size_t, size_t) = 0;
+    Matrix& get_matrix();
     
 protected:
     Matrix _matrix;
@@ -161,28 +168,22 @@ protected:
 
 class StandardMatrixReorderer : public MatrixReorderer {
 public:
-    StandardMatrixReorderer() : _matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z])) {
+    StandardMatrixReorderer(size_t w, size_t x, size_t y, size_t z);
 
-    }
-
-    void init() {
-        init_from_start_matrix(_matrix);
-    }
-
-    MatrixValue operator()(size_t i, size_t j, size_t k, size_t l) {
-        return _matrix[i][l][k][j];
-    }
+    void init();
+    void assert_okay_init();
+    void assert_okay_compute();
+    MatrixValue& operator()(size_t i, size_t j, size_t k, size_t l);
 };
 
 class JLinePromiseMatrixReorderer : public MatrixReorderer {
 public:
-    JLinePromiseMatrixReorderer() : _matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]) {
+    JLinePromiseMatrixReorderer(size_t w, size_t x, size_t y, size_t z);
 
-    }
-
-    void init() {
-        init_from_reordered_start_matrix(_matrix);
-    }
+    void init();
+    void assert_okay_init();
+    void assert_okay_compute();
+    MatrixValue& operator()(size_t i, size_t j, size_t k, size_t l);
 };
 
 #include "utils.tpp"

@@ -12,16 +12,16 @@
 #include "promise_plus.h"
 #include "utils.h"
 
-void heat_cpu(Matrix& array, size_t m) {
-    namespace g = Globals;
+static void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z);
 
-    int* ptr = array.data();
+void heat_cpu(MatrixReorderer& array, size_t m) {
+    namespace g = Globals;
 
     #pragma omp for schedule(static) nowait
     for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
+                /* size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
                 size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
                 size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
                 size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
@@ -41,7 +41,9 @@ void heat_cpu(Matrix& array, size_t m) {
                             std::this_thread::yield();
                         }
                     }
-                }
+                } */
+
+                update_matrix_core(array, m, i, j, k);
             }
         }
     }
@@ -56,36 +58,14 @@ void heat_cpu(Matrix& array, size_t m) {
 //
 // Switching the order of the loops will probably have dramatic consequences for 
 // cache coherency, so this has to be checked.
-void heat_cpu_switch_loops(Matrix& array, size_t m) {
+void heat_cpu_switch_loops(MatrixReorderer& array, size_t m) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j ,k);
-
-                int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
     }
@@ -93,10 +73,8 @@ void heat_cpu_switch_loops(Matrix& array, size_t m) {
 
 namespace g = Globals;
 
-void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
+void heat_cpu_point_promise(MatrixReorderer& array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int k = 0; k < g::DIM_Z; ++k) {
@@ -111,28 +89,7 @@ void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, con
                     used_value = true;
                 }
 
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
                 last_i = i;
             }
 
@@ -143,10 +100,8 @@ void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, con
     }
 }
 
-void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
+void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     /* std::optional<std::vector<MatrixValue>*> values = 
         src ? std::make_optional(src->get()[omp_get_thread_num()].get_future().get()) : std::nullopt; */
@@ -157,31 +112,7 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
         for (int j = 1; j < g::DIM_Y; ++j) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                // int promise_pos = j * g::DIM_Z + k;
-
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_values || !values ? ptr[nm1] : (**values)[promise_pos]) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
-                
+                update_matrix_core(array, m, i, j, k);
             }
         }
     }
@@ -206,14 +137,10 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
     } */
 }
 
-void heat_cpu_increasing_point_promise(Matrix& array, size_t m, 
+void heat_cpu_increasing_point_promise(MatrixReorderer& array, size_t m, 
                                       IncreasingPointPromiseStore& dst, 
                                       const IncreasingPointPromiseStore& src) {
     namespace g = Globals;
-
-    // printf("[Thread %d] Starting iteration %d\n", omp_get_thread_num(), m);
-
-    int* ptr = array.data();
 
     auto all_promises = src ? std::make_optional(std::ref(src->get()[omp_get_thread_num()])) : std::nullopt;
 
@@ -240,34 +167,7 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
             
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                /* if (!used_value && src) {
-                    // printf("[Thread %d] Getting (%d, %d, %d, %d) = %d\n", omp_get_thread_num(), m, i - 1, j, k, **values_iter);
-                } */
-
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : (**values_iter)) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                // used_value = true;
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
                 last_i = i;
             }
 
@@ -312,10 +212,8 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
     }
 }
 
-void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
+void heat_cpu_jline_promise(MatrixReorderer& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         if (src)
@@ -324,28 +222,7 @@ void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, con
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -354,10 +231,8 @@ void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, con
     }
 }
 
-void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
+void heat_cpu_kline_promise(MatrixReorderer& array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         if (src)
@@ -366,28 +241,7 @@ void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, con
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -396,12 +250,10 @@ void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, con
     }
 }
 
-void heat_cpu_increasing_jline_promise(Matrix& array, size_t m, 
+void heat_cpu_increasing_jline_promise(MatrixReorderer& array, size_t m, 
                                        IncreasingJLinePromiseStore& dst, 
                                        const IncreasingJLinePromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     // How many lines before we synchronize with our left neighbor (next get). Synchronization
     // occurs when this reaches 0.
@@ -425,28 +277,7 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -481,12 +312,10 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
     }
 }
 
-void heat_cpu_increasing_kline_promise(Matrix& array, size_t m, 
+void heat_cpu_increasing_kline_promise(MatrixReorderer& array, size_t m, 
                                        IncreasingKLinePromiseStore& dst, 
                                        const IncreasingKLinePromiseStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     // How many lines before we synchronize with our left neighbor (next get). Synchronization
     // occurs when this reaches 0.
@@ -510,28 +339,7 @@ void heat_cpu_increasing_kline_promise(Matrix& array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -567,10 +375,10 @@ void heat_cpu_increasing_kline_promise(Matrix& array, size_t m,
 }
 
 /*
-void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore& dst, const BlockPromisePlusStore& src) {
+void heat_cpu_block_promise_plus(MatrixReorderer& array, size_t m, BlockPromisePlusStore& dst, const BlockPromisePlusStore& src) {
     namespace g = Globals;
 
-    int* ptr = array.data();
+    int* ptr = array.get_matrix().data();
 
     int thread_num = omp_get_thread_num();
     if (thread_num)
@@ -580,27 +388,7 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore&
     for (int i = 1; i < g::DIM_X; ++i) {
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
     }
@@ -609,10 +397,10 @@ void heat_cpu_block_promise_plus(Matrix& array, size_t m, BlockPromisePlusStore&
         dst->get()[thread_num].set(m);
 }
 
-void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore& dst, const JLinePromisePlusStore& src) {
+void heat_cpu_jline_promise_plus(MatrixReorderer& array, size_t m, JLinePromisePlusStore& dst, const JLinePromisePlusStore& src) {
     namespace g = Globals;
 
-    int* ptr = array.data();
+    int* ptr = array.get_matrix().data();
     int thread_num = omp_get_thread_num();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
@@ -622,28 +410,7 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -652,10 +419,10 @@ void heat_cpu_jline_promise_plus(Matrix& array, size_t m, JLinePromisePlusStore&
     }
 }
 
-void heat_cpu_kline_promise_plus(Matrix& array, size_t m, KLinePromisePlusStore& dst, const KLinePromisePlusStore& src) {
+void heat_cpu_kline_promise_plus(MatrixReorderer& array, size_t m, KLinePromisePlusStore& dst, const KLinePromisePlusStore& src) {
     namespace g = Globals;
 
-    int* ptr = array.data();
+    int* ptr = array.get_matrix().data();
     int thread_num = omp_get_thread_num();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
@@ -665,28 +432,7 @@ void heat_cpu_kline_promise_plus(Matrix& array, size_t m, KLinePromisePlusStore&
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -695,12 +441,12 @@ void heat_cpu_kline_promise_plus(Matrix& array, size_t m, KLinePromisePlusStore&
     }
 }
 
-void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m, 
+void heat_cpu_increasing_jline_promise_plus(MatrixReorderer& array, size_t m, 
                                             IncreasingJLinePromisePlusStore& dst, 
                                             const IncreasingJLinePromisePlusStore& src) {
     namespace g = Globals;
 
-    int* ptr = array.data();
+    int* ptr = array.get_matrix().data();
 
     // How many lines before we synchronize with our left neighbor (next get), i.e
     // when we are out of lines to process
@@ -723,28 +469,7 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -775,12 +500,12 @@ void heat_cpu_increasing_jline_promise_plus(Matrix& array, size_t m,
     }
 }
 
-void heat_cpu_increasing_kline_promise_plus(Matrix& array, size_t m, 
+void heat_cpu_increasing_kline_promise_plus(MatrixReorderer& array, size_t m, 
                                             IncreasingKLinePromisePlusStore& dst, 
                                             const IncreasingKLinePromisePlusStore& src) {
     namespace g = Globals;
 
-    int* ptr = array.data();
+    int* ptr = array.get_matrix().data();
 
     // How many lines before we synchronize with our left neighbor (next get), i.e
     // when we are out of lines to process
@@ -803,28 +528,7 @@ void heat_cpu_increasing_kline_promise_plus(Matrix& array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                // int to_add = (used_value || !src ? ptr[nm1] : src->get()[omp_get_thread_num()][promise_pos].get_future().get()) + ptr[nm1j] + ptr[nm1m];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
         }
 
@@ -856,10 +560,8 @@ void heat_cpu_increasing_kline_promise_plus(Matrix& array, size_t m,
 }
 */
 
-void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
+void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
     namespace g = Globals;
-
-    int* ptr = array.data();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         if (src) {
@@ -869,29 +571,8 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
         for (int j = 1; j < g::DIM_Y; ++j) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                size_t n = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j, k);
-                size_t nm1 = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i - 1, j, k);
-                size_t nm1j = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, i, j - 1, k);
-                size_t nm1m = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m - 1, i, j, k);
-
-                int orig = ptr[n];
-                int to_add = ptr[nm1] + ptr[nm1j] + ptr[nm1m];
-
-                int result = orig + to_add;
-                ptr[n] = result;
-                
-                if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-                    // Sleep only in OMP parallel, speed up the sequential version
-                    if (omp_get_num_threads() != 1) {
-                        if (g::binary_generator()) {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-                        } else {
-                            std::this_thread::yield();
-                        }
-                    }
-                }
+                update_matrix_core(array, m, i, j, k);
             }
-
         }
 
         if (dst)
@@ -900,4 +581,21 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
 
     if (dst)
         (*dst)[omp_get_thread_num() + 1]->set_final(g::DIM_Z - 1);
+}
+
+void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z) {
+    matrix(w, x, y, z) += (matrix(w, x - 1, y, z) + 
+                           matrix(w, x, y - 1, z) +
+                           matrix(w - 1, x, y, z));
+
+    if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
+        // Sleep only in OMP parallel, speed up the sequential version
+        if (omp_get_num_threads() != 1) {
+            if (g::binary_generator()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
+            } else {
+                std::this_thread::yield();
+            }
+        }
+    }
 }

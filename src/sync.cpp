@@ -37,11 +37,11 @@
 using Clock = std::chrono::system_clock;
 namespace g = Globals;
 
-Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+MatrixReorderer* g_expected_matrix = new StandardMatrixReorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
 
-Matrix g_expected_reordered_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
 Matrix g_reordered_start_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
+MatrixReorderer* g_expected_reordered_matrix = new JLinePromiseMatrixReorderer(g::DIM_W, g::DIM_Z, g::DIM_Y, g::DIM_X);
 
 namespace Globals {
     // Abort if a **single** simulation takes more than the given time
@@ -51,25 +51,23 @@ namespace Globals {
 
 class Synchronizer {
 protected:
-    Synchronizer() : _matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]) {
-        // init_matrix(reinterpret_cast<int*>(_matrix));
-        init_from_start_matrix(_matrix);
-        assert_okay_init(_matrix);
+    Synchronizer(MatrixReorderer& matrix) : _matrix(matrix) {
+        _matrix.init();
+        _matrix.assert_okay_init();
     }
     
 public:
     void assert_okay() {
-        namespace g = Globals;
-        assert_matrix_equals(g_expected_matrix, _matrix);
+        _matrix.assert_okay_compute();
     }
 
 protected:
-    Matrix _matrix;
+    MatrixReorderer& _matrix;
 };
 
 class SequentialSynchronizer : public Synchronizer {
 public:
-    SequentialSynchronizer() : Synchronizer() {
+    SequentialSynchronizer(MatrixReorderer& matrix) : Synchronizer(matrix) {
 
     }
 
@@ -83,7 +81,7 @@ public:
 
 class AltBitSynchronizer : public Synchronizer {
 public:
-    AltBitSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
+    AltBitSynchronizer(MatrixReorderer& matrix, int nthreads) : Synchronizer(matrix), _isync(nthreads) {
 
     }
 
@@ -161,7 +159,7 @@ private:
 
 class CounterSynchronizer : public Synchronizer {
 public:
-    CounterSynchronizer(int nthreads) : Synchronizer(), _isync(nthreads) {
+    CounterSynchronizer(MatrixReorderer& matrix, int nthreads) : Synchronizer(matrix), _isync(nthreads) {
     
     }
 
@@ -236,7 +234,7 @@ typedef std::array<std::vector<uint64>, g::ITERATIONS> IterationTimeByThreadStor
 template<typename T>
 class IterationPromisingSynchronizer : public Synchronizer {
 public:
-    IterationPromisingSynchronizer(int n) : Synchronizer() {
+    IterationPromisingSynchronizer(MatrixReorderer& matrix, int n) : Synchronizer(matrix) {
         _promises_store.reserve(g::ITERATIONS);
 
         for (int i = 0; i < g::ITERATIONS; ++i) {
@@ -283,7 +281,7 @@ template<class Store>
 class IncreasingIterationPromisingSynchronizer : public IterationPromisingSynchronizer<Store> {
 public:
     template<class F>
-    IncreasingIterationPromisingSynchronizer(int n, F&& f, size_t MAX) : IterationPromisingSynchronizer<Store>(n) {
+    IncreasingIterationPromisingSynchronizer(MatrixReorderer& matrix, int n, F&& f, size_t MAX) : IterationPromisingSynchronizer<Store>(matrix, n) {
         for (int i = 1; i < this->_promises_store.size(); ++i) {
             Store& container = this->_promises_store[i];
 
@@ -349,7 +347,7 @@ using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchro
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
-    PromisePlusSynchronizer(int n_threads, const PromisePlusBuilder<T>& builder) {
+    PromisePlusSynchronizer(MatrixReorderer& matrix, int n_threads, const PromisePlusBuilder<T>& builder) : Synchronizer(matrix) {
         for (int i = 0; i < g::ITERATIONS; ++i) {
             for (int j = 0; j < n_threads; j++)
                 _promises_store[i].push_back(builder.new_promise());
@@ -445,19 +443,22 @@ public:
         uint64 time = 0;
 
         if (authorized._sequential) {
-            SequentialSynchronizer seq;
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            SequentialSynchronizer seq(reorderer);
             time = measure_time(seq, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
             SynchronizationTimeCollector::add_time("SequentialSynchronizer", "heat_cpu", time);
         }
     
         if (authorized._alt_bit) {
-            AltBitSynchronizer altBit(n_threads);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            AltBitSynchronizer altBit(reorderer, n_threads);
             time = measure_time(altBit, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
             SynchronizationTimeCollector::add_time("AltBitSynchronizer", "heat_cpu", time);
         }
 
         if (authorized._counter) {
-            CounterSynchronizer iterationSync(n_threads);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            CounterSynchronizer iterationSync(reorderer, n_threads);
             time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
             SynchronizationTimeCollector::add_time("CounterSynchronizer", "heat_cpu", time);
         }
@@ -484,7 +485,8 @@ public:
         */
 
         if (authorized._block) {
-            BlockPromisingSynchronizer blockPromise(n_threads);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            BlockPromisingSynchronizer blockPromise(reorderer, n_threads);
             time = measure_time(blockPromise, std::bind(heat_cpu_block_promise, 
                                                         std::placeholders::_1,
                                                         std::placeholders::_2,
@@ -503,7 +505,8 @@ public:
         SynchronizationTimeCollector::add_time("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise", time); */
 
         if (authorized._jline) {
-            JLinePromisingSynchronizer jLinePromise(n_threads);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            JLinePromisingSynchronizer jLinePromise(reorderer, n_threads);
             time = measure_time(jLinePromise, std::bind(heat_cpu_jline_promise,
                                                         std::placeholders::_1,
                                                         std::placeholders::_2,
@@ -514,7 +517,8 @@ public:
         }
 
         if (authorized._increasing_jline) {
-            IncreasingJLinePromisingSynchronizer increasingJLinePromise(n_threads, nb_jlines_for, g::NB_J_LINES_PER_ITERATION);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            IncreasingJLinePromisingSynchronizer increasingJLinePromise(reorderer, n_threads, nb_jlines_for, g::NB_J_LINES_PER_ITERATION);
             time = measure_time(increasingJLinePromise, std::bind(heat_cpu_increasing_jline_promise,
                                                                   std::placeholders::_1,
                                                                   std::placeholders::_2,
@@ -525,7 +529,8 @@ public:
         }
 
         if (authorized._kline) {
-            KLinePromisingSynchronizer kLinePromise(n_threads);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            KLinePromisingSynchronizer kLinePromise(reorderer, n_threads);
             time = measure_time(kLinePromise, std::bind(heat_cpu_kline_promise,
                                                         std::placeholders::_1,
                                                         std::placeholders::_2,
@@ -536,7 +541,8 @@ public:
         }
 
         if (authorized._increasing_kline) {
-            IncreasingKLinePromisingSynchronizer increasingKLinePromise(n_threads, nb_klines_for, g::NB_K_LINES_PER_ITERATION);
+            StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+            IncreasingKLinePromisingSynchronizer increasingKLinePromise(reorderer, n_threads, nb_klines_for, g::NB_K_LINES_PER_ITERATION);
             time = measure_time(increasingKLinePromise, std::bind(heat_cpu_increasing_kline_promise,
                                                                   std::placeholders::_1,
                                                                   std::placeholders::_2,
@@ -558,8 +564,9 @@ public:
         }
 
         if (authorized._jline_plus) {
+            JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
             NaivePromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION);
-            PromisePlusSynchronizer<void> jLinePromisePlus(n_threads, builder);
+            PromisePlusSynchronizer<void> jLinePromisePlus(reorderer, n_threads, builder);
             time = measure_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
@@ -570,8 +577,9 @@ public:
         }
 
         if (authorized._increasing_jline_plus) {
+            JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
             StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, sDynamicConfigExtra._static_step_jline_plus, n_threads);
-            PromisePlusSynchronizer<void> increasingJLinePromisePlus(n_threads, builder);
+            PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, n_threads, builder);
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
@@ -664,12 +672,12 @@ int main(int argc, char** argv) {
                  "// " << g::DIM_W << " " << g::DIM_X << " " << g::DIM_Y << " " << g::DIM_Z << " " << g::NB_GLOBAL_LOOPS << " " << to_string(g::PROMISE_TYPE) << std::endl;
 
     init_start_matrix_once();
-    init_from_start_matrix(g_expected_matrix);
-    assert_matrix_equals(g_start_matrix, g_expected_matrix);
+    init_from_start_matrix(g_expected_matrix->get_matrix());
+    assert_matrix_equals(g_start_matrix, g_expected_matrix->get_matrix());
 
     init_reordered_start_matrix_once();
-    init_from_reordered_start_matrix(g_expected_reordered_matrix);
-    assert_matrix_equals(g_reordered_start_matrix, g_expected_reordered_matrix);
+    init_from_reordered_start_matrix(g_expected_reordered_matrix->get_matrix());
+    assert_matrix_equals(g_reordered_start_matrix, g_expected_reordered_matrix->get_matrix());
 
     init_expected_matrix_once();
     init_expected_reordered_matrix_once();
@@ -682,6 +690,9 @@ int main(int argc, char** argv) {
 
     SynchronizationTimeCollector::print_times();
     SynchronizationTimeCollector::print_iterations_times();
+
+    delete g_expected_reordered_matrix;
+    delete g_expected_matrix;
     // Globals::deadlock_detector.stop();
     // Globals::deadlock_detector_thread.join();
 
