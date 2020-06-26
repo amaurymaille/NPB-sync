@@ -9,6 +9,9 @@ find_package (Threads REQUIRED)
 find_package (spdlog REQUIRED)
 find_package (Boost REQUIRED COMPONENTS program_options thread)
 
+set (CMAKE_PREFIX_PATH "/home/amaille/NPB-sync/json/build" "${CMAKE_MODUL_PATH}")
+find_package (nlohmann_json REQUIRED)
+
 set (CMAKE_BUILD_TYPE "Debug")
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -Wall -Wextra -Wno-sign-compare ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")

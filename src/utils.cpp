@@ -92,6 +92,18 @@ void assert_okay_reordered_init(Matrix const& matrix) {
     assert_matrix_equals(matrix, g_reordered_start_matrix);
 }
 
+void assert_okay_reordered_compute() {
+    for (int i = 0; i < g::DIM_W; ++i) {
+        for (int j = 0; j < g::DIM_X; ++j) {
+            for (int k = 0; k < g::DIM_Y; ++k) {
+                for (int l = 0; l < g::DIM_Z; ++l) {
+                    assert((*g_expected_matrix)(i, j, k, l) == (*g_expected_reordered_matrix)(i, j, k, l));
+                }
+            }
+        }
+    }
+}
+
 std::string get_time_fmt(const char* fmt) {
     auto now = std::chrono::system_clock::now();
     std::time_t as_time_t = std::chrono::system_clock::to_time_t(now);
@@ -177,6 +189,19 @@ uint64 now_as_ns() {
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     return clock_to_ns(now);
+}
+
+unsigned int omp_nb_threads() {
+    unsigned int nb_threads = -1;
+    #pragma omp parallel 
+    {
+        #pragma omp master
+        {
+            nb_threads = omp_get_num_threads();
+        }
+    }
+
+    return nb_threads;
 }
 
 DeadlockDetector::DeadlockDetector(uint64 limit) : _limit(limit) {

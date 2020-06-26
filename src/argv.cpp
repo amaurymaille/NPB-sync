@@ -33,6 +33,7 @@ namespace Options {
     namespace Files {
         static const char* runs_times_file = "runs-times-file";
         static const char* iterations_times_file = "iterations-times-file";
+        static const char* simulations_file = "simulations-file";
     }
 }
 
@@ -67,8 +68,8 @@ void parse_command_line(int argc, char** argv) {
     }
 
     process_files(config._files, vm);
-    process_patterns(config._patterns, vm);
-    process_extra(config._extra, vm);
+    // process_patterns(config._patterns, vm);
+    // process_extra(config._extra, vm);
 }
 
 void process_patterns(DynamicConfig::SynchronizationPatterns& authorized,
@@ -106,9 +107,10 @@ void populate_options(po::options_description& options) {
     generic.add_options()
         ("help,h", "Display this help and exit")
         (f::runs_times_file, po::value<std::string>(), "Path to the file in which the time for each run will be written")
-        (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written");
+        (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written")
+        (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs");
 
-    po::options_description synchro("Synchronization patterns without promises");
+    /* po::options_description synchro("Synchronization patterns without promises");
     synchro.add_options()
         (s::sequential, "Sequential (no synchronization at all)")
         (s::alt_bit, "Alternate bit synchronization (aka Fortran synchronization)")
@@ -132,16 +134,18 @@ void populate_options(po::options_description& options) {
         (se::increasing_jline_step, po::value<unsigned int>()->default_value(1), "Minimum number of lines that need to be ready before synchronization occurs")
         (se::static_step_jline_plus, po::value<unsigned int>()->default_value(1), "Minimum number of lines that need to be ready before synchronization occurs (PromisePlus version)");
 
-    options.add(generic);
     options.add(synchro);
     options.add(promises);
-    options.add(promises_extra);
+    options.add(promises_extra); */
+    options.add(generic);
 }
 
 void process_files(DynamicConfig::Files& files,
                    po::variables_map const& vm) {
     init_outfile_if(f::runs_times_file, vm, std::bind(&DynamicConfig::Files::set_runs_times_file, &files, std::placeholders::_1));
     init_outfile_if(f::iterations_times_file, vm, std::bind(&DynamicConfig::Files::set_iterations_times_file, &files, std::placeholders::_1));
+
+    files.set_simulations_filename(vm[f::simulations_file].as<std::string>());
 }
 
 void init_outfile_if(const char* option, po::variables_map const& vm, std::function<void(std::ostream&)> f) {

@@ -48,6 +48,14 @@ public:
             _iterations_times_file.reset(o);
         }
 
+        void set_simulations_filename(std::string const& filename) {
+            _simulations_filename = filename;
+        }
+
+        std::string const& get_simulations_filename() const {
+            return _simulations_filename;
+        }
+
     private:
         class EitherCoutOr {
         public:
@@ -82,6 +90,7 @@ public:
 
         EitherCoutOr _runs_times_file;
         EitherCoutOr _iterations_times_file;
+        std::string _simulations_filename;
     };
 
     struct Extra {
@@ -118,6 +127,7 @@ private:
 
 #define sDynamicConfig DynamicConfig::instance()
 #define sDynamicConfigPatterns sDynamicConfig._patterns
+#define sDynamicConfigFiles sDynamicConfig._files
 #define sDynamicConfigExtra sDynamicConfig._extra
 
 #endif // DYNAMIC_CONFIG_H

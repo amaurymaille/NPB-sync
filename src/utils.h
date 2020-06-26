@@ -138,6 +138,7 @@ void init_reordered_matrix(Matrix& matrix);
 
 void assert_okay_init(Matrix const& matrix);
 void assert_okay_reordered_init(Matrix const& matrix);
+void assert_okay_reordered_compute();
 
 void init_from(Matrix&, const Matrix&);
 
@@ -149,6 +150,17 @@ void init_from_reordered_start_matrix(Matrix&);
 
 void init_expected_matrix_once();
 void init_expected_reordered_matrix_once();
+
+unsigned int omp_nb_threads();
+
+template<typename Arithmetic>
+std::string number_to_str(Arithmetic v) {
+    static_assert(std::is_arithmetic_v<Arithmetic>);
+
+    std::ostringstream stream;
+    stream << v;
+    return stream.str();
+}
 
 class MatrixReorderer {
 public:

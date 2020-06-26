@@ -16,7 +16,8 @@ add_executable (sync functions.cpp sync.cpp utils.cpp
                      argv.cpp dynamic_config.cpp)
 
 target_link_libraries (sync "${Boost_PROGRAM_OPTIONS_LIBRARY}"
-                            "${Boost_THREAD_LIBRARY}")
+                            "${Boost_THREAD_LIBRARY}"
+                            nlohmann_json::nlohmann_json)
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (sync "${SPDLOG_LIBRARY}")
 endif (NOT SPDLOG_HEADER_ONLY)
