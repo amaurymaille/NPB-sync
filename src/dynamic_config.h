@@ -40,6 +40,10 @@ public:
             return *_iterations_times_file;
         }
 
+        std::ostream& parameters_file() {
+            return *_parameters_file;
+        }
+
         void set_runs_times_file(std::ostream& o) {
             _runs_times_file.reset(o);
         }
@@ -50,6 +54,10 @@ public:
 
         void set_simulations_filename(std::string const& filename) {
             _simulations_filename = filename;
+        }
+
+        void set_parameters_file(std::ostream& o) {
+            _parameters_file.reset(o);
         }
 
         std::string const& get_simulations_filename() const {
@@ -90,6 +98,7 @@ public:
 
         EitherCoutOr _runs_times_file;
         EitherCoutOr _iterations_times_file;
+        EitherCoutOr _parameters_file;
         std::string _simulations_filename;
     };
 
@@ -103,6 +112,7 @@ public:
 
     friend void parse_command_line(int, char**);
     friend void parse_environ();
+    friend int main(int, char**);
     friend std::ostream& ExtraConfig::runs_times_file();
     friend std::ostream& ExtraConfig::iterations_times_file();
 

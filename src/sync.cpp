@@ -938,6 +938,32 @@ private:
     SynchronizationTimeCollector _collector;
 };
 
+void log_general_data(std::ostream& out) {
+    namespace g = Globals;
+
+    json data;
+    data["w"] = g::DIM_W;
+    data["x"] = g::DIM_X;
+    data["y"] = g::DIM_Y;
+    data["z"] = g::DIM_Z;
+    
+    std::ifstream stream(sDynamicConfigFiles.get_simulations_filename());
+    json simu;
+    stream >> simu;
+    stream.close();
+
+    data["iterations"] = simu["iterations"];
+#ifdef ACTIVE_PROMISES
+    data["active"] = true;
+#else
+    data["active"] = false;
+#endif
+
+    data["threads"] = omp_nb_threads();
+
+    out << std::setw(4) << data;
+}
+
 int main(int argc, char** argv) {
     namespace g = Globals;
 
@@ -970,6 +996,8 @@ int main(int argc, char** argv) {
     Runner runner(sDynamicConfigFiles.get_simulations_filename());
     runner.run();
     runner.dump();
+
+    log_general_data(DynamicConfig::_instance()._files.parameters_file());
 
     delete g_expected_reordered_matrix;
     delete g_expected_matrix;

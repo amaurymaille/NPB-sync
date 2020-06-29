@@ -34,6 +34,7 @@ namespace Options {
         static const char* runs_times_file = "runs-times-file";
         static const char* iterations_times_file = "iterations-times-file";
         static const char* simulations_file = "simulations-file";
+        static const char* parameters_file = "parameters-file";
     }
 }
 
@@ -108,7 +109,8 @@ void populate_options(po::options_description& options) {
         ("help,h", "Display this help and exit")
         (f::runs_times_file, po::value<std::string>(), "Path to the file in which the time for each run will be written")
         (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written")
-        (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs");
+        (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs")
+        (f::parameters_file, po::value<std::string>(), "Path to the file in which the general data of all simulations will be written");
 
     /* po::options_description synchro("Synchronization patterns without promises");
     synchro.add_options()
@@ -144,6 +146,7 @@ void process_files(DynamicConfig::Files& files,
                    po::variables_map const& vm) {
     init_outfile_if(f::runs_times_file, vm, std::bind(&DynamicConfig::Files::set_runs_times_file, &files, std::placeholders::_1));
     init_outfile_if(f::iterations_times_file, vm, std::bind(&DynamicConfig::Files::set_iterations_times_file, &files, std::placeholders::_1));
+    init_outfile_if(f::parameters_file, vm, std::bind(&DynamicConfig::Files::set_parameters_file, &files, std::placeholders::_1));
 
     files.set_simulations_filename(vm[f::simulations_file].as<std::string>());
 }
