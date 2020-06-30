@@ -691,7 +691,8 @@ public:
         TimeLog iterations_log("StaticStep+", "promise_plus");
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
-        JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+        // JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+        StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
         // StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {

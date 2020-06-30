@@ -109,10 +109,10 @@ void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore&
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
 
-    #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X; ++i) {
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        #pragma omp for schedule(static) nowait
         for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
+            for (int i = 1; i < g::DIM_X; ++i) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
@@ -586,16 +586,34 @@ void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& d
 
 void heat_cpu_promise_plus_sspp(MatrixReorderer& array, size_t m, StaticStepPromisePlusStore& dst, const StaticStepPromisePlusStore& src) {
     namespace g = Globals;
-    std::cout << "heat_cpu_promise_plus_sspp" << std::endl;
+    // std::cout << "heat_cpu_promise_plus_sspp" << std::endl;
+    const int thread_num = omp_get_thread_num();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
+        if (src) {
+            (*src)[thread_num]->get(k);
+        }
+
+        #pragma omp for schedule(static) nowait
+        for (int j = 1; j < g::DIM_Y; ++j) {
+            for (int i = 1; i < g::DIM_X; ++i) {
+                update_matrix_core(array, m, i, j, k);
+            }
+        }
+
+        if (dst)
+            (*dst)[thread_num + 1]->set(k);
+    }
+
+/*
+    #pragma omp for schedule(static) nowait
+    for (int i = 1; i < g::DIM_X; ++i) {
         if (src) {
             (*src)[omp_get_thread_num()]->get(k);
         }
 
         for (int j = 1; j < g::DIM_Y; ++j) {
-            #pragma omp for schedule(static) nowait
-            for (int i = 1; i < g::DIM_X; ++i) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
@@ -603,6 +621,7 @@ void heat_cpu_promise_plus_sspp(MatrixReorderer& array, size_t m, StaticStepProm
         if (dst)
             (*dst)[omp_get_thread_num() + 1]->set(k);
     }
+*/
 
     if (dst)
         (*dst)[omp_get_thread_num() + 1]->set_final(g::DIM_Z - 1);
