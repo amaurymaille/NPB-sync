@@ -40,4 +40,6 @@ void heat_cpu_increasing_kline_promise_plus(MatrixReorderer&, size_t, Increasing
 
 void heat_cpu_promise_plus(MatrixReorderer&, size_t, PromisePlusStore&, const PromisePlusStore&);
 
+void heat_cpu_promise_plus_sspp(MatrixReorderer&, size_t, StaticStepPromisePlusStore&, const StaticStepPromisePlusStore&);
+
 #endif /* FUNCTIONS_H */

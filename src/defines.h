@@ -138,6 +138,10 @@ typedef std::optional<PromisePlusContainer> PromisePlusStore;
 
 class MatrixReorderer;
 
+class StaticStepPromisePlus;
+typedef ThreadStore<StaticStepPromisePlus*> StaticStepPromisePlusContainer;
+typedef std::optional<StaticStepPromisePlusContainer> StaticStepPromisePlusStore;
+
 // The initial matrix
 extern Matrix g_start_matrix;
 // The expected final matrix 

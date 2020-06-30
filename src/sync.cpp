@@ -34,6 +34,7 @@
 #include "promise_plus.h"
 #include "promises/naive_promise.h"
 #include "promises/static_step_promise.h"
+#include "static_step_promise_plus.h"
 #include "utils.h"
 
 using Clock = std::chrono::system_clock;
@@ -401,6 +402,60 @@ private:
     IterationTimeByThreadStore _times_by_thread;
 };
 
+class StaticStepPromisePlusSynchronizer : public Synchronizer {
+public:
+    StaticStepPromisePlusSynchronizer(MatrixReorderer& matrix, int n_threads, unsigned int step) : Synchronizer(matrix) {
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            for (int j = 0; j < n_threads; j++)
+                _promises_store[i].push_back(new StaticStepPromisePlus(step));
+        }
+
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            _times_by_thread[i].resize(n_threads);
+        }
+    }
+
+    ~StaticStepPromisePlusSynchronizer() {
+        for (auto const& store: _promises_store) {
+            for (auto ptr: store) {
+                delete ptr;
+            }
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            struct timespec thread_begin, thread_end;
+            int thread_num = omp_get_thread_num();
+            int num_threads = omp_get_num_threads();
+
+            for (int i = 1; i < g::ITERATIONS; ++i) {
+                
+
+                auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
+                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
+
+                clock_gettime(CLOCK_MONOTONIC, &thread_begin);
+
+                f(_matrix, i, dst, src);
+
+                clock_gettime(CLOCK_MONOTONIC, &thread_end);
+
+                _times_by_thread[i][omp_get_thread_num()] = clock_diff(&thread_end, &thread_begin);
+            }
+        }
+    }
+
+    IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
+        return _times_by_thread;
+    }
+private:
+    std::array<StaticStepPromisePlusContainer, g::ITERATIONS> _promises_store;
+    IterationTimeByThreadStore _times_by_thread;
+};
+
 template<class Synchronizer, class F, class... Args>
 static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
     struct timespec begin, end;
@@ -637,11 +692,12 @@ public:
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
         JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-        StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, step, nb_threads);
+        // StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);
-            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
+            // PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);
+            StaticStepPromisePlusSynchronizer increasingJLinePromisePlus(reorderer, nb_threads, step);
+            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus_sspp,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,

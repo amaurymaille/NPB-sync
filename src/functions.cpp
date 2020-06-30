@@ -10,6 +10,7 @@
 #include "functions.h"
 #include "increase.h"
 #include "promise_plus.h"
+#include "static_step_promise_plus.h"
 #include "utils.h"
 
 static void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z);
@@ -562,6 +563,30 @@ void heat_cpu_increasing_kline_promise_plus(MatrixReorderer& array, size_t m,
 
 void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
     namespace g = Globals;
+
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        if (src) {
+            (*src)[omp_get_thread_num()]->get(k);
+        }
+
+        for (int j = 1; j < g::DIM_Y; ++j) {
+            #pragma omp for schedule(static) nowait
+            for (int i = 1; i < g::DIM_X; ++i) {
+                update_matrix_core(array, m, i, j, k);
+            }
+        }
+
+        if (dst)
+            (*dst)[omp_get_thread_num() + 1]->set(k);
+    }
+
+    if (dst)
+        (*dst)[omp_get_thread_num() + 1]->set_final(g::DIM_Z - 1);
+}
+
+void heat_cpu_promise_plus_sspp(MatrixReorderer& array, size_t m, StaticStepPromisePlusStore& dst, const StaticStepPromisePlusStore& src) {
+    namespace g = Globals;
+    std::cout << "heat_cpu_promise_plus_sspp" << std::endl;
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         if (src) {
