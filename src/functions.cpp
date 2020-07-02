@@ -103,38 +103,21 @@ void heat_cpu_point_promise(MatrixReorderer& array, size_t m, PointPromiseStore&
 void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
     namespace g = Globals;
 
-    /* std::optional<std::vector<MatrixValue>*> values = 
-        src ? std::make_optional(src->get()[omp_get_thread_num()].get_future().get()) : std::nullopt; */
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
 
-    #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X; ++i) {
+    for (int k = 0; k < g::DIM_Z; ++k) {
+        #pragma omp for schedule(static) nowait
         for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
+            for (int i = 1; i < g::DIM_X; ++i) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
     }
 
     if (dst) {
-        // printf("[Thread %d] Setting promise at i = %d\n", omp_get_thread_num(), last_i);
-        /* std::vector<MatrixValue>* arr = new std::vector<MatrixValue>(g::NB_VALUES_PER_BLOCK);
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
-                size_t ptr_pos = DimensionConverter<4>({g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z}).to_1d(m, last_i, j, k);
-                size_t arr_pos = j * g::DIM_Z + k;
-                (*arr)[arr_pos] = ptr[ptr_pos];
-            }
-        } */
-
         dst->get()[omp_get_thread_num() + 1].set_value();
     }
-
-
-    /* if (values) {
-        delete *values;
-    } */
 }
 
 void heat_cpu_increasing_point_promise(MatrixReorderer& array, size_t m, 
@@ -562,25 +545,27 @@ void heat_cpu_increasing_kline_promise_plus(MatrixReorderer& array, size_t m,
 
 void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
     namespace g = Globals;
+    
+    int thread_num = omp_get_thread_num();
 
     for (int k = 0; k < g::DIM_Z; ++k) {
         if (src) {
-            (*src)[omp_get_thread_num()]->get(k);
+            (*src)[thread_num]->get(k);
         }
 
+        #pragma omp for schedule(static) nowait
         for (int j = 1; j < g::DIM_Y; ++j) {
-            #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
 
         if (dst)
-            (*dst)[omp_get_thread_num() + 1]->set(k);
+            (*dst)[thread_num + 1]->set(k);
     }
 
     if (dst)
-        (*dst)[omp_get_thread_num() + 1]->set_final(g::DIM_Z - 1);
+        (*dst)[thread_num + 1]->set_final(g::DIM_Z - 1);
 }
 
 void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z) {

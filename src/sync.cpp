@@ -513,7 +513,7 @@ public:
         uint64 time = 0;
         TimeLog log("BlockPromise", "block_promise");
         TimeLog iterations_log("BlockPromise", "block_promise");
-        StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+        JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             BlockPromisingSynchronizer blockPromise(reorderer, nb_threads);
