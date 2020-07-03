@@ -9,7 +9,7 @@ find_package (Threads REQUIRED)
 find_package (spdlog REQUIRED)
 find_package (Boost REQUIRED COMPONENTS program_options thread)
 
-set (CMAKE_PREFIX_PATH "/home/amaille/NPB-sync/json/build" "${CMAKE_MODUL_PATH}")
+set (CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/json/build" "${CMAKE_MODULE_PATH}")
 find_package (nlohmann_json REQUIRED)
 
 set (CMAKE_BUILD_TYPE "Release")
