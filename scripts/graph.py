@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--static-step-evolution", action="store_true", help="Generate visualization of the evolution of average time of runs for StaticStepPromise with different amount of lines in synchronization")
     parser.add_argument("--smart", action="store_true", help="Attempt to smartly generate graphs (combine values from different set of data when parameters match)")
     parser.add_argument("--violin", action="store_true", help="Generate violin plots representing boxplots and density of the time for each synchronization pattern in a given configuration")
+    parser.add_argument("--numerics", action="store_true", help="Compute average, variance and standard deviation. Output to numerics.csv")
 
     return parser.parse_args()
 
@@ -86,7 +87,9 @@ def generate_static_step_evolution_raw_for(runs, path):
         data.append({"step": run._extras["step"], 
                      "time": avg})
 
-    seaborn.scatterplot(x="step", y="time", data=pandas.DataFrame(data))
+    fig, ax = plt.subplots()
+    ax.set(xscale="log")
+    seaborn.scatterplot(ax=ax, x="step", y="time", data=pandas.DataFrame(data))
     plt.savefig(os.path.expanduser(path) + "/static_step_evolution.png")
     plt.clf()
 
@@ -138,6 +141,36 @@ def generate_violins(simulations_datas, smart):
         generate_violins_smart(simulations_datas)
 
 
+def generate_numerics_raw_for(simulation_data):
+    with open(simulation_data._path + "/runs.json") as f:
+        runs = run_parser.parse_runs(f)
+
+        all_datas = []
+
+        for run in runs:
+            data = []
+            for time in run._times:
+                data.append({"time": time})
+
+            data = pandas.DataFrame(data)
+            avg = data.mean()
+            var = data.var()
+            std = data.std()
+
+            all_datas.append({"sync": run._synchronizer, "fun": run._function, "avg": avg, "var": var, "std": std})
+
+        print (all_datas)
+
+def generate_numerics_raw(simulations_datas):
+    for simulation_data in simulations_datas:
+        generate_numerics_raw_for(simulation_data)
+
+def generate_numerics(simulations_datas, smart):
+    if not smart: 
+        generate_numerics_raw(simulations_datas)
+    else:
+        generate_numerics_smart(simulations_datas)
+
 def main():
     args = parse_args()
 
@@ -155,5 +188,8 @@ def main():
 
     if args.violin:
         generate_violins(simulations_datas, args.smart)
+
+    if args.numerics:
+        generate_numerics(simulations_datas, args.smart)
 if __name__ == "__main__":
     main()
