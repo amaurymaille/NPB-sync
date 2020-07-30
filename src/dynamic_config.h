@@ -28,6 +28,7 @@ public:
         bool _kline_plus = false;
         bool _increasing_kline = false;
         bool _increasing_kline_plus = false;
+        bool _naive_promise_array = false;
     };
 
     class Files {

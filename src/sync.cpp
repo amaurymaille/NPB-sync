@@ -377,8 +377,6 @@ public:
             int num_threads = omp_get_num_threads();
 
             for (int i = 1; i < g::ITERATIONS; ++i) {
-                
-
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
@@ -396,9 +394,49 @@ public:
     IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
         return _times_by_thread;
     }
-private:
+
+private: 
     std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
     IterationTimeByThreadStore _times_by_thread;
+};
+
+class NaivePromiseArraySynchronizer : public Synchronizer {
+public:
+    NaivePromiseArraySynchronizer(MatrixReorderer& matrix, int nb_threads) : Synchronizer(matrix) {
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            _promises_store[i].resize(nb_threads);
+            for (int j = 0; j < nb_threads; ++j) {
+                _promises_store[i][j] = new std::promise<void>[Globals::DIM_X];
+            }
+        }
+    }
+
+    ~NaivePromiseArraySynchronizer() {
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            for (int j = 0; j < _promises_store[i].size(); ++j) {
+                delete[] _promises_store[i][j];
+            }
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            int thread_num = omp_get_thread_num();
+            int num_threads = omp_get_num_threads();
+
+            for (int i = 1; i < g::ITERATIONS; ++i) {
+                auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
+                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
+
+                f(_matrix, i, dst, src);
+            }
+        }
+    }
+
+private:
+    std::array<NaivePromiseArrayContainer, g::ITERATIONS> _promises_store;
 };
 
 template<class Synchronizer, class F, class... Args>
@@ -513,7 +551,7 @@ public:
         uint64 time = 0;
         TimeLog log("BlockPromise", "block_promise");
         TimeLog iterations_log("BlockPromise", "block_promise");
-        JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+        StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             BlockPromisingSynchronizer blockPromise(reorderer, nb_threads);
@@ -612,7 +650,7 @@ public:
         TimeLog log("JLine+", "promise_plus");
         TimeLog iterations_log("JLine+", "promise_plus");
         JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-        NaivePromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION);
+        NaivePromiseBuilder<void> builder(Globals::DIM_X);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> jLinePromisePlus(reorderer, nb_threads, builder);
@@ -636,8 +674,9 @@ public:
         TimeLog iterations_log("StaticStep+", "promise_plus");
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
-        JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-        StaticStepPromiseBuilder<void> builder(Globals::NB_J_LINES_PER_ITERATION, step, nb_threads);
+        StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+         
+        StaticStepPromiseBuilder<void> builder(Globals::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);
@@ -652,6 +691,25 @@ public:
 
         _times.push_back(log);
         _iterations_times.push_back(iterations_log);
+    }
+
+    void run_naive_promise_array(unsigned int nb_iterations) {
+        unsigned int nb_threads = omp_nb_threads();
+        uint64 time = 0;
+        TimeLog log("NaivePromiseArray", "naive_promise_array");
+        StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+
+        for (unsigned int i = 0; i < nb_iterations; ++i) {
+            NaivePromiseArraySynchronizer naivePromiseArraySynchronizer(reorderer, nb_threads);
+            time = measure_time(naivePromiseArraySynchronizer, std::bind(heat_cpu_naive_promise_array,
+                                                                         std::placeholders::_1,
+                                                                         std::placeholders::_2,
+                                                                         std::placeholders::_3,
+                                                                         std::placeholders::_4));
+            add_time(log, i, time);
+        }
+
+        _times.push_back(log);
     }
 
     void collect(unsigned int nb_iterations, DynamicConfig::SynchronizationPatterns const& authorized) {
@@ -756,6 +814,10 @@ public:
             add_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", time);
             add_iterations_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", increasingKLinePromisePlus.get_iterations_times()); */
         }
+
+        if (authorized._naive_promise_array) {
+            run_naive_promise_array(nb_iterations);
+        }
     }
 
     void print_times() {
@@ -805,16 +867,19 @@ namespace JSON {
             static const std::string increasing_jline_promise("increasing-jline-promise");
             static const std::string jline_promise_plus("jline-plus");
             static const std::string static_step_promise_plus("static-step-plus");
+            static const std::string naive_promise_array("naive-promise-array");
         }
 
         static const std::vector<std::string> authorized_synchronizers = {
             Synchronizers::sequential,
             Synchronizers::alt_bit,
+            Synchronizers::counter,
             Synchronizers::block_promise,
             Synchronizers::jline_promise,
             Synchronizers::increasing_jline_promise,
             Synchronizers::jline_promise_plus,
-            Synchronizers::static_step_promise_plus
+            Synchronizers::static_step_promise_plus,
+            Synchronizers::naive_promise_array
         };
 
         namespace Extras {
@@ -929,6 +994,8 @@ private:
             }
 
             _collector.run_static_step_promise_plus(iterations, step);
+        } else if (synchronizer == Sync::naive_promise_array) {
+            _collector.run_naive_promise_array(iterations);
         } else {
             assert(false);
         }
@@ -967,8 +1034,6 @@ void log_general_data(std::ostream& out) {
 int main(int argc, char** argv) {
     namespace g = Globals;
 
-    parse_command_line(argc, argv);
-
     if (!getenv("OMP_NUM_THREADS")) {
         std::cerr << "OMP_NUM_THREADS not set. Abort." << std::endl;
         exit(EXIT_FAILURE);
@@ -978,6 +1043,8 @@ int main(int argc, char** argv) {
 
     init_logging();
 
+    parse_command_line(argc, argv);
+    Runner runner(sDynamicConfigFiles.get_simulations_filename());
     // spdlog::get(Loggers::Names::global_logger)->info("Starting");
 
     init_start_matrix_once();
@@ -993,7 +1060,6 @@ int main(int argc, char** argv) {
 
     // assert_okay_reordered_compute();
 
-    Runner runner(sDynamicConfigFiles.get_simulations_filename());
     runner.run();
     runner.dump();
 

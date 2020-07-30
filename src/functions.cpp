@@ -106,10 +106,10 @@ void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore&
     if (src)
         src->get()[omp_get_thread_num()].get_future().get();
 
-    for (int k = 0; k < g::DIM_Z; ++k) {
+    for (int i = 1; i < g::DIM_X; ++i) {
         #pragma omp for schedule(static) nowait
         for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int i = 1; i < g::DIM_X; ++i) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
@@ -548,24 +548,50 @@ void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& d
     
     int thread_num = omp_get_thread_num();
 
-    for (int k = 0; k < g::DIM_Z; ++k) {
+    for (int j = 1; j < g::DIM_Y; ++j) {
         if (src) {
-            (*src)[thread_num]->get(k);
+            (*src)[thread_num]->get(j);
         }
 
         #pragma omp for schedule(static) nowait
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int i = 1; i < g::DIM_X; ++i) {
+        for (int i = 1; i < g::DIM_X; ++i) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
 
         if (dst)
-            (*dst)[thread_num + 1]->set(k);
+            (*dst)[thread_num + 1]->set(j);
     }
 
-    if (dst)
-        (*dst)[thread_num + 1]->set_final(g::DIM_Z - 1);
+    if (dst) {
+        (*dst)[thread_num + 1]->set_final(g::DIM_Y);
+    }
+}
+
+void heat_cpu_naive_promise_array(MatrixReorderer& array, size_t m, 
+                                  NaivePromiseArrayStore& dst, 
+                                  NaivePromiseArrayStore& src) {
+    namespace g = Globals;
+
+    int thread_num = omp_get_thread_num();
+
+    for (int i = 1; i < g::DIM_X; ++i) {
+        if (src) {
+            (*src)[thread_num][i].get_future().get();
+        }
+
+        #pragma omp for schedule(static) nowait
+        for (int j = 1; j < g::DIM_Y; ++j) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
+                update_matrix_core(array, m, i, j, k);
+            }
+        }
+
+        if (dst) {
+            (*dst)[thread_num + 1][i].set_value();
+        }
+    }
 }
 
 void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z) {
