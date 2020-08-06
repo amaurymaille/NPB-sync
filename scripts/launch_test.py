@@ -31,7 +31,7 @@ def parse_args():
     return parser.parse_args()
 
 def run(threads, spdlog_include, spdlog_lib, active, dims, src_filename):
-    os.chdir(os.path.dirname(sys.argv[0]))
+    os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
     if dims:
         w, x, y, z = dims
