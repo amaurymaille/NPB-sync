@@ -124,7 +124,7 @@ private:
         namespace g = Globals;
 
         for (int i = 0; i < _isync.size(); i++)
-            _isync[i].store(false, std::memory_order_acq_rel);
+            _isync[i].store(false, std::memory_order_relaxed);
     }
 
     void sync_left(int thread_num, int n_threads) {
@@ -133,12 +133,12 @@ private:
         if (thread_num > 0 && thread_num <= n_threads) {
             // printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
-            bool sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+            bool sync_state = _isync[neighbour].load(std::memory_order_acquire);
 
             while (sync_state == false)
-                sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+                sync_state = _isync[neighbour].load(std::memory_order_acquire);
 
-            _isync[neighbour].store(false, std::memory_order_acq_rel);
+            _isync[neighbour].store(false, std::memory_order_release);
             // printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
     }
@@ -149,11 +149,11 @@ private:
         if (thread_num < n_threads) {
             // printf("[%s][sync_right] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             
-            bool sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
+            bool sync_state = _isync[thread_num].load(std::memory_order_acquire);
             while (sync_state == true)
-                sync_state = _isync[thread_num].load(std::memory_order_acq_rel);
+                sync_state = _isync[thread_num].load(std::memory_order_acquire);
 
-            _isync[thread_num].store(true, std::memory_order_acq_rel);
+            _isync[thread_num].store(true, std::memory_order_release);
 
             // printf("[%s][sync_right] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
@@ -207,11 +207,11 @@ private:
         if (thread_num > 0 && thread_num <= n_threads) {
             // printf("[%s][sync_left] Thread %d: begin iteration %d\n", get_time_default_fmt(), thread_num, i);
             int neighbour = thread_num - 1;
-            unsigned int sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+            unsigned int sync_state = _isync[neighbour].load(std::memory_order_acquire);
 
             // Wait for left neighbour to have finished its iteration
             while (sync_state <= i)
-                sync_state = _isync[neighbour].load(std::memory_order_acq_rel);
+                sync_state = _isync[neighbour].load(std::memory_order_release);
 
             // printf("[%s][sync_left] Thread %d: end iteration %d\n", get_time_default_fmt(), thread_num, i);
         }
