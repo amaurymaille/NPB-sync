@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import csv
 import pandas
 import matplotlib.pyplot as plt
 import numpy as np
@@ -157,9 +158,17 @@ def generate_numerics_raw_for(simulation_data):
             var = data.var()
             std = data.std()
 
-            all_datas.append({"sync": run._synchronizer, "fun": run._function, "avg": avg, "var": var, "std": std})
+            extras = None
+            if run._synchronizer == sync.static_step:
+                extras = "step: {}".format(run._extras["step"])
 
-        print (all_datas)
+            all_datas.append({"sync": run._synchronizer, "fun": run._function, "extras": extras, "avg": avg, "var": var, "std": std, "vc": std / avg})
+
+    with open(os.path.expanduser(simulation_data._path) + "/numerics.csv", "w") as f:
+        fieldnames = ["sync", "fun", "extras", "avg", "var", "std", "vc"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(all_datas)
 
 def generate_numerics_raw(simulations_datas):
     for simulation_data in simulations_datas:
