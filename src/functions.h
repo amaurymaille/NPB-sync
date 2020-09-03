@@ -38,7 +38,11 @@ void heat_cpu_kline_promise_plus(MatrixReorderer&, size_t, KLinePromisePlusStore
 void heat_cpu_increasing_jline_promise_plus(MatrixReorderer&, size_t, IncreasingJLinePromisePlusStore&, const IncreasingJLinePromisePlusStore&);
 void heat_cpu_increasing_kline_promise_plus(MatrixReorderer&, size_t, IncreasingKLinePromisePlusStore&, const IncreasingKLinePromisePlusStore&); */
 
+#ifdef ACTIVE_PROMISE_TIMERS
+void heat_cpu_promise_plus(MatrixReorderer&, size_t, PromisePlusStore&, const PromisePlusStore&, PromisePlusTimersByInnerIteration&);
+#else
 void heat_cpu_promise_plus(MatrixReorderer&, size_t, PromisePlusStore&, const PromisePlusStore&);
+#endif
 void heat_cpu_naive_promise_array(MatrixReorderer&, size_t, NaivePromiseArrayStore&, NaivePromiseArrayStore&);
 
 #endif /* FUNCTIONS_H */

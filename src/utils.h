@@ -198,6 +198,18 @@ public:
     MatrixValue& operator()(size_t i, size_t j, size_t k, size_t l);
 };
 
+#ifdef ACTIVE_PROMISE_TIMERS
+struct PromisePlusTimers {
+    uint64 get_time = 0;
+    uint64 set_time = 0;
+    uint64 compute_time = 0;
+};
+
+typedef std::vector<PromisePlusTimers> PromisePlusTimersByInnerIteration; // 0 -> X = 0, ...
+typedef std::vector<PromisePlusTimersByInnerIteration> PromisePlusTimersByThread; // 0 -> for each X, for thread 0 ...
+typedef std::array<PromisePlusTimersByThread, g::ITERATIONS> PromisePlusTimersByThreadLocal; // 0 -> for each thread at local iteration 0
+#endif
+
 #include "utils.tpp"
 
 #endif /* UTILS_H */

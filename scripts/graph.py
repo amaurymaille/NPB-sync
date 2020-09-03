@@ -154,9 +154,9 @@ def generate_numerics_raw_for(simulation_data):
                 data.append({"time": time})
 
             data = pandas.DataFrame(data)
-            avg = data.mean()
-            var = data.var()
-            std = data.std()
+            avg = data.mean().values[0]
+            var = data.var().values[0]
+            std = data.std().values[0]
 
             extras = None
             if run._synchronizer == sync.static_step:

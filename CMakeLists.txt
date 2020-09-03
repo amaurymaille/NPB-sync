@@ -12,9 +12,13 @@ find_package (Boost REQUIRED COMPONENTS program_options thread)
 set (CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/json/build" "${CMAKE_MODULE_PATH}")
 find_package (nlohmann_json REQUIRED)
 
-set (CMAKE_BUILD_TYPE "Release")
+if (NOT CMAKE_BUILD_TYPE)
+    set (CMAKE_BUILD_TYPE "Release")
+endif()
+
 set (CMAKE_CXX_STANDARD 17)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -Wall -Wextra -Wno-sign-compare ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")
+
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-sign-compare ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")
 add_definitions ("${CMAKE_ADDITIONAL_DEFINITIONS}")
 
 include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}" lib/ src/)
