@@ -607,20 +607,20 @@ void heat_cpu_naive_promise_array(MatrixReorderer& array, size_t m,
 
     int thread_num = omp_get_thread_num();
 
-    for (int i = 1; i < g::DIM_X; ++i) {
+    for (int j = 1; j < g::DIM_Y; ++j) {
         if (src) {
-            (*src)[thread_num][i].get_future().get();
+            (*src)[thread_num][j].get_future().get();
         }
 
         #pragma omp for schedule(static) nowait
-        for (int j = 1; j < g::DIM_Y; ++j) {
+        for (int i = 1; i < g::DIM_X; ++i) {
             for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
         }
 
         if (dst) {
-            (*dst)[thread_num + 1][i].set_value();
+            (*dst)[thread_num + 1][j].set_value();
         }
     }
 }

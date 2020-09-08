@@ -429,7 +429,7 @@ public:
         for (int i = 0; i < g::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
-                _promises_store[i][j] = new std::promise<void>[Globals::DIM_X];
+                _promises_store[i][j] = new std::promise<void>[Globals::DIM_Y];
             }
         }
     }
