@@ -80,8 +80,8 @@ void ActiveStaticStepPromise<void>::set(int index) {
 
     _base.assert_free_index_weak(index);
 
-    if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step) {
+    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
+        _base._common._step)) {
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 }
@@ -91,7 +91,7 @@ void PassiveStaticStepPromise<void>::set(int index) {
 
     _base.assert_free_index_weak(index);
 
-    if (index - _base._current_index_strong >= _base._common._step) {
+    if (_base._common._step == 1 || (index - _base._current_index_strong >= _base._common._step)) {
         std::unique_lock<std::mutex> index_lck(_base._index_m);
         _base._current_index_strong = index;
         _base._index_c.notify_all();

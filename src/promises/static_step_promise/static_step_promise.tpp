@@ -47,8 +47,8 @@ void ActiveStaticStepPromise<T>::set(int index, const T& value) {
 
     this->_value[index] = value;
     
-    if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step) {
+    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
+        _base._common._step)) {
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 }
@@ -76,8 +76,8 @@ void ActiveStaticStepPromise<T>::set(int index, T&& value) {
 
     this->_value[index] = std::move(value);
     
-    if (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step) {
+    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
+        _base._common._step)) {
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 }
