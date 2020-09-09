@@ -62,6 +62,7 @@ void ActiveStaticStepPromise<void>::get(int index) {
             ready_index = _base._current_index_strong.load(std::memory_order_acquire);
 
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
+        // _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
     }
 }
 
@@ -76,7 +77,7 @@ void PassiveStaticStepPromise<void>::get(int index) {
 }
 
 void ActiveStaticStepPromise<void>::set(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+    // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
 
@@ -87,7 +88,7 @@ void ActiveStaticStepPromise<void>::set(int index) {
 }
 
 void PassiveStaticStepPromise<void>::set(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+    // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
 
@@ -99,19 +100,21 @@ void PassiveStaticStepPromise<void>::set(int index) {
 }
 
 void ActiveStaticStepPromise<void>::set_final(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+    // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
 
     _base._current_index_strong.store(index, std::memory_order_release);
+    _base._common._current_index_weak[omp_get_thread_num()] = index;
 }
 
 void PassiveStaticStepPromise<void>::set_final(int index) {
-    std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+    // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
 
     std::unique_lock<std::mutex> index_lck(_base._index_m);
     _base._current_index_strong = index;
     _base._index_c.notify_all();
+    _base._common._current_index_weak[omp_get_thread_num()] = index;
 }
