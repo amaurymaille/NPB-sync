@@ -105,7 +105,7 @@ void ActiveStaticStepPromise<void>::set_final(int index) {
     _base.assert_free_index_weak(index);
 
     _base._current_index_strong.store(index, std::memory_order_release);
-    _base._common._current_index_weak[omp_get_thread_num()] = index;
+    // _base._common._current_index_weak[omp_get_thread_num()] = index;
 }
 
 void PassiveStaticStepPromise<void>::set_final(int index) {
@@ -116,5 +116,5 @@ void PassiveStaticStepPromise<void>::set_final(int index) {
     std::unique_lock<std::mutex> index_lck(_base._index_m);
     _base._current_index_strong = index;
     _base._index_c.notify_all();
-    _base._common._current_index_weak[omp_get_thread_num()] = index;
+    // _base._common._current_index_weak[omp_get_thread_num()] = index;
 }
