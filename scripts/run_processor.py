@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument("--smart", action="store_true", help="Attempt to smartly generate graphs (combine values from different set of data when parameters match)")
     parser.add_argument("--violin", action="store_true", help="Generate violin plots representing boxplots and density of the time for each synchronization pattern in a given configuration")
     parser.add_argument("--numerics", action="store_true", help="Compute average, variance and standard deviation. Output to numerics.csv")
+    parser.add_argument("--ratios", action="store_true", help="Compute ratios based on what is available. Output to ratios.txt")
 
     return parser.parse_args()
 
@@ -180,6 +181,100 @@ def generate_numerics(simulations_datas, smart):
     else:
         generate_numerics_smart(simulations_datas)
 
+class RatioHelper:
+    def __init__(self, runs):
+        self._syncs = {}
+
+        for run in runs:
+            if run._synchronizer == sync.static_step:
+                if not run._synchronizer in self._syncs:
+                    self._syncs[sync.static_step] = {}
+
+                self._syncs[run._synchronizer][str(run._extras["step"])] = run
+            else:
+                self._syncs[run._synchronizer] = run
+
+    def has_static_step(self, step=None):
+        if step is None:
+            return sync.static_step in self._syncs
+
+        return self.has_static_step() and str(step) in self._syncs[sync.static_step]
+
+    def has_sync(self, sync):
+        return sync in self._syncs
+
+    def has_naive(self):
+        return self.has_sync(sync.naive_promise)
+
+    def has_alt_bit(self):
+        return self.has_sync(sync.alt_bit)
+
+    def select_best_static_step(self):
+        if not self.has_static_step():
+            return None
+
+        times = {}
+        for step in self._syncs[sync.static_step]:
+            data = self._syncs[sync.static_step][step]
+            times[data._extras["step"]] = data.avg()
+
+        return self._syncs[sync.static_step][str(min(times, key=times.get))]
+
+    def select_static_step(self, step):
+        if self.has_static_step(step):
+            return self._syncs[sync.static_step][str(step)]
+
+        return None
+
+    def select_naive(self):
+        if self.has_naive():
+            return self._syncs[sync.naive_promise]
+        
+        return None
+
+    def select_alt_bit(self):
+        if self.has_alt_bit():
+            return self._syncs[sync.naive_promise]
+
+        return None
+
+    def select_static_steps(self):
+        if self.has_static_step():
+            return self._syncs[sync.static_step]
+
+        return None
+
+def generate_ratios(simulations_datas, smart):
+    if not smart:
+        generate_ratios_raw(simulations_datas)
+    else:
+        generate_ratios_smart(simulations_datas)
+
+def generate_ratios_raw(simulations_datas):
+    for simulation_data in simulations_datas:
+        generate_ratios_raw_for(simulation_data)
+
+def generate_ratios_raw_for(simulation_data):
+    ratios = []
+
+    with open(simulation_data._path + "/runs.json") as f:
+        runs = run_parser.parse_runs(f)
+
+        computer = RatioHelper(runs)
+        best_static_step = computer.select_best_static_step()
+        naive = computer.select_naive()
+        alt_bit = computer.select_alt_bit()
+        step_1 = computer.select_static_step(1)
+
+        if naive and step_1:
+            ratios.append("Naive / Promise+1: {}".format(naive.avg() / step_1.avg()))
+
+        if naive and best_static_step:
+            ratios.append("Naive / Promise+{} (best): {}".format(best_static_step._extras["step"], naive.avg() / best_static_step.avg()))
+
+    with open(simulation_data._path + "/ratios.txt", "w") as f: 
+        f.write("\n".join(ratios))
+
 def main():
     args = parse_args()
 
@@ -200,5 +295,8 @@ def main():
 
     if args.numerics:
         generate_numerics(simulations_datas, args.smart)
+
+    if args.ratios:
+        generate_ratios(simulations_datas, args.smart)
 if __name__ == "__main__":
     main()

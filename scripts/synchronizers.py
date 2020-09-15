@@ -9,5 +9,5 @@ class Synchronizers:
     increasing_jline = "IncreasingJLine"
     kline = "KLine"
     increasing_kline = "IncreasingKLine"
-    naive_promise = "JLine+"
+    naive_promise = "NaivePromiseArray"
     static_step = "StaticStep+"

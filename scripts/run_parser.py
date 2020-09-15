@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import pandas
 
 class RunData:
     def __init__(self, synchronizer, function, times, extras):
@@ -13,6 +14,9 @@ class RunData:
     @staticmethod
     def init_from_json(json_data):
         return RunData(json_data["synchronizer"], json_data["function"], json_data["times"], json_data["extras"])
+
+    def avg(self):
+        return float(pandas.DataFrame(self._times).mean())
 
 def parse_runs(f):
     runs = json.load(f)
