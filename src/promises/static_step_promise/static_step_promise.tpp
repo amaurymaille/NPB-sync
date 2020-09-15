@@ -1,6 +1,6 @@
 #include <utility>
 
-template<typename T>
+/* template<typename T>
 ActiveStaticStepPromise<T>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
     PromisePlus<void>(nb_values), _base(step) {
 
@@ -143,27 +143,5 @@ void PassiveStaticStepPromise<T>::set_final(int index, T&& value) {
     std::unique_lock<std::mutex> index_lck(_base._index_m);
     _base._current_index_strong = index;
     _base._index_c.notify_all();
-}
-
-template<typename T>
-StaticStepPromiseBuilder<T>::StaticStepPromiseBuilder(int nb_values, unsigned int step, unsigned int n_threads,
-                                                      PromisePlusWaitMode wait_mode) {
-    _nb_values = nb_values;
-    _step = step;
-    _n_threads = n_threads;
-    _wait_mode = wait_mode;
-}
-
-template<typename T>
-PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const {
-    if (_wait_mode == PromisePlusWaitMode::ACTIVE) {
-        ActiveStaticStepPromise<T>* ptr = new ActiveStaticStepPromise<T>(_nb_values, _step);
-        ptr->_base._common._current_index_weak.resize(_n_threads, -1);
-        return ptr;
-    } else {
-        PassiveStaticStepPromise<T>* ptr = new PassiveStaticStepPromise<T>(_nb_values, _step);
-        ptr->_base._common._current_index_weak.resize(_n_threads, -1);
-        return ptr;
-    }
-}
+} */
 

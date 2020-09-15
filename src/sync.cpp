@@ -349,7 +349,7 @@ using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchro
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
-    PromisePlusSynchronizer(MatrixReorderer& matrix, int n_threads, const PromisePlusBuilder<T>& builder) : Synchronizer(matrix) {
+    PromisePlusSynchronizer(MatrixReorderer& matrix, int n_threads, const StaticStepPromiseBuilder& builder) : Synchronizer(matrix) {
         for (int i = 0; i < g::ITERATIONS; ++i) {
             for (int j = 0; j < n_threads; j++)
                 _promises_store[i].push_back(builder.new_promise());
@@ -371,7 +371,7 @@ public:
 
     ~PromisePlusSynchronizer() {
         for (auto& store: _promises_store) {
-            for (PromisePlus<T>* promise: store)
+            for (ActiveStaticStepPromise* promise: store)
                 delete promise;
         }
     }
@@ -697,7 +697,7 @@ public:
     }
 
     void run_jline_promise_plus(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
+        /* unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("JLine+", "promise_plus");
         TimeLog iterations_log("JLine+", "promise_plus");
@@ -726,7 +726,7 @@ public:
         }
 
         _times.push_back(log);
-        _iterations_times.push_back(iterations_log);
+        _iterations_times.push_back(iterations_log); */
     }
 
     void run_static_step_promise_plus(unsigned int nb_iterations, unsigned int step) {
@@ -742,7 +742,7 @@ public:
         iterations_log.add_extra_arg("step", step);
         StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
          
-        StaticStepPromiseBuilder<void> builder(Globals::DIM_Y, step, nb_threads);
+        StaticStepPromiseBuilder builder(Globals::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);

@@ -17,11 +17,10 @@
     using StaticStepSetMutex = std::mutex;
 #endif
 
-template<typename T>
-class StaticStepPromiseBuilder : public PromisePlusBuilder<T> {
+class StaticStepPromiseBuilder {
 public:
     StaticStepPromiseBuilder(int, unsigned int, unsigned int, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
-    PromisePlus<T>* new_promise() const;
+    ActiveStaticStepPromise* new_promise() const;
 
 private:
     int _nb_values;
@@ -75,7 +74,7 @@ struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
  * Debug mode ensures that index are indeed received in increasing order. In release
  * mode not performing set()s in the right order will result in undefined behaviour.
  */
-template<typename T>
+/* template<typename T>
 class ActiveStaticStepPromise : public PromisePlus<T> {
 public:
     ActiveStaticStepPromise(int nb_values, unsigned int step);
@@ -88,31 +87,40 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
-    friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
+    friend ActiveStaticStepPromise<T>* StaticStepPromiseBuilder<T>::new_promise() const;
 
 private:
     ActiveStaticStepPromiseBase _base;
-};
+}; */
 
-template<>
-class ActiveStaticStepPromise<void> : public PromisePlus<void> {
+class ActiveStaticStepPromise {
 public:
     ActiveStaticStepPromise(int nb_values, unsigned int step);
     
-    NO_COPY_T(ActiveStaticStepPromise, void);
+    // NO_COPY_T(ActiveStaticStepPromise, void);
 
-    void get(int index);
-    void set(int index);
-    void set_final(int index);
+    inline void get(int index) __attribute__((always_inline)) {
+        int ready_index = _base._current_index_strong.load(std::memory_order_acquire);
+        while (ready_index < index)
+            ready_index = _base._current_index_strong.load(std::memory_order_acquire);
+    }
 
-    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
+    inline void set(int index) __attribute__((always_inline)) {
+        _base._current_index_strong.store(index, std::memory_order_release);
+    }
+
+    inline void set_final(int index) __attribute__((always_inline)) {
+        _base._current_index_strong.store(index, std::memory_order_release);
+    }
+
+    friend ActiveStaticStepPromise* StaticStepPromiseBuilder::new_promise() const;
 
 private:
     ActiveStaticStepPromiseBase _base;
 };
 
 template<typename T>
-class PassiveStaticStepPromise : public PromisePlus<T> {
+class PassiveStaticStepPromise {
 public:
     PassiveStaticStepPromise(int nb_values, unsigned int step);
     
@@ -124,14 +132,12 @@ public:
     void set_final(int index, const T& value);
     void set_final(int index, T&& value);
 
-    friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
-
 private:
     PassiveStaticStepPromiseBase _base;
 };
 
 template<>
-class PassiveStaticStepPromise<void> : public PromisePlus<void> {
+class PassiveStaticStepPromise<void> {
 public:
     PassiveStaticStepPromise(int nb_values, unsigned int step);
     
@@ -140,8 +146,6 @@ public:
     void get(int index);
     void set(int index);
     void set_final(int index);
-
-    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
 
 private:
     PassiveStaticStepPromiseBase _base;

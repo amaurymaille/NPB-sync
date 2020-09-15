@@ -80,11 +80,7 @@ namespace Globals {
 }
 #endif // ACTIVE_PROMISES
 
-template<typename T>
-class PromisePlus;
-
-template<>
-class PromisePlus<void>;
+class ActiveStaticStepPromise;
 
 // Point synchronization
 typedef ThreadStore<std::array<Promise<void>, g::NB_POINTS_PER_ITERATION>> PointPromiseContainer;
@@ -133,7 +129,7 @@ typedef JLinePromisePlusStore KLinePromisePlusStore;
 typedef IncreasingJLinePromisePlusContainer IncreasingKLinePromisePlusContainer;
 typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore; */
 
-typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
+typedef ThreadStore<ActiveStaticStepPromise*> PromisePlusContainer;
 typedef std::optional<PromisePlusContainer> PromisePlusStore;
 
 typedef ThreadStore<std::promise<void>*> NaivePromiseArrayContainer;

@@ -12,6 +12,8 @@
 #include "promise_plus.h"
 #include "utils.h"
 
+#include "promises/static_step_promise.h"
+
 static void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z);
 
 void heat_cpu(MatrixReorderer& array, size_t m) {

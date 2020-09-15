@@ -45,17 +45,17 @@ bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
 // -----------------------------------------------------------------------------
 // StaticStepPromise<void>
 
-ActiveStaticStepPromise<void>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
-    PromisePlus<void>(nb_values), _base(step) {
+ActiveStaticStepPromise::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
+    _base(step) {
 
 }
 
 PassiveStaticStepPromise<void>::PassiveStaticStepPromise(int nb_values, unsigned int step) : 
-    PromisePlus<void>(nb_values), _base(step) {
+    _base(step) {
 
 }
 
-void ActiveStaticStepPromise<void>::get(int index) {
+/* void ActiveStaticStepPromise<void>::get(int index) {
     // if (!_base.ready_index_weak(index)) {
         int ready_index = _base._current_index_strong.load(std::memory_order_acquire);
         while (ready_index < index)
@@ -64,7 +64,7 @@ void ActiveStaticStepPromise<void>::get(int index) {
         // _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
         // _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
     // }
-}
+} */
 
 void PassiveStaticStepPromise<void>::get(int index) {
     // if (!_base.ready_index_weak(index)) {
@@ -76,13 +76,13 @@ void PassiveStaticStepPromise<void>::get(int index) {
     // }
 }
 
-void ActiveStaticStepPromise<void>::set(int index) {
+/* void ActiveStaticStepPromise<void>::set(int index) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     // _base.assert_free_index_weak(index);
 
     _base._current_index_strong.store(index, std::memory_order_release);
-}
+} */
 
 void PassiveStaticStepPromise<void>::set(int index) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
@@ -94,14 +94,14 @@ void PassiveStaticStepPromise<void>::set(int index) {
     _base._index_c.notify_all();
 }
 
-void ActiveStaticStepPromise<void>::set_final(int index) {
+/* void ActiveStaticStepPromise<void>::set_final(int index) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     // _base.assert_free_index_weak(index);
 
     _base._current_index_strong.store(index, std::memory_order_release);
     // _base._common._current_index_weak[omp_get_thread_num()] = index;
-}
+} */
 
 void PassiveStaticStepPromise<void>::set_final(int index) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
@@ -112,4 +112,18 @@ void PassiveStaticStepPromise<void>::set_final(int index) {
     _base._current_index_strong = index;
     _base._index_c.notify_all();
     // _base._common._current_index_weak[omp_get_thread_num()] = index;
+}
+
+ActiveStaticStepPromise* StaticStepPromiseBuilder::new_promise() const {
+    ActiveStaticStepPromise* ptr = new ActiveStaticStepPromise(_nb_values, _step);
+    ptr->_base._common._current_index_weak.resize(_n_threads, -1);
+    return ptr;
+}
+
+StaticStepPromiseBuilder::StaticStepPromiseBuilder(int nb_values, unsigned int step, unsigned int n_threads,
+                                                      PromisePlusWaitMode wait_mode) {
+    _nb_values = nb_values;
+    _step = step;
+    _n_threads = n_threads;
+    _wait_mode = wait_mode;
 }
