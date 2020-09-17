@@ -268,9 +268,11 @@ def generate_ratios_raw_for(simulation_data):
 
         if naive and step_1:
             ratios.append("Naive / Promise+1: {}".format(naive.avg() / step_1.avg()))
+            ratios.append("Promise+1 / Naive: {}".format(step_1.avg() / naive.avg()))
 
         if naive and best_static_step:
             ratios.append("Naive / Promise+{} (best): {}".format(best_static_step._extras["step"], naive.avg() / best_static_step.avg()))
+            ratios.append("Promise+{} (best) / Naive: {}".format(best_static_step._extras["step"], best_static_step.avg() / naive.avg()))
 
     with open(simulation_data._path + "/ratios.txt", "w") as f: 
         f.write("\n".join(ratios))
