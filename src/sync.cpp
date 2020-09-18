@@ -359,14 +359,6 @@ public:
             _times_by_thread[i].resize(n_threads);
         }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-        for (int i = 0; i < g::ITERATIONS; ++i) {
-            _timers[i].resize(n_threads);
-            for (int j = 0; j < n_threads; ++j) {
-                _timers[i][j].resize(g::DIM_Y);
-            }
-        }
-#endif
     }
 
     ~PromisePlusSynchronizer() {
@@ -390,13 +382,7 @@ public:
 
                 clock_gettime(CLOCK_MONOTONIC, &thread_begin);
 
-#ifdef ACTIVE_PROMISE_TIMERS
-                PromisePlusTimersByInnerIteration timers(g::DIM_Y);
-                f(_matrix, i, dst, src, timers);
-                _timers[i][omp_get_thread_num()] = std::move(timers); 
-#else
                 f(_matrix, i, dst, src);
-#endif
 
                 clock_gettime(CLOCK_MONOTONIC, &thread_end);
 
@@ -409,18 +395,9 @@ public:
         return _times_by_thread;
     }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-    PromisePlusTimersByThreadLocal const& get_timers() const {
-        return _timers;
-    }
-#endif
-
 private: 
     std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
     IterationTimeByThreadStore _times_by_thread;
-#ifdef ACTIVE_PROMISE_TIMERS
-    PromisePlusTimersByThreadLocal _timers;
-#endif
 };
 
 class NaivePromiseArraySynchronizer : public Synchronizer {
@@ -499,17 +476,6 @@ public:
         _json["extras"][key] = value;
     }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-    void add_promise_plus_timers(unsigned int iteration, unsigned int local_iteration, unsigned int thread_id, unsigned int x, PromisePlusTimers const& timers) {
-        json data;
-        data["get"] = double(timers.get_time) / BILLION;
-        data["set"] = double(timers.set_time) / BILLION;
-        data["compute"] = double(timers.compute_time) / BILLION;
-        
-        _json["times"]["iterations"][iteration]["local_iterations"][local_iteration]["threads"][thread_id]["intermediate"][x] = data;
-    }
-#endif
-
     const json& get_json() const {
         return _json;
     }
@@ -535,24 +501,6 @@ public:
             ++local_iteration;
         }
     }
-
-#ifdef ACTIVE_PROMISE_TIMERS
-    void add_promise_plus_timers(TimeLog& log, unsigned int global_iteration, PromisePlusTimersByThreadLocal const& times) {
-        unsigned int local_iteration = 0;
-        for (auto const& local_iterations: times) {
-            unsigned int thread_id = 0;
-            for (auto const& threads: local_iterations) {
-                unsigned int intermediate = 0;
-                for (PromisePlusTimers const& timers: threads) {
-                    log.add_promise_plus_timers(global_iteration, local_iteration, thread_id, intermediate, timers);
-                    ++intermediate;
-                }
-                ++thread_id;
-            }
-            ++local_iteration;
-        }
-    }
-#endif
 
     void run_sequential(unsigned int nb_iterations) {
         uint64 time = 0;
@@ -706,21 +654,11 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> jLinePromisePlus(reorderer, nb_threads, builder);
-
-#ifdef ACTIVE_PROMISE_TIMERS
-            time = measure_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
-                                                            std::placeholders::_1,
-                                                            std::placeholders::_2,
-                                                            std::placeholders::_3,
-                                                            std::placeholders::_4,
-                                                            std::placeholders::_5));
-#else
             time = measure_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
-#endif
             add_time(log, i, time);
             add_iterations_times_by_thread(iterations_log, i, jLinePromisePlus.get_iterations_times_by_thread());
         }
@@ -734,10 +672,7 @@ public:
         uint64 time = 0;
         TimeLog log("StaticStep+", "promise_plus");
         TimeLog iterations_log("StaticStep+", "promise_plus");
-#ifdef ACTIVE_PROMISE_TIMERS
-        TimeLog timers_log("StaticStep+", "promise_plus");
-        timers_log.add_extra_arg("step", step);
-#endif
+
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
         StandardMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
@@ -747,32 +682,17 @@ public:
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);
 
-#ifdef ACTIVE_PROMISE_TIMERS
-            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
-                                                                      std::placeholders::_1,
-                                                                      std::placeholders::_2,
-                                                                      std::placeholders::_3,
-                                                                      std::placeholders::_4,
-                                                                      std::placeholders::_5));
-#else
             time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
-#endif
             add_time(log, i, time);
             add_iterations_times_by_thread(iterations_log, i, increasingJLinePromisePlus.get_iterations_times_by_thread());
-#ifdef ACTIVE_PROMISE_TIMERS
-            add_promise_plus_timers(timers_log, i, increasingJLinePromisePlus.get_timers());
-#endif
         }
 
         _times.push_back(log);
         _iterations_times.push_back(iterations_log);
-#ifdef ACTIVE_PROMISE_TIMERS
-        _promise_plus_timers.push_back(timers_log);
-#endif
     }
 
     void run_naive_promise_array(unsigned int nb_iterations) {
@@ -925,26 +845,9 @@ public:
         ExtraConfig::iterations_times_file() << std::setw(4) << data;
     }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-    void print_promise_plus_timers() {
-        json data;
-        json runs = json::array();
-
-        for (auto const& log: _promise_plus_timers) {
-            runs.push_back(log.get_json());
-        }
-
-        data["runs"] = runs;
-        ExtraConfig::promise_plus_timers_file() << std::setw(4) << data;
-    }
-#endif
-
 private:
     std::vector<TimeLog> _times;
     std::vector<TimeLog> _iterations_times;
-#ifdef ACTIVE_PROMISE_TIMERS
-    std::vector<TimeLog> _promise_plus_timers;
-#endif
 };
 
 namespace JSON {
@@ -1006,9 +909,6 @@ public:
     void dump() {
         _collector.print_times();
         _collector.print_iterations_times();
-#ifdef ACTIVE_PROMISE_TIMERS
-        _collector.print_promise_plus_timers();
-#endif
     }
 
 private:

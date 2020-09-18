@@ -8,10 +8,4 @@ namespace ExtraConfig {
     std::ostream& iterations_times_file() {
         return DynamicConfig::_instance()._files.iterations_times_file();
     }
-
-#ifdef ACTIVE_PROMISE_TIMERS
-    std::ostream& promise_plus_timers_file() {
-        return DynamicConfig::_instance()._files.promise_plus_timers_file();
-    }
-#endif 
 }

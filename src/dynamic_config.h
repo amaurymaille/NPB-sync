@@ -10,9 +10,6 @@
 namespace ExtraConfig {
     std::ostream& runs_times_file();
     std::ostream& iterations_times_file();
-#ifdef ACTIVE_PROMISE_TIMERS
-    std::ostream& promise_plus_timers_file();
-#endif
 }
 
 class DynamicConfig {
@@ -48,12 +45,6 @@ public:
             return *_parameters_file;
         }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-        std::ostream& promise_plus_timers_file() {
-            return *_promise_plus_timers_file;
-        }
-#endif
-
         void set_runs_times_file(std::ostream& o) {
             _runs_times_file.reset(o);
         }
@@ -69,12 +60,6 @@ public:
         void set_parameters_file(std::ostream& o) {
             _parameters_file.reset(o);
         }
-
-#ifdef ACTIVE_PROMISE_TIMERS
-        void set_promise_plus_timers_file(std::ostream& o) {
-            _promise_plus_timers_file.reset(o);
-        }
-#endif
 
         std::string const& get_simulations_filename() const {
             return _simulations_filename;
@@ -115,9 +100,6 @@ public:
         EitherCoutOr _runs_times_file;
         EitherCoutOr _iterations_times_file;
         EitherCoutOr _parameters_file;
-#ifdef ACTIVE_PROMISE_TIMERS
-        EitherCoutOr _promise_plus_timers_file;
-#endif
         std::string _simulations_filename;
     };
 
@@ -134,9 +116,6 @@ public:
     friend int main(int, char**);
     friend std::ostream& ExtraConfig::runs_times_file();
     friend std::ostream& ExtraConfig::iterations_times_file();
-#ifdef ACTIVE_PROMISE_TIMERS
-    friend std::ostream& ExtraConfig::promise_plus_timers_file();
-#endif
 
     static inline const DynamicConfig& instance() {
         return _instance();

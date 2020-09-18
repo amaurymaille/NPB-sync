@@ -543,32 +543,15 @@ void heat_cpu_increasing_kline_promise_plus(MatrixReorderer& array, size_t m,
 }
 */
 
-#ifdef ACTIVE_PROMISE_TIMERS
-void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src, PromisePlusTimersByInnerIteration& timers) {
-#else
 void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
-#endif
     namespace g = Globals;
     
     int thread_num = omp_get_thread_num();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         if (src) {
-#ifdef ACTIVE_PROMISE_TIMERS
-            struct timespec begin_get, end_get;
-            clock_gettime(CLOCK_MONOTONIC, &begin_get);
-#endif
             (*src)[thread_num]->get(j);
-#ifdef ACTIVE_PROMISE_TIMERS
-            clock_gettime(CLOCK_MONOTONIC, &end_get);
-            timers[j].get_time = clock_diff(&end_get, &begin_get);
-#endif
         }
-
-#ifdef ACTIVE_PROMISE_TIMERS
-        struct timespec begin_compute, end_compute;
-        clock_gettime(CLOCK_MONOTONIC, &begin_compute);
-#endif
 
         #pragma omp for schedule(static) nowait
         for (int i = 1; i < g::DIM_X; ++i) {
@@ -577,21 +560,8 @@ void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& d
             }
         }
 
-#ifdef ACTIVE_PROMISE_TIMERS
-        clock_gettime(CLOCK_MONOTONIC, &end_compute);
-        timers[j].compute_time = clock_diff(&end_compute, &begin_compute);
-#endif
-
         if (dst) {
-#ifdef ACTIVE_PROMISE_TIMERS
-            struct timespec begin_set, end_set;
-            clock_gettime(CLOCK_MONOTONIC, &begin_set);
-#endif
             (*dst)[thread_num + 1]->set(j);
-#ifdef ACTIVE_PROMISE_TIMERS
-            clock_gettime(CLOCK_MONOTONIC, &end_set);
-            timers[j].set_time = clock_diff(&end_set, &begin_set);
-#endif
         }
     }
 

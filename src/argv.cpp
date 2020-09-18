@@ -36,9 +36,6 @@ namespace Options {
         static const char* iterations_times_file = "iterations-times-file";
         static const char* simulations_file = "simulations-file";
         static const char* parameters_file = "parameters-file";
-#ifdef ACTIVE_PROMISE_TIMERS
-        static const char* promise_plus_timers_file = "promise-plus-timers-file";
-#endif 
     }
 }
 
@@ -116,9 +113,6 @@ void populate_options(po::options_description& options) {
         (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written")
         (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs")
         (f::parameters_file, po::value<std::string>(), "Path to the file in which the general data of all simulations will be written")
-#ifdef ACTIVE_PROMISE_TIMERS
-        (f::promise_plus_timers_file, po::value<std::string>(), "Path to the file in which the data related to timers of PromisePlus operations will be written")
-#endif
         ;
 
     /* po::options_description synchro("Synchronization patterns without promises");
@@ -156,10 +150,6 @@ void process_files(DynamicConfig::Files& files,
     init_outfile_if(f::runs_times_file, vm, std::bind(&DynamicConfig::Files::set_runs_times_file, &files, std::placeholders::_1));
     init_outfile_if(f::iterations_times_file, vm, std::bind(&DynamicConfig::Files::set_iterations_times_file, &files, std::placeholders::_1));
     init_outfile_if(f::parameters_file, vm, std::bind(&DynamicConfig::Files::set_parameters_file, &files, std::placeholders::_1));
-
-#ifdef ACTIVE_PROMISE_TIMERS
-    init_outfile_if(f::promise_plus_timers_file, vm, std::bind(&DynamicConfig::Files::set_promise_plus_timers_file, &files, std::placeholders::_1));
-#endif
 
     files.set_simulations_filename(vm[f::simulations_file].as<std::string>());
 }
