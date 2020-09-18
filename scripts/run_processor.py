@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 import pandas
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,6 +23,7 @@ def parse_args():
     parser.add_argument("--violin", action="store_true", help="Generate violin plots representing boxplots and density of the time for each synchronization pattern in a given configuration")
     parser.add_argument("--numerics", action="store_true", help="Compute average, variance and standard deviation. Output to numerics.csv")
     parser.add_argument("--ratios", action="store_true", help="Compute ratios based on what is available. Output to ratios.txt")
+    parser.add_argument("--summary", action="store_true", help="Perform a summary: recall the parameters of the problem, the synchronization tools used, and which is the best, with speedups")
 
     return parser.parse_args()
 
@@ -244,6 +246,24 @@ class RatioHelper:
 
         return None
 
+    def select_best(self):
+        best = None
+        time = float("+inf")
+
+        for synchro in self._syncs:
+            if synchro == sync.static_step:
+                best_static_step = self.select_best_static_step()
+                if best_static_step.avg() < time:
+                    time = best_static_step.avg()
+                    best = best_static_step
+            else:
+                avg = self._syncs[synchro].avg()
+                if avg < time:
+                    time = avg
+                    best = self._syncs[synchro]
+
+        return best, time
+
 def generate_ratios(simulations_datas, smart):
     if not smart:
         generate_ratios_raw(simulations_datas)
@@ -277,6 +297,29 @@ def generate_ratios_raw_for(simulation_data):
     with open(simulation_data._path + "/ratios.txt", "w") as f: 
         f.write("\n".join(ratios))
 
+def generate_summaries(simulations_datas):
+    for simulation_data in simulations_datas:
+        generate_summary(simulation_data)
+
+def generate_summary(simulation_data):
+    data = None
+
+    with open(simulation_data._path + "/data.json") as f:
+        data = json.load(f)
+
+    runs = None
+    with open(simulation_data._path + "/runs.json") as f:
+        runs = run_parser.parse_runs(f)
+
+    best, time = RatioHelper(runs).select_best()
+
+    with open(simulation_data._path + "/summary.txt", "w") as f:
+        f.write("{} * {} * {} * {} with {} threads (using active wait: {}) and {} iterations\n".format(data["w"], data["x"], data["y"], data["z"], data["threads"], data["active"], data["iterations"]))
+        f.write("Running with the following synchronization patterns: \n")
+        f.write("\t" + "\n\t".join([run.synchronizer() + ": " + str(run.avg()) for run in runs]))
+        f.write("\n")
+        f.write("Best synchronization: {}, with average time: {}".format(best.synchronizer(), time))
+
 def main():
     args = parse_args()
 
@@ -300,5 +343,8 @@ def main():
 
     if args.ratios:
         generate_ratios(simulations_datas, args.smart)
+
+    if args.summary:
+        generate_summaries(simulations_datas)
 if __name__ == "__main__":
     main()

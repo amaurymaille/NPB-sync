@@ -4,6 +4,8 @@ import argparse
 import json
 import pandas
 
+from synchronizers import Synchronizers as sync
+
 class RunData:
     def __init__(self, synchronizer, function, times, extras):
         self._synchronizer = synchronizer
@@ -17,6 +19,12 @@ class RunData:
 
     def avg(self):
         return float(pandas.DataFrame(self._times).mean())
+
+    def synchronizer(self):
+        if self._synchronizer == sync.static_step:
+            return self._synchronizer + str(self._extras["step"])
+        else:
+            return self._synchronizer
 
 def parse_runs(f):
     runs = json.load(f)
