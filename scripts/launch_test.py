@@ -18,7 +18,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the program with the given parameters")
     parser.add_argument("-t", "--threads", help="Number of OpenMP threads", type=int, default=8)
     parser.add_argument("-d", "--debug", help="Debug build", action="store_true")
-    parser.add_argument("--promise-plus-timers", help="Enable timers on PromisePlus operations", action="store_true")
+    parser.add_argument("--promise-plus-iteration-timer", help="Enable timers on PromisePlusSynchronizer iterations", action="store_true")
 
     promise_mode = parser.add_mutually_exclusive_group(required=True)
     promise_mode.add_argument("--active", help="Use active promises", action="store_true")
@@ -32,7 +32,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def run(threads, spdlog_include, spdlog_lib, active, promise_plus_timers, dims, src_filename, debug):
+def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, dims, src_filename, debug):
     os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
     if dims:
@@ -49,8 +49,8 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_timers, dims, 
     if active:
         additional_definitions.append("-DACTIVE_PROMISES")
 
-    if promise_plus_timers:
-        additional_definitions.append("-DACTIVE_PROMISE_TIMERS")
+    if promise_plus_iteration_timer:
+        additional_definitions.append("-DPROMISE_PLUS_ITERATION_TIMER")
 
     cmake_command[-1] += " ".join(additional_definitions)
 
@@ -71,18 +71,14 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_timers, dims, 
     iterations_filename = os.path.expanduser("{}/iterations.json".format(dirname))
     runs_filename = os.path.expanduser("{}/runs.json".format(dirname))
 
-    if promise_plus_timers:
-        promise_plus_timers_filename = os.path.expanduser("{}/promise_plus_timers.json".format(dirname))
-        subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename, "--promise-plus-timers-file", promise_plus_timers_filename]).wait()
-    else:
-        subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename]).wait()
+    subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename]).wait()
 
 def main():
     args = parse_args()
 
     threads = args.threads
     
-    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_timers, args.dims, os.path.abspath(args.file.name), args.debug)
+    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.dims, os.path.abspath(args.file.name), args.debug)
 
 if __name__ == "__main__":
     main()

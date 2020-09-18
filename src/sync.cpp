@@ -317,9 +317,11 @@ public:
                 _promises_store[i].push_back(builder.new_promise());
         }
 
+#ifdef PROMISE_PLUS_ITERATION_TIMER
         for (int i = 0; i < g::ITERATIONS; ++i) {
             _times_by_thread[i].resize(n_threads);
         }
+#endif 
 
     }
 
@@ -342,24 +344,32 @@ public:
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
+#ifdef PROMISE_PLUS_ITERATION_TIMER
                 clock_gettime(CLOCK_MONOTONIC, &thread_begin);
+#endif
 
                 f(_matrix, i, dst, src);
 
+#ifdef PROMISE_PLUS_ITERATION_TIMER
                 clock_gettime(CLOCK_MONOTONIC, &thread_end);
 
                 _times_by_thread[i][omp_get_thread_num()] = clock_diff(&thread_end, &thread_begin);
+#endif
             }
         }
     }
 
+#ifdef PROMISE_PLUS_ITERATION_TIMER
     IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
         return _times_by_thread;
     }
+#endif
 
 private: 
     std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
+#ifdef PROMISE_PLUS_ITERATION_TIMER
     IterationTimeByThreadStore _times_by_thread;
+#endif
 };
 
 class NaivePromiseArraySynchronizer : public Synchronizer {
@@ -622,11 +632,15 @@ public:
                                                             std::placeholders::_3,
                                                             std::placeholders::_4));
             add_time(log, i, time);
+#ifdef PROMISE_PLUS_ITERATION_TIMER
             add_iterations_times_by_thread(iterations_log, i, jLinePromisePlus.get_iterations_times_by_thread());
+#endif
         }
 
         _times.push_back(log);
+#ifdef PROMISE_PLUS_ITERATION_TIMER
         _iterations_times.push_back(iterations_log);
+#endif
     }
 
     void run_static_step_promise_plus(unsigned int nb_iterations, unsigned int step) {
@@ -650,7 +664,9 @@ public:
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
             add_time(log, i, time);
+#ifdef PROMISE_PLUS_ITERATION_TIMER
             add_iterations_times_by_thread(iterations_log, i, increasingJLinePromisePlus.get_iterations_times_by_thread());
+#endif
         }
 
         _times.push_back(log);
