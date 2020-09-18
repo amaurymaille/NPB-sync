@@ -308,44 +308,6 @@ using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchro
 using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
 using IncreasingKLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingKLinePromiseContainer>;
 
-/*
-template<typename Store>
-class IterationPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
-public:
-    IterationPromisePlusSynchronizer(int n_threads, int index_max, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) : 
-        IterationPromisingSynchronizer<Store>(n_threads) {
-        for (Store& container: this->_promises_store) {
-            for (auto& promise: container) {
-                promise.set_wait_mode(wait_mode);
-                promise.set_max_index(index_max);
-            }
-        }
-    }
-}; */
-
-/*
-template<typename Store>
-class IterationValuesPromisePlusSynchronizer : public IterationPromisingSynchronizer<Store> {
-public:
-    IterationValuesPromisePlusSynchronizer(int n_threads, int nb_values, int index_max, 
-                                           PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE) : 
-        IterationPromisingSynchronizer<Store>(n_threads) {
-        for (Store& container: this->_promises_store) {
-            for (auto& promise: container) {
-                promise.set_wait_mode(wait_mode);
-                promise.set_max_index(index_max);
-                promise.set_nb_values(nb_values);
-            }
-        }
-    }
-}; */
-
-/*using BlockPromisePlusSynchronizer = IterationPromisePlusSynchronizer<BlockPromisePlusContainer>;
-using JLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<JLinePromisePlusContainer>;
-using KLinePromisePlusSynchronizer = IterationPromisePlusSynchronizer<KLinePromisePlusContainer>;
-using IncreasingJLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingJLinePromisePlusContainer>;
-using IncreasingKLinePromisePlusSynchronizer = IterationValuesPromisePlusSynchronizer<IncreasingKLinePromisePlusContainer>; */
-
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
@@ -776,45 +738,12 @@ public:
             run_increasing_kline_promise(nb_iterations);
         }
 
-        if (authorized._block_plus) {
-            /* BlockPromisePlusSynchronizer blockPromisePlus(n_threads, g::ITERATIONS);
-            time = measure_time(blockPromisePlus, std::bind(heat_cpu_block_promise_plus, 
-                                                            std::placeholders::_1,
-                                                            std::placeholders::_2,
-                                                            std::placeholders::_3,
-                                                            std::placeholders::_4));
-            add_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", time);
-            add_iterations_time("BlockPromisePlusSynchronizer", "heat_cpu_block_promise_plus", blockPromisePlus.get_iterations_times()); */
-        }
-
         if (authorized._jline_plus) {
             run_jline_promise_plus(nb_iterations);
         }
 
         if (authorized._increasing_jline_plus) {
             run_static_step_promise_plus(nb_iterations, sDynamicConfigExtra._static_step_jline_plus);
-        }
-
-        if (authorized._kline_plus) {
-            /* KLinePromisePlusSynchronizer kLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION);
-            time = measure_time(kLinePromisePlus, std::bind(heat_cpu_kline_promise_plus,
-                                                            std::placeholders::_1,
-                                                            std::placeholders::_2,
-                                                            std::placeholders::_3,
-                                                            std::placeholders::_4));
-            add_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", time);
-            add_iterations_time("KLinePromisePlusSynchronizer", "heat_cpu_kline_promise_plus", kLinePromisePlus.get_iterations_times()); */
-        }
-
-        if (authorized._increasing_kline_plus) {
-            /* IncreasingKLinePromisePlusSynchronizer increasingKLinePromisePlus(n_threads, g::NB_K_LINES_PER_ITERATION, g::NB_K_LINES_PER_ITERATION);
-            time = measure_time(increasingKLinePromisePlus, std::bind(heat_cpu_increasing_kline_promise_plus,
-                                                                      std::placeholders::_1,
-                                                                      std::placeholders::_2,
-                                                                      std::placeholders::_3,
-                                                                      std::placeholders::_4));
-            add_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", time);
-            add_iterations_time("IncreasingKLinePromisePlusSynchronizer", "heat_cpu_increasing_kline_promise_plus", increasingKLinePromisePlus.get_iterations_times()); */
         }
 
         if (authorized._naive_promise_array) {
