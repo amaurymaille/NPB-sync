@@ -391,15 +391,4 @@ void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, s
     matrix(w, x, y, z) += (matrix(w, x - 1, y, z) + 
                            matrix(w, x, y - 1, z) +
                            matrix(w - 1, x, y, z));
-
-    if (sConfig.heat_cpu_has_random_yield_and_sleep()) {
-        // Sleep only in OMP parallel, speed up the sequential version
-        if (omp_get_num_threads() != 1) {
-            if (g::binary_generator()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(g::sleep_generator()));
-            } else {
-                std::this_thread::yield();
-            }
-        }
-    }
 }
