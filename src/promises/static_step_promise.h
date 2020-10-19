@@ -5,8 +5,10 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+#  include <tuple>
+#endif 
 #include <vector>
-
 
 #include "promise_plus.h"
 #include "utils.h"
@@ -37,6 +39,12 @@ struct StaticStepPromiseCommonBase {
     const unsigned int  _step;
 
     std::vector<int>    _current_index_weak;
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    uint64              _nb_wait_loops = 0;
+    uint64              _nb_get_strong = 0;
+    uint64              _nb_get_weak   = 0;
+#endif
 };
 
 struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
@@ -104,6 +112,13 @@ public:
     void get(int index);
     void set(int index);
     void set_final(int index);
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    std::tuple<uint64, uint64, uint64> get_debug_data() const {
+        auto& base = _base._common;
+        return std::make_tuple(base._nb_wait_loops, base._nb_get_strong, base._nb_get_weak);
+    }
+#endif
 
     friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
 

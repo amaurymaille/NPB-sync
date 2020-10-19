@@ -57,13 +57,26 @@ PassiveStaticStepPromise<void>::PassiveStaticStepPromise(int nb_values, unsigned
 
 void ActiveStaticStepPromise<void>::get(int index) {
     if (!_base.ready_index_weak(index)) {
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+        ++_base._common._nb_get_strong;
+#endif
         int ready_index = _base._current_index_strong.load(std::memory_order_acquire);
-        while (ready_index < index)
+
+        while (ready_index < index) {
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+            ++_base._common._nb_wait_loops;
+#endif
             ready_index = _base._current_index_strong.load(std::memory_order_acquire);
+        }
 
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
         // _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
+    } 
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    else {
+        ++_base._common._nb_get_weak;
     }
+#endif
 }
 
 void PassiveStaticStepPromise<void>::get(int index) {

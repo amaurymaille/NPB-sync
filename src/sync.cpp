@@ -312,6 +312,10 @@ template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
 public:
     PromisePlusSynchronizer(MatrixReorderer& matrix, int n_threads, const PromisePlusBuilder<T>& builder) : Synchronizer(matrix) {
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+        _promise_plus_debug_data = json::array();
+#endif
+
         for (int i = 0; i < g::ITERATIONS; ++i) {
             for (int j = 0; j < n_threads; j++)
                 _promises_store[i].push_back(builder.new_promise());
@@ -357,7 +361,17 @@ public:
 #endif
             }
         }
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+        gather_promise_plus_datas();
+#endif
     }
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    const json& get_promise_plus_datas() const {
+        return _promise_plus_debug_data;
+    }
+#endif
 
 #ifdef PROMISE_PLUS_ITERATION_TIMER
     IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
@@ -369,6 +383,34 @@ private:
     std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
 #ifdef PROMISE_PLUS_ITERATION_TIMER
     IterationTimeByThreadStore _times_by_thread;
+#endif
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    void gather_promise_plus_datas() {
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            for (int j = 0; j < _promises_store[i].size(); ++j) {
+                ActiveStaticStepPromise<T>* promise = static_cast<ActiveStaticStepPromise<T>*>(_promises_store[i][j]);
+                auto [wait, strong, weak] = promise->get_debug_data();
+
+                json debug_data_struct = json::object();
+                debug_data_struct["iteration"] = i;
+                debug_data_struct["thread"] = j;
+
+                json debug_data = json::object();
+                debug_data["wait"] = wait;
+                debug_data["strong"] = strong;
+                debug_data["weak"] = weak;
+#ifdef PROMISE_PLUS_ITERATION_TIMER
+                debug_data["iteration_time"] = _times_by_thread[i][j];
+#endif
+
+                debug_data_struct["data"] = debug_data;
+                _promise_plus_debug_data.push_back(debug_data_struct);
+            }
+        }
+    }
+
+    json _promise_plus_debug_data;
 #endif
 };
 
@@ -439,6 +481,14 @@ public:
         _json["times"][iteration] = time;
     }
 
+    void add_time(unsigned int iteration, double time, json debug_data) {
+        json data;
+        data["time"] = time;
+        data["debug"] = debug_data;
+
+        _json["times"][iteration] = data;
+    }
+
     void add_time_for_iteration(unsigned int iteration, unsigned int local_iteration, unsigned int thread_id, double time) {
         _json["times"]["iterations"][iteration]["local_iterations"][local_iteration]["threads"][thread_id] = time;
     }
@@ -460,6 +510,10 @@ class SynchronizationTimeCollector {
 public:
     void add_time(TimeLog& log, unsigned int iteration, uint64 time) {
         log.add_time(iteration, double(time) / BILLION);
+    }
+
+    void add_time(TimeLog& log, unsigned int iteration, uint64 time, json debug_data) {
+        log.add_time(iteration, double(time) / BILLION, debug_data);
     }
 
     void add_iterations_times_by_thread(TimeLog& log, unsigned int global_iteration, IterationTimeByThreadStore const& times) {
@@ -656,16 +710,22 @@ public:
         StaticStepPromiseBuilder<void> builder(Globals::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            PromisePlusSynchronizer<void> increasingJLinePromisePlus(reorderer, nb_threads, builder);
+            PromisePlusSynchronizer<void> promisePlusSynchronizer(reorderer, nb_threads, builder);
 
-            time = measure_time(increasingJLinePromisePlus, std::bind(heat_cpu_promise_plus,
+            time = measure_time(promisePlusSynchronizer, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
                                                                       std::placeholders::_3,
                                                                       std::placeholders::_4));
-            add_time(log, i, time);
 #ifdef PROMISE_PLUS_ITERATION_TIMER
-            add_iterations_times_by_thread(iterations_log, i, increasingJLinePromisePlus.get_iterations_times_by_thread());
+            add_iterations_times_by_thread(iterations_log, i, promisePlusSynchronizer.get_iterations_times_by_thread());
+#endif
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+            json debug_data = promisePlusSynchronizer.get_promise_plus_datas();
+            add_time(log, i, time, debug_data);
+#else
+            add_time(log, i, time);
 #endif
         }
 
