@@ -63,7 +63,7 @@ std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n) {
 
 void init_matrix(int* ptr) {
     namespace g = Globals;
-    for (int i = 0; i < g::NB_ELEMENTS; ++i) {
+    for (size_t i = 0; i < g::NB_ELEMENTS; ++i) {
         ptr[i] = i % 10;
     }
 }
@@ -71,7 +71,7 @@ void init_matrix(int* ptr) {
 void init_reordered_matrix(Matrix& matrix) {
     namespace g = Globals;
 
-    int value = 0;
+    size_t value = 0;
     for (int i = 0; i < g::DIM_W; ++i) {
         for (int j = 0; j < g::DIM_X; ++j) {
             for (int k = 0; k < g::DIM_Y; ++k) {

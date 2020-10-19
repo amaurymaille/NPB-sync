@@ -18,8 +18,8 @@ void heat_cpu(MatrixReorderer& array, size_t m) {
     namespace g = Globals;
 
     #pragma omp for schedule(static) nowait
-    for (int i = 1; i < g::DIM_X; ++i) {
-        for (int j = 1; j < g::DIM_Y; ++j) {
+    for (int j = 1; j < g::DIM_Y; ++j) {
+        for (int i = 1; i < g::DIM_X; ++i) {
             for (int k = 0; k < g::DIM_Z; ++k) {
                 update_matrix_core(array, m, i, j, k);
             }
