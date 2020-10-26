@@ -178,6 +178,7 @@ protected:
     Matrix _matrix;
 };
 
+/* 
 class StandardMatrixReorderer : public MatrixReorderer {
 public:
     StandardMatrixReorderer(size_t w, size_t x, size_t y, size_t z);
@@ -197,6 +198,7 @@ public:
     void assert_okay_compute();
     MatrixValue& operator()(size_t i, size_t j, size_t k, size_t l);
 };
+*/
 
 #include "utils.tpp"
 

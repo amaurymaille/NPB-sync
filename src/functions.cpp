@@ -12,9 +12,24 @@
 #include "promise_plus.h"
 #include "utils.h"
 
-static void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z);
+static void update_matrix_core(Matrix& matrix, size_t w, size_t x, size_t y, size_t z);
+static void update_matrix_core_naive(Matrix& matrix, size_t w, size_t x, size_t y, size_t z);
 
-void heat_cpu(MatrixReorderer& array, size_t m) {
+void heat_cpu_naive(Matrix& array, size_t m) {
+    namespace g = Globals;
+    printf("[heat_cpu_naive] m = %lu\n", m);
+
+    for (int i = 1; i < g::DIM_X; ++i) {
+        for (int j = 1; j < g::DIM_Y; ++j) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
+                update_matrix_core_naive(array, m, i, j, k);
+            }
+        }
+    }
+}
+
+
+void heat_cpu(Matrix& array, size_t m) {
     namespace g = Globals;
 
     #pragma omp for schedule(static) nowait
@@ -36,7 +51,7 @@ void heat_cpu(MatrixReorderer& array, size_t m) {
 //
 // Switching the order of the loops will probably have dramatic consequences for 
 // cache coherency, so this has to be checked.
-void heat_cpu_switch_loops(MatrixReorderer& array, size_t m) {
+void heat_cpu_switch_loops(Matrix& array, size_t m) {
     namespace g = Globals;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
@@ -51,7 +66,7 @@ void heat_cpu_switch_loops(MatrixReorderer& array, size_t m) {
 
 namespace g = Globals;
 
-void heat_cpu_point_promise(MatrixReorderer& array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
+void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, const PointPromiseStore& src) {
     namespace g = Globals;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
@@ -78,7 +93,7 @@ void heat_cpu_point_promise(MatrixReorderer& array, size_t m, PointPromiseStore&
     }
 }
 
-void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
+void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, const BlockPromiseStore& src) {
     namespace g = Globals;
 
     if (src)
@@ -98,7 +113,7 @@ void heat_cpu_block_promise(MatrixReorderer& array, size_t m, BlockPromiseStore&
     }
 }
 
-void heat_cpu_increasing_point_promise(MatrixReorderer& array, size_t m, 
+void heat_cpu_increasing_point_promise(Matrix& array, size_t m, 
                                       IncreasingPointPromiseStore& dst, 
                                       const IncreasingPointPromiseStore& src) {
     namespace g = Globals;
@@ -173,7 +188,7 @@ void heat_cpu_increasing_point_promise(MatrixReorderer& array, size_t m,
     }
 }
 
-void heat_cpu_jline_promise(MatrixReorderer& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
+void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, const JLinePromiseStore& src) {
     namespace g = Globals;
 
     for (int k = 0; k < g::DIM_Z; ++k) {
@@ -192,7 +207,7 @@ void heat_cpu_jline_promise(MatrixReorderer& array, size_t m, JLinePromiseStore&
     }
 }
 
-void heat_cpu_kline_promise(MatrixReorderer& array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
+void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, const KLinePromiseStore& src) {
     namespace g = Globals;
 
     for (int j = 1; j < g::DIM_Y; ++j) {
@@ -211,7 +226,7 @@ void heat_cpu_kline_promise(MatrixReorderer& array, size_t m, KLinePromiseStore&
     }
 }
 
-void heat_cpu_increasing_jline_promise(MatrixReorderer& array, size_t m, 
+void heat_cpu_increasing_jline_promise(Matrix& array, size_t m, 
                                        IncreasingJLinePromiseStore& dst, 
                                        const IncreasingJLinePromiseStore& src) {
     namespace g = Globals;
@@ -273,7 +288,7 @@ void heat_cpu_increasing_jline_promise(MatrixReorderer& array, size_t m,
     }
 }
 
-void heat_cpu_increasing_kline_promise(MatrixReorderer& array, size_t m, 
+void heat_cpu_increasing_kline_promise(Matrix& array, size_t m, 
                                        IncreasingKLinePromiseStore& dst, 
                                        const IncreasingKLinePromiseStore& src) {
     namespace g = Globals;
@@ -335,7 +350,7 @@ void heat_cpu_increasing_kline_promise(MatrixReorderer& array, size_t m,
     }
 }
 
-void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
+void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const PromisePlusStore& src) {
     namespace g = Globals;
     
     int thread_num = omp_get_thread_num();
@@ -359,10 +374,10 @@ void heat_cpu_promise_plus(MatrixReorderer& array, size_t m, PromisePlusStore& d
 
     if (dst) {
         (*dst)[thread_num + 1]->set_final(g::DIM_Y);
-    }
+    } 
 }
 
-void heat_cpu_naive_promise_array(MatrixReorderer& array, size_t m, 
+void heat_cpu_naive_promise_array(Matrix& array, size_t m, 
                                   NaivePromiseArrayStore& dst, 
                                   NaivePromiseArrayStore& src) {
     namespace g = Globals;
@@ -387,8 +402,17 @@ void heat_cpu_naive_promise_array(MatrixReorderer& array, size_t m,
     }
 }
 
-void update_matrix_core(MatrixReorderer& matrix, size_t w, size_t x, size_t y, size_t z) {
-    matrix(w, x, y, z) += (matrix(w, x - 1, y, z) + 
-                           matrix(w, x, y - 1, z) +
-                           matrix(w - 1, x, y, z));
+void update_matrix_core(Matrix& matrix, size_t w, size_t x, size_t y, size_t z) {
+    matrix[w][x][y][z] += (matrix[w][x - 1][y][z] + 
+                           matrix[w][x][y - 1][z] +
+                           matrix[w - 1][x][y][z]);
+
+    for (volatile uint64 i = 0; i < 1000; ++i)
+        ;
+}
+
+void update_matrix_core_naive(Matrix& matrix, size_t w, size_t x, size_t y, size_t z) {
+    matrix[w][x][y][z] += (matrix[w][x - 1][y][z] + 
+                           matrix[w][x][y - 1][z] +
+                           matrix[w - 1][x][y][z]);
 }

@@ -139,16 +139,16 @@ typedef std::optional<PromisePlusContainer> PromisePlusStore;
 typedef ThreadStore<std::promise<void>*> NaivePromiseArrayContainer;
 typedef std::optional<NaivePromiseArrayContainer> NaivePromiseArrayStore;
 
-class MatrixReorderer;
+// class MatrixReorderer;
 
 // The initial matrix
 extern Matrix g_start_matrix;
 // The expected final matrix 
-extern MatrixReorderer* g_expected_matrix;
+extern Matrix g_expected_matrix;
 
 // The initial reordered matrix
-extern Matrix g_reordered_start_matrix;
+// extern Matrix g_reordered_start_matrix;
 // The expected final reordered matrix
-extern MatrixReorderer* g_expected_reordered_matrix;
+// extern MatrixReorderer* g_expected_reordered_matrix;
 
 #endif /* DEFINES_H */

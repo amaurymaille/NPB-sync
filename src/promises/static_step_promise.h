@@ -44,6 +44,7 @@ struct StaticStepPromiseCommonBase {
     uint64              _nb_wait_loops = 0;
     uint64              _nb_get_strong = 0;
     uint64              _nb_get_weak   = 0;
+    std::vector<uint64> _set_times;
 #endif
 };
 
@@ -118,6 +119,10 @@ public:
         auto& base = _base._common;
         return std::make_tuple(base._nb_wait_loops, base._nb_get_strong, base._nb_get_weak);
     }
+
+    /* std::vector<uint64> const& get_set_times() const {
+        return _base._common._set_times;
+    } */
 #endif
 
     friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;

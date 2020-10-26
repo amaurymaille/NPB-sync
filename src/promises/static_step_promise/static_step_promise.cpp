@@ -47,7 +47,10 @@ bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
 
 ActiveStaticStepPromise<void>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
     PromisePlus<void>(nb_values), _base(step) {
-
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    auto& times = _base._common._set_times;
+    times.resize(nb_values, 0);
+#endif
 }
 
 PassiveStaticStepPromise<void>::PassiveStaticStepPromise(int nb_values, unsigned int step) : 
@@ -70,7 +73,7 @@ void ActiveStaticStepPromise<void>::get(int index) {
         }
 
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
-        // _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
+        _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
     } 
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
     else {
@@ -91,6 +94,10 @@ void PassiveStaticStepPromise<void>::get(int index) {
 
 void ActiveStaticStepPromise<void>::set(int index) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    struct timespec begin, end;
+    clock_gettime(CLOCK_MONOTONIC, &begin);
+#endif
 
     _base.assert_free_index_weak(index);
 
@@ -98,6 +105,11 @@ void ActiveStaticStepPromise<void>::set(int index) {
         _base._common._step)) {
         _base._current_index_strong.store(index, std::memory_order_release);
     }
+
+#ifdef PROMISE_PLUS_DEBUG_COUNTERS
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    _base._common._set_times[index] = clock_diff(&end, &begin);
+#endif
 }
 
 void PassiveStaticStepPromise<void>::set(int index) {

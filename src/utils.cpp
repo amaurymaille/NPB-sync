@@ -88,9 +88,9 @@ void assert_okay_init(Matrix const& matrix) {
     assert_matrix_equals(matrix, g_start_matrix);
 }
 
-void assert_okay_reordered_init(Matrix const& matrix) {
+/* void assert_okay_reordered_init(Matrix const& matrix) {
     assert_matrix_equals(matrix, g_reordered_start_matrix);
-}
+} */
 
 void assert_okay_reordered_compute() {
     for (int i = 0; i < g::DIM_W; ++i) {
@@ -156,29 +156,29 @@ void init_start_matrix_once() {
     init_matrix(g_start_matrix.data());
 }
 
-void init_reordered_start_matrix_once() {
+/* void init_reordered_start_matrix_once() {
     init_reordered_matrix(g_reordered_start_matrix);
-}
+} */
 
 void init_from_start_matrix(Matrix& matrix) {
     init_matrix_from(matrix, g_start_matrix);
 }
 
-void init_from_reordered_start_matrix(Matrix& matrix) {
+/* void init_from_reordered_start_matrix(Matrix& matrix) {
     init_matrix_from(matrix, g_reordered_start_matrix);
-}
+} */
 
 void init_expected_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
-        heat_cpu(*g_expected_matrix, i);
+        heat_cpu_naive(g_expected_matrix, i);
     }
 }
 
-void init_expected_reordered_matrix_once() {
+/*void init_expected_reordered_matrix_once() {
     for (int i = 1; i < Globals::ITERATIONS; ++i) {
-        heat_cpu(*g_expected_reordered_matrix, i);
+        heat_cpu_naive(*g_expected_reordered_matrix, i);
     }
-}
+} */
 
 uint64 clock_to_ns(const struct timespec& clk) {
     return clk.tv_sec * BILLION + clk.tv_nsec;
@@ -259,6 +259,7 @@ std::string ns_with_leading_zeros(uint64 ns) {
     }
 }
 
+/*
 MatrixReorderer::MatrixReorderer(size_t w, size_t x, size_t y, size_t z) : 
     _matrix(boost::extents[w][x][y][z]) {
 
@@ -313,3 +314,4 @@ void JLinePromiseMatrixReorderer::assert_okay_compute() {
 MatrixValue& JLinePromiseMatrixReorderer::operator()(size_t i, size_t j, size_t k, size_t l) {
     return _matrix[i][l][k][j];
 }
+*/
