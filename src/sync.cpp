@@ -721,7 +721,6 @@ public:
             printf("StaticStep: iteration %d\n", i);
             PromisePlusSynchronizer<void> promisePlusSynchronizer(matrix, nb_threads, builder);
 
-            printf("Measuring time\n");
             time = measure_time(promisePlusSynchronizer, std::bind(heat_cpu_promise_plus,
                                                                       std::placeholders::_1,
                                                                       std::placeholders::_2,
@@ -913,7 +912,6 @@ public:
     }
 
     void run() {
-        printf("Runner::run\n");
         unsigned int iterations = _data[JSON::Top::iterations].get<unsigned int>();
         json runs = _data[JSON::Top::runs];
 
