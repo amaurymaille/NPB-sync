@@ -9,25 +9,9 @@
 #include "config.h"
 #include "functions.h"
 #include "increase.h"
+#include "matrix_core.h"
 #include "promise_plus.h"
 #include "utils.h"
-
-static void update_matrix_core(Matrix& matrix, size_t w, size_t x, size_t y, size_t z);
-static void update_matrix_core_naive(Matrix& matrix, size_t w, size_t x, size_t y, size_t z);
-
-void heat_cpu_naive(Matrix& array, size_t m) {
-    namespace g = Globals;
-    printf("[heat_cpu_naive] m = %lu\n", m);
-
-    for (int i = 1; i < g::DIM_X; ++i) {
-        for (int j = 1; j < g::DIM_Y; ++j) {
-            for (int k = 0; k < g::DIM_Z; ++k) {
-                update_matrix_core_naive(array, m, i, j, k);
-            }
-        }
-    }
-}
-
 
 void heat_cpu(Matrix& array, size_t m) {
     namespace g = Globals;
@@ -36,7 +20,7 @@ void heat_cpu(Matrix& array, size_t m) {
     for (int j = 1; j < g::DIM_Y; ++j) {
         for (int i = 1; i < g::DIM_X; ++i) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
     }
@@ -58,7 +42,7 @@ void heat_cpu_switch_loops(Matrix& array, size_t m) {
         for (int k = 0; k < g::DIM_Z; ++k) {
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
     }
@@ -82,7 +66,7 @@ void heat_cpu_point_promise(Matrix& array, size_t m, PointPromiseStore& dst, con
                     used_value = true;
                 }
 
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
                 last_i = i;
             }
 
@@ -103,7 +87,7 @@ void heat_cpu_block_promise(Matrix& array, size_t m, BlockPromiseStore& dst, con
         #pragma omp for schedule(static) nowait
         for (int j = 1; j < g::DIM_Y; ++j) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
     }
@@ -143,7 +127,7 @@ void heat_cpu_increasing_point_promise(Matrix& array, size_t m,
             
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
                 last_i = i;
             }
 
@@ -198,7 +182,7 @@ void heat_cpu_jline_promise(Matrix& array, size_t m, JLinePromiseStore& dst, con
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -217,7 +201,7 @@ void heat_cpu_kline_promise(Matrix& array, size_t m, KLinePromiseStore& dst, con
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -253,7 +237,7 @@ void heat_cpu_increasing_jline_promise(Matrix& array, size_t m,
         for (int j = 1; j < g::DIM_Y; ++j) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -315,7 +299,7 @@ void heat_cpu_increasing_kline_promise(Matrix& array, size_t m,
         for (int k = 0; k < g::DIM_Z; ++k) {            
             #pragma omp for schedule(static) nowait
             for (int i = 1; i < g::DIM_X; ++i) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -363,7 +347,7 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
         #pragma omp for schedule(static) nowait
         for (int i = 1; i < g::DIM_X; ++i) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -392,7 +376,7 @@ void heat_cpu_naive_promise_array(Matrix& array, size_t m,
         #pragma omp for schedule(static) nowait
         for (int i = 1; i < g::DIM_X; ++i) {
             for (int k = 0; k < g::DIM_Z; ++k) {
-                update_matrix_core(array, m, i, j, k);
+                update_matrix(array, m, i, j, k);
             }
         }
 
@@ -400,19 +384,4 @@ void heat_cpu_naive_promise_array(Matrix& array, size_t m,
             (*dst)[thread_num + 1][j].set_value();
         }
     }
-}
-
-void update_matrix_core(Matrix& matrix, size_t w, size_t x, size_t y, size_t z) {
-    matrix[w][x][y][z] += (matrix[w][x - 1][y][z] + 
-                           matrix[w][x][y - 1][z] +
-                           matrix[w - 1][x][y][z]);
-
-    for (volatile uint64 i = 0; i < 1000; ++i)
-        ;
-}
-
-void update_matrix_core_naive(Matrix& matrix, size_t w, size_t x, size_t y, size_t z) {
-    matrix[w][x][y][z] += (matrix[w][x - 1][y][z] + 
-                           matrix[w][x][y - 1][z] +
-                           matrix[w - 1][x][y][z]);
 }

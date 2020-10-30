@@ -15,7 +15,9 @@
 
 #include <omp.h>
 
+#include "dynamic_config.h"
 #include "functions.h"
+#include "matrix_core.h"
 #include "utils.h"
 
 namespace Globals {
@@ -62,12 +64,12 @@ std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n) {
     return std::make_tuple(w, x, y, z);
 }
 
-void init_matrix(int* ptr) {
+/* void init_matrix(double* ptr) {
     namespace g = Globals;
     for (size_t i = 0; i < g::NB_ELEMENTS; ++i) {
-        ptr[i] = i % 10;
+        ptr[i] = double(i % 10);
     }
-}
+} */
 
 void init_reordered_matrix(Matrix& matrix) {
     namespace g = Globals;
@@ -154,7 +156,16 @@ void init_matrix_from(Matrix& matrix, Matrix const& src) {
 }
 
 void init_start_matrix_once() {
-    init_matrix(g_start_matrix.data());
+    auto start_matrix_filename_opt = sDynamicConfigFiles.get_start_matrix_filename();
+    if (start_matrix_filename_opt) {
+        init_start_matrix_from_file(start_matrix_filename_opt.value());
+    } else {
+        init_matrix(g_start_matrix, Globals::NB_ELEMENTS);
+    }
+}
+
+void init_start_matrix_from_file(const std::string& filename) {
+    init_matrix_from_file(g_start_matrix.data(), filename);
 }
 
 /* void init_reordered_start_matrix_once() {
@@ -170,9 +181,33 @@ void init_from_start_matrix(Matrix& matrix) {
 } */
 
 void init_expected_matrix_once() {
-    for (int i = 1; i < Globals::ITERATIONS; ++i) {
-        heat_cpu_naive(g_expected_matrix, i);
+    namespace g = Globals;
+
+    auto input_matrix_filename_opt = sDynamicConfigFiles.get_input_matrix_filename();
+    if (input_matrix_filename_opt) {
+        const std::string& filename = input_matrix_filename_opt.value();
+        init_expected_matrix_once_from_file(filename);
+    } else {
+        compute_matrix(g_expected_matrix, g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+        /* for (int i = 1; i < Globals::ITERATIONS; ++i) {
+            heat_cpu_naive(g_expected_matrix, i);
+        } */
     }
+}
+
+void init_expected_matrix_once_from_file(const std::string& filename) {
+    init_matrix_from_file(g_expected_matrix.data(), filename);
+}
+
+void init_matrix_from_file(Matrix::element* ptr, const std::string& filename) {
+    std::ifstream stream(filename);
+    if (!stream.good()) {
+        std::ostringstream err;
+        err << "Unable to open input matrix file " << filename << std::endl;
+        throw std::runtime_error(err.str());
+    }
+
+    std::copy(std::istream_iterator<Matrix::element>(stream), std::istream_iterator<Matrix::element>(), ptr);
 }
 
 /*void init_expected_reordered_matrix_once() {
