@@ -469,7 +469,7 @@ static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
 
     Globals::deadlock_detector.reset();
 
-    // synchronizer.assert_okay();
+    synchronizer.assert_okay();
 
     uint64 diff = clock_diff(&end, &begin);
     return diff;
@@ -1044,6 +1044,7 @@ void log_general_data(std::ostream& out) {
 #endif
 
     data["threads"] = omp_nb_threads();
+    data["description"] = sDynamicConfigStd._description;
 
     out << std::setw(4) << data;
 }

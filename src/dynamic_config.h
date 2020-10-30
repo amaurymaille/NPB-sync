@@ -31,6 +31,10 @@ public:
         bool _naive_promise_array = false;
     };
 
+    struct Standard {
+        std::string _description;
+    };
+
     class Files {
     public:
         std::ostream& runs_times_file() {
@@ -64,6 +68,23 @@ public:
         std::string const& get_simulations_filename() const {
             return _simulations_filename;
         }
+
+        void set_input_matrix_filename(const std::string& str) {
+            _input_matrix_filename.value() = str;
+        }
+
+        std::optional<std::string> const& get_input_matrix_filename() const {
+            return _input_matrix_filename;
+        }
+
+        void set_start_matrix_filename(const std::string& str) {
+            _start_matrix_filename.value() = str;
+        }
+
+        std::optional<std::string> const& get_start_matrix_filename() const {
+            return _start_matrix_filename;
+        }
+
 
     private:
         class EitherCoutOr {
@@ -101,6 +122,8 @@ public:
         EitherCoutOr _iterations_times_file;
         EitherCoutOr _parameters_file;
         std::string _simulations_filename;
+        std::optional<std::string> _input_matrix_filename;
+        std::optional<std::string> _start_matrix_filename;
     };
 
     struct Extra {
@@ -124,6 +147,7 @@ public:
     SynchronizationPatterns _patterns;
     Files _files;
     Extra _extra;
+    Standard _std;
 
 private:
     DynamicConfig() { }
@@ -134,9 +158,8 @@ private:
     }
 };
 
-
-
 #define sDynamicConfig DynamicConfig::instance()
+#define sDynamicConfigStd sDynamicConfig._std
 #define sDynamicConfigPatterns sDynamicConfig._patterns
 #define sDynamicConfigFiles sDynamicConfig._files
 #define sDynamicConfigExtra sDynamicConfig._extra

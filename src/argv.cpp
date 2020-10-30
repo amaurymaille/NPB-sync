@@ -36,6 +36,12 @@ namespace Options {
         static const char* iterations_times_file = "iterations-times-file";
         static const char* simulations_file = "simulations-file";
         static const char* parameters_file = "parameters-file";
+        static const char* input_matrix_file = "input-matrix-file";
+        static const char* start_matrix_file = "start-matrix-file";
+    }
+
+    namespace Standard {
+        static const char* description = "description";
     }
 }
 
@@ -43,7 +49,9 @@ namespace po = boost::program_options;
 namespace s = Options::Synchronizers;
 namespace se = s::Extra;
 namespace f = Options::Files;
+namespace ostd = Options::Standard;
 
+static void process_standard(DynamicConfig& config, po::variables_map const& vm);
 static void process_patterns(DynamicConfig::SynchronizationPatterns& authorized,
                              po::variables_map const& vm);
 static void populate_options(po::options_description& options);
@@ -70,6 +78,7 @@ void parse_command_line(int argc, char** argv) {
     }
 
     process_files(config._files, vm);
+    process_standard(config, vm);
     // process_patterns(config._patterns, vm);
     // process_extra(config._extra, vm);
 }
@@ -113,6 +122,9 @@ void populate_options(po::options_description& options) {
         (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written")
         (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs")
         (f::parameters_file, po::value<std::string>(), "Path to the file in which the general data of all simulations will be written")
+        (f::start_matrix_file, po::value<std::string>(), "Path to the file in which the data of the start matrix is stored")
+        (f::input_matrix_file, po::value<std::string>(), "Path to the file in which the expected output matrix is stored")
+        (ostd::description, po::value<std::string>(), "Description of the simulation")
         ;
 
     /* po::options_description synchro("Synchronization patterns without promises");
@@ -152,6 +164,13 @@ void process_files(DynamicConfig::Files& files,
     init_outfile_if(f::parameters_file, vm, std::bind(&DynamicConfig::Files::set_parameters_file, &files, std::placeholders::_1));
 
     files.set_simulations_filename(vm[f::simulations_file].as<std::string>());
+    if (vm.count(f::input_matrix_file)) {
+        files.set_input_matrix_filename(vm[f::input_matrix_file].as<std::string>());
+    }
+
+    if (vm.count(f::start_matrix_file)) {
+        files.set_start_matrix_filename(vm[f::start_matrix_file].as<std::string>());
+    }
 }
 
 void init_outfile_if(const char* option, po::variables_map const& vm, std::function<void(std::ostream&)> f) {
@@ -169,5 +188,13 @@ void process_extra(DynamicConfig::Extra& extra, po::variables_map const& vm) {
 
     if (vm.count(se::static_step_jline_plus)) {
         extra._static_step_jline_plus = vm[se::static_step_jline_plus].as<unsigned int>();
+    }
+}
+
+void process_standard(DynamicConfig& config, po::variables_map const& vm) {
+    if (vm.count(ostd::description)) {
+        config._std._description = vm[ostd::description].as<std::string>();
+    } else {
+        throw std::runtime_error("[Argument Processing] Description parameter required");
     }
 }

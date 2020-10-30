@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("-t", "--threads", help="Number of OpenMP threads", type=int, default=8)
     parser.add_argument("-d", "--debug", help="Debug build", action="store_true")
     parser.add_argument("--promise-plus-iteration-timer", help="Enable timers on PromisePlusSynchronizer iterations", action="store_true")
+    parser.add_argument("--promise-plus-debug-counters", help="Enable debug counters in PromisePlus", action="store_true")
 
     promise_mode = parser.add_mutually_exclusive_group(required=True)
     promise_mode.add_argument("--active", help="Use active promises", action="store_true")
@@ -29,10 +30,11 @@ def parse_args():
 
     parser.add_argument("--dims", type=int, nargs=4, help="Dimensions of the problem", metavar=("W", "X", "Y", "Z"))
     parser.add_argument("-f", "--file", type=argparse.FileType("r"), help="File to use as the input for the program, should contain simulation data", required=True)
+    parser.add_argument("--description", required=True, help="Description of the simulation")
     
     return parser.parse_args()
 
-def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, dims, src_filename, debug):
+def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, promise_plus_debug_counters, dims, src_filename, description, debug):
     os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
     if dims:
@@ -52,6 +54,9 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_time
     if promise_plus_iteration_timer:
         additional_definitions.append("-DPROMISE_PLUS_ITERATION_TIMER")
 
+    if promise_plus_debug_counters:
+        additional_definitions.append("-DPROMISE_PLUS_DEBUG_COUNTERS")
+
     cmake_command[-1] += " ".join(additional_definitions)
 
     cmake_command += ["-DCMAKE_BUILD_TYPE=" + ("Debug" if debug else "Release")]
@@ -60,7 +65,7 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_time
 
     print (cmake_command)
     subprocess.Popen(cmake_command).wait()
-    subprocess.Popen(["make", "-j", "8"]).wait()
+    subprocess.Popen(["make", "-j", "8", "sync"]).wait()
 
     os.putenv("OMP_NUM_THREADS", str(threads))
 
@@ -71,14 +76,14 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_time
     iterations_filename = os.path.expanduser("{}/iterations.json".format(dirname))
     runs_filename = os.path.expanduser("{}/runs.json".format(dirname))
 
-    subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename]).wait()
+    subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename, "--description", description]).wait()
 
 def main():
     args = parse_args()
 
     threads = args.threads
     
-    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.dims, os.path.abspath(args.file.name), args.debug)
+    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.promise_plus_debug_counters, args.dims, os.path.abspath(args.file.name), args.description, args.debug)
 
 if __name__ == "__main__":
     main()
