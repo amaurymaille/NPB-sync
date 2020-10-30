@@ -153,13 +153,17 @@ def generate_numerics_raw_for(simulation_data):
 
         for run in runs:
             data = []
-            for time in run._times:
-                data.append({"time": time})
+            if type(run._times) == type([]):
+                for time in run._times:
+                    data.append({"time": time})
+            else:
+                for time in run._times:
+                    data.append({"time": time["time"]})
 
             data = pandas.DataFrame(data)
-            avg = data.mean().values[0]
-            var = data.var().values[0]
-            std = data.std().values[0]
+            avg = data.mean()
+            var = data.var()
+            std = data.std()
 
             extras = None
             if run._synchronizer == sync.static_step:
