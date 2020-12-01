@@ -136,8 +136,18 @@ typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore; */
 typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
 typedef std::optional<PromisePlusContainer> PromisePlusStore;
 
-typedef ThreadStore<std::promise<void>*> NaivePromiseArrayContainer;
-typedef std::optional<NaivePromiseArrayContainer> NaivePromiseArrayStore;
+template<typename T>
+class NaivePromise;
+
+template<>
+class NaivePromise<void>;
+
+// typedef ThreadStore<std::promise<void>*> ArrayOfPromisesContainer;
+typedef ThreadStore<NaivePromise<void>*> ArrayOfPromisesContainer;
+typedef std::optional<ArrayOfPromisesContainer> ArrayOfPromisesStore;
+
+typedef ThreadStore<NaivePromise<void>*> PromiseOfArrayContainer;
+typedef std::optional<PromiseOfArrayContainer> PromiseOfArrayStore;
 
 // class MatrixReorderer;
 

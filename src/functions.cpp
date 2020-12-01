@@ -10,6 +10,7 @@
 #include "functions.h"
 #include "increase.h"
 #include "matrix_core.h"
+#include "naive_promise.h"
 #include "promise_plus.h"
 #include "utils.h"
 
@@ -358,19 +359,19 @@ void heat_cpu_promise_plus(Matrix& array, size_t m, PromisePlusStore& dst, const
 
     if (dst) {
         (*dst)[thread_num + 1]->set_final(g::DIM_Y);
-    } 
+    }
 }
 
-void heat_cpu_naive_promise_array(Matrix& array, size_t m, 
-                                  NaivePromiseArrayStore& dst, 
-                                  NaivePromiseArrayStore& src) {
+void heat_cpu_array_of_promises(Matrix& array, size_t m, 
+                                ArrayOfPromisesStore& dst, 
+                                ArrayOfPromisesStore& src) {
     namespace g = Globals;
 
     int thread_num = omp_get_thread_num();
 
     for (int j = 1; j < g::DIM_Y; ++j) {
         if (src) {
-            (*src)[thread_num][j].get_future().get();
+            (*src)[thread_num][j].get();
         }
 
         #pragma omp for schedule(static) nowait
@@ -381,7 +382,34 @@ void heat_cpu_naive_promise_array(Matrix& array, size_t m,
         }
 
         if (dst) {
-            (*dst)[thread_num + 1][j].set_value();
+            (*dst)[thread_num + 1][j].set();
         }
     }
+}
+
+void heat_cpu_promise_of_array(Matrix& array, size_t m, 
+                               PromiseOfArrayStore& dst, 
+                               PromiseOfArrayStore& src) {
+    namespace g = Globals;
+
+    int thread_num = omp_get_thread_num();
+
+    if (src) {
+        (*src)[thread_num]->get();
+    }
+
+    for (int j = 1; j < g::DIM_Y; ++j) {
+        #pragma omp for schedule(static) nowait
+        for (int i = 1; i < g::DIM_X; ++i) {
+            for (int k = 0; k < g::DIM_Z; ++k) {
+                update_matrix(array, m, i, j, k);
+            }
+        }
+
+    }
+
+    if (dst) {
+        (*dst)[thread_num + 1]->set();
+    }
+  
 }

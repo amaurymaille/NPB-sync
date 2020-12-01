@@ -29,6 +29,7 @@ public:
         bool _increasing_kline = false;
         bool _increasing_kline_plus = false;
         bool _naive_promise_array = false;
+        bool _promise_of_array = false;
     };
 
     struct Standard {
@@ -70,7 +71,7 @@ public:
         }
 
         void set_input_matrix_filename(const std::string& str) {
-            _input_matrix_filename.value() = str;
+            _input_matrix_filename = str;
         }
 
         std::optional<std::string> const& get_input_matrix_filename() const {
@@ -78,7 +79,7 @@ public:
         }
 
         void set_start_matrix_filename(const std::string& str) {
-            _start_matrix_filename.value() = str;
+            _start_matrix_filename = str;
         }
 
         std::optional<std::string> const& get_start_matrix_filename() const {

@@ -52,10 +52,7 @@ def generate_matrix_data(w, x, y, z):
 
 def main():
     data = [
-        generate_matrix_data(101, 201, 50001, 2),
-        generate_matrix_data(101, 161, 62501, 2),
-        generate_matrix_data(101, 126, 80000, 2),
-        generate_matrix_data(101, 101, 100001, 2)
+        generate_matrix_data(101, 126, 80001, 2),
     ]
 
     generate_matrices(data)

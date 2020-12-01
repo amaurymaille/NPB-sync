@@ -24,6 +24,7 @@ namespace Options {
         static const char* increasing_kline = "increasing_kline";
         static const char* increasing_kline_plus = "increasing_kline_plus";
         static const char* naive_promise_array = "naive-promise-array";
+        static const char* promise_of_array = "promise-of-array";
 
         namespace Extra {
             static const char* increasing_jline_step = "increasing-jline-step";
@@ -100,7 +101,7 @@ void process_patterns(DynamicConfig::SynchronizationPatterns& authorized,
     assoc[s::increasing_kline] = &authorized._increasing_kline;
     assoc[s::increasing_kline_plus] = &authorized._increasing_kline_plus;
     assoc[s::naive_promise_array] = &authorized._naive_promise_array;
-
+    assoc[s::promise_of_array] = &authorized._promise_of_array;
     std::vector<const char*> names = {
         s::sequential, s::alt_bit, s::counter, s::block, s::block_plus, 
         s::jline, s::jline_plus, s::increasing_jline, s::increasing_jline_plus,

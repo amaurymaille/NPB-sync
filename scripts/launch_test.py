@@ -31,10 +31,12 @@ def parse_args():
     parser.add_argument("--dims", type=int, nargs=4, help="Dimensions of the problem", metavar=("W", "X", "Y", "Z"))
     parser.add_argument("-f", "--file", type=argparse.FileType("r"), help="File to use as the input for the program, should contain simulation data", required=True)
     parser.add_argument("--description", required=True, help="Description of the simulation")
+    parser.add_argument("--start-file", type=argparse.FileType("r"), help="File to use as input for the start matrix")
+    parser.add_argument("--compute-file", type=argparse.FileType("r"), help="File to use as input for the computed matrix")
     
     return parser.parse_args()
 
-def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, promise_plus_debug_counters, dims, src_filename, description, debug):
+def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, promise_plus_debug_counters, dims, src_filename, description, start_file, compute_file, debug):
     os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
     if dims:
@@ -76,14 +78,23 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_time
     iterations_filename = os.path.expanduser("{}/iterations.json".format(dirname))
     runs_filename = os.path.expanduser("{}/runs.json".format(dirname))
 
-    subprocess.Popen(["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename, "--description", description]).wait()
+    pargs = ["./src/sync", "--parameters-file", log_filename, "--runs-times-file", runs_filename, "--iterations-times-file", iterations_filename, "--simulations-file", src_filename, "--description", description]
+
+    if start_file:
+        pargs += ["--start-matrix-file", os.path.abspath(start_file.name)]
+
+    if compute_file:
+        pargs += ["--input-matrix-file", os.path.abspath(compute_file.name)]
+
+    print (pargs)
+    subprocess.Popen(pargs).wait()
 
 def main():
     args = parse_args()
 
     threads = args.threads
     
-    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.promise_plus_debug_counters, args.dims, os.path.abspath(args.file.name), args.description, args.debug)
+    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.promise_plus_debug_counters, args.dims, os.path.abspath(args.file.name), args.description, args.start_file, args.compute_file, args.debug)
 
 if __name__ == "__main__":
     main()

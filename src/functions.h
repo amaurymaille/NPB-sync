@@ -40,6 +40,7 @@ void heat_cpu_increasing_jline_promise_plus(Matrix&, size_t, IncreasingJLineProm
 void heat_cpu_increasing_kline_promise_plus(Matrix&, size_t, IncreasingKLinePromisePlusStore&, const IncreasingKLinePromisePlusStore&); */
 
 void heat_cpu_promise_plus(Matrix&, size_t, PromisePlusStore&, const PromisePlusStore&);
-void heat_cpu_naive_promise_array(Matrix&, size_t, NaivePromiseArrayStore&, NaivePromiseArrayStore&);
+void heat_cpu_array_of_promises(Matrix&, size_t, ArrayOfPromisesStore&, ArrayOfPromisesStore&);
+void heat_cpu_promise_of_array(Matrix&, size_t, PromiseOfArrayStore&, PromiseOfArrayStore&);
 
 #endif /* FUNCTIONS_H */

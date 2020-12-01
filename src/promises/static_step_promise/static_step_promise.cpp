@@ -18,6 +18,7 @@ StaticStepPromiseCommonBase::StaticStepPromiseCommonBase(unsigned int step) : _s
 
 ActiveStaticStepPromiseBase::ActiveStaticStepPromiseBase(unsigned int step) : _common(step) {
     _current_index_strong.store(-1, std::memory_order_release);
+    _current_index = -1;
 }
 
 bool ActiveStaticStepPromiseBase::ready_index_strong(int index) {
@@ -101,8 +102,8 @@ void ActiveStaticStepPromise<void>::set(int index) {
 
     _base.assert_free_index_weak(index);
 
-    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step)) {
+    if (_base._common._step == 1 || (index - _base._current_index >= _base._common._step)) {
+        _base._current_index = index;
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 
@@ -129,6 +130,7 @@ void ActiveStaticStepPromise<void>::set_final(int index) {
 
     _base.assert_free_index_weak(index);
 
+    _base._current_index = index;
     _base._current_index_strong.store(index, std::memory_order_release);
     // _base._common._current_index_weak[omp_get_thread_num()] = index;
 }

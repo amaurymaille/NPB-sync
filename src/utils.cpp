@@ -148,7 +148,9 @@ uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
 }
 
 void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
-    assert(memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) == 0);
+    if (memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) != 0) {
+        throw std::runtime_error("Matrix not equals");
+    }
 }
 
 void init_matrix_from(Matrix& matrix, Matrix const& src) {

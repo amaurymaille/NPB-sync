@@ -31,6 +31,7 @@
 #include "functions.h"
 #include "increase.h"
 #include "logging.h"
+#include "naive_promise.h"
 #include "promise_plus.h"
 #include "promises/naive_promise.h"
 #include "promises/static_step_promise.h"
@@ -112,11 +113,11 @@ public:
         #pragma omp barrier
 
         for (int m = 1; m < g::ITERATIONS; m++) {
-            sync_left(thread_num, n_threads - 1);
+            // sync_left(thread_num, n_threads - 1);
 
             f(_matrix, std::forward<Args>(args)..., m);
 
-            sync_right(thread_num, n_threads - 1);
+            // sync_right(thread_num, n_threads - 1);
         }
     }
     }
@@ -420,18 +421,19 @@ private:
 #endif
 };
 
-class NaivePromiseArraySynchronizer : public Synchronizer {
+class ArrayOfPromisesSynchronizer : public Synchronizer {
 public:
-    NaivePromiseArraySynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
+    ArrayOfPromisesSynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
         for (int i = 0; i < g::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
-                _promises_store[i][j] = new std::promise<void>[Globals::DIM_Y];
+                // _promises_store[i][j] = new std::promise<void>[Globals::DIM_Y];
+                _promises_store[i][j] = new NaivePromise<void>[Globals::DIM_Y];
             }
         }
     }
 
-    ~NaivePromiseArraySynchronizer() {
+    ~ArrayOfPromisesSynchronizer() {
         for (int i = 0; i < g::ITERATIONS; ++i) {
             for (int j = 0; j < _promises_store[i].size(); ++j) {
                 delete[] _promises_store[i][j];
@@ -456,7 +458,38 @@ public:
     }
 
 private:
-    std::array<NaivePromiseArrayContainer, g::ITERATIONS> _promises_store;
+    std::array<ArrayOfPromisesContainer, g::ITERATIONS> _promises_store;
+};
+
+class PromiseOfArraySynchronizer : public Synchronizer {
+public:
+    PromiseOfArraySynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
+        for (int i = 0; i < g::ITERATIONS; ++i) {
+            _promises_store[i].resize(nb_threads);
+            for (int j = 0; j < nb_threads; ++j) {
+                _promises_store[i][j] = new NaivePromise<void>();
+            }
+        }
+    }
+
+    template<typename F, typename... Args>
+    void run(F&& f, Args&&... args) {
+        #pragma omp parallel
+        {
+            int thread_num = omp_get_thread_num();
+            int num_threads = omp_get_num_threads();
+
+            for (int i = 1; i < g::ITERATIONS; ++i) {
+                auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
+                auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
+
+                f(_matrix, i, dst, src);
+            }
+        }
+    }
+
+private:
+    std::array<PromiseOfArrayContainer, g::ITERATIONS> _promises_store;
 };
 
 template<class Synchronizer, class F, class... Args>
@@ -742,15 +775,34 @@ public:
         _iterations_times.push_back(iterations_log);
     }
 
-    void run_naive_promise_array(unsigned int nb_iterations) {
+    void run_array_of_promises(unsigned int nb_iterations) {
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
-        TimeLog log("NaivePromiseArray", "naive_promise_array");
+        TimeLog log("ArrayOfPromises", "array_of_promises");
         Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            NaivePromiseArraySynchronizer naivePromiseArraySynchronizer(matrix, nb_threads);
-            time = measure_time(naivePromiseArraySynchronizer, std::bind(heat_cpu_naive_promise_array,
+            ArrayOfPromisesSynchronizer arrayOfPromisesSynchronizer(matrix, nb_threads);
+            time = measure_time(arrayOfPromisesSynchronizer, std::bind(heat_cpu_array_of_promises,
+                                                                       std::placeholders::_1,
+                                                                       std::placeholders::_2,
+                                                                       std::placeholders::_3,
+                                                                       std::placeholders::_4));
+            add_time(log, i, time);
+        }
+
+        _times.push_back(log);
+    }
+
+    void run_promise_of_array(unsigned int nb_iterations) {
+        unsigned int nb_threads = omp_nb_threads();
+        uint64 time = 0;
+        TimeLog log("PromiseOfArray", "promise_of_array");
+        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+
+        for (unsigned int i = 0; i < nb_iterations; ++i) {
+            PromiseOfArraySynchronizer promiseOfArraySynchronizer(matrix, nb_threads);
+            time = measure_time(promiseOfArraySynchronizer, std::bind(heat_cpu_promise_of_array,
                                                                          std::placeholders::_1,
                                                                          std::placeholders::_2,
                                                                          std::placeholders::_3,
@@ -760,6 +812,7 @@ public:
 
         _times.push_back(log);
     }
+   
 
     void collect(unsigned int nb_iterations, DynamicConfig::SynchronizationPatterns const& authorized) {
         if (authorized._sequential) {
@@ -832,7 +885,7 @@ public:
         }
 
         if (authorized._naive_promise_array) {
-            run_naive_promise_array(nb_iterations);
+            run_array_of_promises(nb_iterations);
         }
     }
 
@@ -883,7 +936,8 @@ namespace JSON {
             static const std::string increasing_jline_promise("increasing-jline-promise");
             static const std::string jline_promise_plus("jline-plus");
             static const std::string static_step_promise_plus("static-step-plus");
-            static const std::string naive_promise_array("naive-promise-array");
+            static const std::string array_of_promises("array-of-promises");
+            static const std::string promise_of_array("promise-of-array");
         }
 
         static const std::vector<std::string> authorized_synchronizers = {
@@ -895,7 +949,8 @@ namespace JSON {
             Synchronizers::increasing_jline_promise,
             Synchronizers::jline_promise_plus,
             Synchronizers::static_step_promise_plus,
-            Synchronizers::naive_promise_array
+            Synchronizers::array_of_promises,
+            Synchronizers::promise_of_array
         };
 
         namespace Extras {
@@ -1010,8 +1065,10 @@ private:
             }
 
             _collector.run_static_step_promise_plus(iterations, step);
-        } else if (synchronizer == Sync::naive_promise_array) {
-            _collector.run_naive_promise_array(iterations);
+        } else if (synchronizer == Sync::array_of_promises) {
+            _collector.run_array_of_promises(iterations);
+        } else if (synchronizer == Sync::promise_of_array) {
+            _collector.run_promise_of_array(iterations);
         } else {
             assert(false);
         }

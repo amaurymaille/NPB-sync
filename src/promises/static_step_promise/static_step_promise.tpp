@@ -3,7 +3,6 @@
 template<typename T>
 ActiveStaticStepPromise<T>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
     PromisePlus<void>(nb_values), _base(step) {
-
 }
 
 template<typename T>
@@ -47,8 +46,8 @@ void ActiveStaticStepPromise<T>::set(int index, const T& value) {
 
     this->_value[index] = value;
     
-    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step)) {
+    if (_base._common._step == 1 || (index - _base._current_index >= _base._common._step)) {
+        _base._current_index = index;
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 }
@@ -76,8 +75,8 @@ void ActiveStaticStepPromise<T>::set(int index, T&& value) {
 
     this->_value[index] = std::move(value);
     
-    if (_base._common._step == 1 || (index - _base._current_index_strong.load(std::memory_order_acquire) >= 
-        _base._common._step)) {
+    if (_base._common._step == 1 || (index - _base._current_index >= _base._common._step)) {
+        _base._current_index = index;
         _base._current_index_strong.store(index, std::memory_order_release);
     }
 }
@@ -105,6 +104,7 @@ void ActiveStaticStepPromise<T>::set_final(int index, const T& value) {
 
     this->_value[index] = value;
     
+    _base._current_index = index;
     _base._current_index_strong.store(index, std::memory_order_release);
 }
 

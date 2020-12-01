@@ -52,7 +52,8 @@ struct ActiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
     ActiveStaticStepPromiseBase(unsigned int step);
 
     StaticStepPromiseCommonBase _common;
-    std::atomic<int>            _current_index_strong;
+    std::atomic<int>            _current_index_strong; // Producer / consummer
+    int                         _current_index; // Producer only
 
     bool ready_index_strong(int index) final;
     bool ready_index_weak(int index) final;
