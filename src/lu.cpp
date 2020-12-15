@@ -136,6 +136,94 @@ void kernel_lu_omp(Matrix2D const& matrix,
 }
 }
 
+void kernel_lu_solve(Matrix2D const& lu, Vector1D const& b, Vector1D& x) {
+    // In LUx = b, solve Ly = b, then Ux = y
+    // Algorithm kernel_lu computes strictly lower L and diagonal upper U
+    // L is assumed to have ones on the diagonal
+    
+    // Compute y
+    // Reminder : L11 * y1 = b1, L21 * y1 + L22 * y2 = b2...
+    // Ergo : yi = (bi - sigma (for j = 1 to i - 1) of (Li,j * yj)) / Lii
+    Vector1D y;
+    for (int i = 0; i < lu.size(); ++i) {
+        auto row = lu[i];
+        Matrix2DValue sum = 0;
+        for (int j = 0; j < i - 1; j++) {
+            sum += row[j] * y[j];
+        }
+
+        y[i] = (b[i] - sum) / row[i];
+    }
+
+    // Compute x
+    // Reminder : Unn * xn = yn, Un-1n * xn + Un-1n-1 * xn-1 = yn-1
+    // Ergo : xi = (yi - sigma (for j = i + 1 to n) of (Ui,j * xj)) / Uii
+    for (int i = lu.size() - 1; i >= 0; --i) {
+        auto row = lu[i];
+        Matrix2DValue sum = 0;
+        for (int j = i + 1; j < lu.size(); ++j) {
+            sum += row[j] * x[j];
+        }
+
+        x[i] = (y[i] - sum) / row[i];
+    }
+}
+
+void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
+                                           std::vector<Vector1D>& x) {
+    std::vector<std::thread> threads;
+    for (int i = 0; i < b.size(); ++i)
+        threads.push_back(std::thread(kernel_lu_solve, std::ref(lu), std::cref(b[i]), std::ref(x[i])));
+
+    for (auto& th: threads)
+        th.join();
+}
+
+void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
+                        Vector1D const& b, Vector1D& x) {
+    Vector1D y;
+    for (int i = 0; i < lu.size(); ++i) {
+        Matrix2DValue sum = 0;
+        for (int j = 0; j < i - 1; j++) {
+            sum += lu[i].get(j) * y[j];
+        }
+
+        y[i] = (b[i] - sum) / lu[i].get(i);
+    }
+
+    // Compute x
+    // Reminder : Unn * xn = yn, Un-1n * xn + Un-1n-1 * xn-1 = yn-1
+    // Ergo : xi = (yi - sigma (for j = i + 1 to n) of (Ui,j * xj)) / Uii
+    for (int i = lu.size() - 1; i >= 0; --i) {
+        Matrix2DValue sum = 0;
+        for (int j = i + 1; j < lu.size(); ++j) {
+            sum += lu[i].get(j) * x[j];
+        }
+
+        x[i] = (y[i] - sum) / lu[i].get(i);
+    }
+}
+
+void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
+                          std::vector<Vector1D> const& b,
+                          std::vector<Vector1D>& x) {
+    std::vector<std::thread> threads;
+    for (int i = 0; i < b.size(); ++i)
+        threads.push_back(std::thread(kernel_lu_solve_pp, std::ref(lu), std::cref(b[i]), std::ref(x[i])));
+
+    for (auto& th: threads)
+        th.join(); 
+}
+
+void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x) {
+     
+}
+
+void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D>& b, 
+                                         std::vector<Vector1D>& x) {
+
+}
+
 void validate_diagonal(Matrix2D const& matrix) {
     // Assert if 0 on diagonal
     for (int i = 0; i < matrix.size(); ++i) {

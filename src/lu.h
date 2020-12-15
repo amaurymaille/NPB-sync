@@ -50,7 +50,7 @@ void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
  * This solver assumes the PromisePlus in @a lu contain the factorization of
  * the A matrix.
  */
-void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>> const& lu,
+void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
                         Vector1D const& b, Vector1D& x);
 
 /**
@@ -59,7 +59,7 @@ void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>> const& lu,
  * This solver assumes the PromisePlus in @a lu contain the factorization of
  * the A matrix.
  */
-void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>> const& lu,
+void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x);
 
