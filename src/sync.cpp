@@ -23,13 +23,11 @@
 #include "spdlog/spdlog.h"
 #include "nlohmann/json.hpp"
 
-#include "active_promise.h"
 #include "argv.h"
 #include "config.h"
 #include "defines.h"
 #include "dynamic_config.h"
 #include "functions.h"
-#include "increase.h"
 #include "logging.h"
 #include "naive_promise.h"
 #include "promise_plus.h"
@@ -47,12 +45,6 @@ Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z])
 
 // Matrix g_reordered_start_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
 // MatrixReorderer* g_expected_reordered_matrix = new JLinePromiseMatrixReorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-
-namespace Globals {
-    // Abort if a **single** simulation takes more than the given time
-    DeadlockDetector deadlock_detector(10LL * MINUTES * TO_NANO);
-    std::thread deadlock_detector_thread;
-}
 
 class Synchronizer {
 protected:
@@ -238,80 +230,6 @@ private:
 };
 
 typedef std::array<std::vector<uint64>, g::ITERATIONS> IterationTimeByThreadStore;
-
-template<typename T>
-class IterationPromisingSynchronizer : public Synchronizer {
-public:
-    IterationPromisingSynchronizer(Matrix& matrix, int n) : Synchronizer(matrix) {
-        _promises_store.reserve(g::ITERATIONS);
-
-        for (int i = 0; i < g::ITERATIONS; ++i) {
-            _promises_store.push_back(T(n));
-            _iterations_times_by_thread[i].resize(n, 0);
-        }
-    }
-
-    template<typename F, typename... Args>
-    void run(F&& f, Args&&... args) {
-        #pragma omp parallel
-        {
-            struct timespec thread_begin, thread_end;
-
-            for (int m = 1; m < g::ITERATIONS; ++m) {                
-                auto src_store = omp_get_thread_num() != 0 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
-                auto dst_store = omp_get_thread_num() != omp_get_num_threads() - 1 ? std::make_optional(std::ref(_promises_store[m])) : std::nullopt;
-
-
-                clock_gettime(CLOCK_MONOTONIC, &thread_begin);
-                f(_matrix, std::forward<Args>(args)..., m, dst_store, src_store);
-                clock_gettime(CLOCK_MONOTONIC, &thread_end);
-
-                _iterations_times_by_thread[m][omp_get_thread_num()] = clock_diff(&thread_end, &thread_begin);
-            }
-        }
-    }
-
-    IterationTimeByThreadStore const& get_iterations_times_by_thread() const {
-        return _iterations_times_by_thread;
-    }
-
-protected:
-    std::vector<T> _promises_store;
-    IterationTimeByThreadStore _iterations_times_by_thread;
-};
-
-using PointPromisingSynchronizer = IterationPromisingSynchronizer<PointPromiseContainer>;
-using BlockPromisingSynchronizer = IterationPromisingSynchronizer<BlockPromiseContainer>;
-using JLinePromisingSynchronizer = IterationPromisingSynchronizer<JLinePromiseContainer>;
-using KLinePromisingSynchronizer = IterationPromisingSynchronizer<KLinePromiseContainer>;
-
-template<class Store>
-class IncreasingIterationPromisingSynchronizer : public IterationPromisingSynchronizer<Store> {
-public:
-    template<class F>
-    IncreasingIterationPromisingSynchronizer(Matrix& matrix, int n, F&& f, size_t MAX) : IterationPromisingSynchronizer<Store>(matrix, n) {
-        for (int i = 1; i < this->_promises_store.size(); ++i) {
-            Store& container = this->_promises_store[i];
-
-            int nb_promises = 0;
-
-            for (int k = 0; k < MAX; ) {
-                int nb_elements_for_synchronization = f(i, k);
-                nb_promises++;
-                k += nb_elements_for_synchronization;
-            }
-
-            for (int j = 0; j < container.size(); j++) {
-                std::vector<typename Store::value_type::value_type> v(nb_promises);
-                container[j] = std::move(v);
-            }
-        }
-    }
-};
-
-using IncreasingPointPromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingPointPromiseContainer>;
-using IncreasingJLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingJLinePromiseContainer>;
-using IncreasingKLinePromisingSynchronizer = IncreasingIterationPromisingSynchronizer<IncreasingKLinePromiseContainer>;
 
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
@@ -510,7 +428,6 @@ static uint64 measure_synchronizer_time(Synchronizer& synchronizer, F&& f, Args&
     uint64 diff = measure_time([&]() {
         synchronizer.run(f, args...);
     });
-    Globals::deadlock_detector.reset();
 
     synchronizer.assert_okay();
 
@@ -626,123 +543,6 @@ public:
         _times.push_back(log);
     }
 
-    void run_block_promise(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("BlockPromise", "block_promise");
-        TimeLog iterations_log("BlockPromise", "block_promise");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            BlockPromisingSynchronizer blockPromise(matrix, nb_threads);
-            time = measure_synchronizer_time(blockPromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
-                heat_cpu_block_promise(matrix, m, dst, src);
-            });
-            add_time(log, i, time);
-            add_iterations_times_by_thread(iterations_log, i, blockPromise.get_iterations_times_by_thread());
-        }
-
-        _times.push_back(log);
-        _iterations_times.push_back(iterations_log);
-    }
-
-    void run_jline_promise(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("JLine", "jline_promise");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            JLinePromisingSynchronizer jLinePromise(matrix, nb_threads);
-            time = measure_synchronizer_time(jLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
-                heat_cpu_jline_promise(matrix, m, dst, src);
-            });
-            add_time(log, i, time);
-        }
-
-        _times.push_back(log);
-    }
-
-    void run_increasing_jline_promise(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("IncreasingJLine", "increasing_jline_promise");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            IncreasingJLinePromisingSynchronizer increasingJLinePromise(matrix, nb_threads, nb_jlines_for, g::NB_J_LINES_PER_ITERATION);
-            time = measure_synchronizer_time(increasingJLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
-                heat_cpu_increasing_jline_promise(matrix, m, dst, src);
-            });
-            add_time(log, i, time);
-        }
-
-        _times.push_back(log);
-    }
-
-    void run_kline_promise(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("KLine", "kline_promise");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            KLinePromisingSynchronizer kLinePromise(matrix, nb_threads);
-            time = measure_synchronizer_time(kLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
-                heat_cpu_kline_promise(matrix, m, dst, src);
-            });
-            add_time(log, i, time);
-        }
-
-        _times.push_back(log);
-    }
-
-    void run_increasing_kline_promise(unsigned int nb_iterations) {
-        unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("IncreasingKLine", "increasing_kline_promise");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            IncreasingKLinePromisingSynchronizer increasingKLinePromise(matrix, nb_threads, nb_klines_for, g::NB_K_LINES_PER_ITERATION);
-            time = measure_synchronizer_time(increasingKLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
-                heat_cpu_increasing_kline_promise(matrix, m, dst, src);
-            });
-            add_time(log, i, time);
-        }
-
-        _times.push_back(log);
-    }
-
-    void run_jline_promise_plus(unsigned int nb_iterations) {
-        /* unsigned int nb_threads = omp_nb_threads();
-        uint64 time = 0;
-        TimeLog log("JLine+", "promise_plus");
-        TimeLog iterations_log("JLine+", "promise_plus");
-        JLinePromiseMatrixReorderer reorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-        NaivePromiseBuilder<void> builder(Globals::DIM_X);
-
-        for (unsigned int i = 0; i < nb_iterations; ++i) {
-            PromisePlusSynchronizer<void> jLinePromisePlus(reorderer, nb_threads, builder);
-            time = measure_synchronizer_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
-                                                            std::placeholders::_1,
-                                                            std::placeholders::_2,
-                                                            std::placeholders::_3,
-                                                            std::placeholders::_4));
-            add_time(log, i, time);
-#ifdef PROMISE_PLUS_ITERATION_TIMER
-            add_iterations_times_by_thread(iterations_log, i, jLinePromisePlus.get_iterations_times_by_thread());
-#endif
-        }
-
-        _times.push_back(log);
-#ifdef PROMISE_PLUS_ITERATION_TIMER
-        _iterations_times.push_back(iterations_log);
-#endif
-        */
-        throw std::runtime_error("What am I doing ?");
-    }
-
     void run_static_step_promise_plus(unsigned int nb_iterations, unsigned int step) {
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
@@ -813,81 +613,6 @@ public:
     }
    
 
-    void collect(unsigned int nb_iterations, DynamicConfig::SynchronizationPatterns const& authorized) {
-        if (authorized._sequential) {
-            run_sequential(nb_iterations);
-        }
-    
-        if (authorized._alt_bit) {
-            run_alt_bit(nb_iterations);
-        }
-
-        if (authorized._counter) {
-            run_atomic_counter(nb_iterations);
-        }
-
-        /* {
-        AltBitSynchronizer altBitSwitchLoops(n_threads);
-        time = measure_synchronizer_time(altBitSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
-        add_time("AltBitSynchronizer", "heat_cpu_switch_loops", time);
-        } */
-
-        /* {
-        CounterSynchronizer iterationSyncSwitchLoops(n_threads);
-        time = measure_synchronizer_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
-        add_time("CounterSynchronizer", "heat_cpu_switch_loops", time);
-        } */
-
-        /* time = Collector<PointPromisingSynchronizer>::collect(std::bind(heat_cpu_point_promise, 
-                                                                           std::placeholders::_1,
-                                                                           std::placeholders::_2,
-                                                                           std::placeholders::_3,
-                                                                           std::placeholders::_4),
-                                                                  n_threads); 
-        add_time("PointPromisingSynchronizer", "heat_cpu_point_promise", time);                                                          
-        */
-
-        if (authorized._block) {
-            run_block_promise(nb_iterations);
-        }
-
-        /* time = Collector<IncreasingPointPromisingSynchronizer>::collect(std::bind(heat_cpu_increasing_point_promise,
-                                                                                  std::placeholders::_1,
-                                                                                  std::placeholders::_2,
-                                                                                  std::placeholders::_3,
-                                                                                  std::placeholders::_4),
-                                                                        n_threads, &nb_points_for_iteration, g::NB_POINTS_PER_ITERATION);
-        add_time("IncreasingPointPromisingSynchronizer", "heat_cpu_increasing_point_promise", time); */
-
-        if (authorized._jline) {
-            run_jline_promise(nb_iterations);
-        }
-
-        if (authorized._increasing_jline) {
-            run_increasing_jline_promise(nb_iterations);
-        }
-
-        if (authorized._kline) {
-            run_kline_promise(nb_iterations);
-        }
-
-        if (authorized._increasing_kline) {
-            run_increasing_kline_promise(nb_iterations);
-        }
-
-        if (authorized._jline_plus) {
-            run_jline_promise_plus(nb_iterations);
-        }
-
-        if (authorized._increasing_jline_plus) {
-            run_static_step_promise_plus(nb_iterations, sDynamicConfigExtra._static_step_jline_plus);
-        }
-
-        if (authorized._naive_promise_array) {
-            run_array_of_promises(nb_iterations);
-        }
-    }
-
     void print_times() {
         json runs_times;
         json runs = json::array();
@@ -930,10 +655,6 @@ namespace JSON {
             static const std::string sequential("sequential");
             static const std::string alt_bit("alt-bit");
             static const std::string counter("counter");
-            static const std::string block_promise("block-promise");
-            static const std::string jline_promise("jline-promise");
-            static const std::string increasing_jline_promise("increasing-jline-promise");
-            static const std::string jline_promise_plus("jline-plus");
             static const std::string static_step_promise_plus("static-step-plus");
             static const std::string array_of_promises("array-of-promises");
             static const std::string promise_of_array("promise-of-array");
@@ -943,10 +664,6 @@ namespace JSON {
             Synchronizers::sequential,
             Synchronizers::alt_bit,
             Synchronizers::counter,
-            Synchronizers::block_promise,
-            Synchronizers::jline_promise,
-            Synchronizers::increasing_jline_promise,
-            Synchronizers::jline_promise_plus,
             Synchronizers::static_step_promise_plus,
             Synchronizers::array_of_promises,
             Synchronizers::promise_of_array
@@ -1046,14 +763,6 @@ private:
             _collector.run_alt_bit(iterations);
         } else if (synchronizer == Sync::counter) {
             _collector.run_atomic_counter(iterations);
-        } else if (synchronizer == Sync::block_promise) {
-            _collector.run_block_promise(iterations);
-        } else if (synchronizer == Sync::jline_promise) {
-            _collector.run_jline_promise(iterations);
-        } else if (synchronizer == Sync::increasing_jline_promise) {
-            _collector.run_increasing_jline_promise(iterations);
-        } else if (synchronizer == Sync::jline_promise_plus) {
-            _collector.run_jline_promise_plus(iterations);
         } else if (synchronizer == Sync::static_step_promise_plus) {
             unsigned int step = 1;
             if (run.contains(JSON::Run::extras)) {
@@ -1120,18 +829,14 @@ int main(int argc, char** argv) {
     }
 
     Runner runner(sDynamicConfigFiles.get_simulations_filename());
-    // spdlog::get(Loggers::Names::global_logger)->info("Starting");
 
     init_start_matrix_once();
     init_from_start_matrix(g_expected_matrix);
     // assert_matrix_equals(g_start_matrix, g_expected_matrix->get_matrix());
 
-    // init_reordered_start_matrix_once();
-    // init_from_reordered_start_matrix(g_expected_reordered_matrix->get_matrix());
     // assert_matrix_equals(g_reordered_start_matrix, g_expected_reordered_matrix->get_matrix());
 
     init_expected_matrix_once();
-    // init_expected_reordered_matrix_once();
 
     // assert_okay_reordered_compute();
 
@@ -1140,11 +845,5 @@ int main(int argc, char** argv) {
 
     log_general_data(DynamicConfig::_instance()._files.parameters_file());
 
-    // delete g_expected_reordered_matrix;
-    // delete g_expected_matrix;
-    // Globals::deadlock_detector.stop();
-    // Globals::deadlock_detector_thread.join();
-
-    // spdlog::get(Loggers::Names::global_logger)->info("Ending");
     return 0;
 }

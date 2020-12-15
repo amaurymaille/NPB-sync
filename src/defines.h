@@ -56,88 +56,11 @@ using OptionalReference = std::optional<std::reference_wrapper<T>>;
 template<typename T>
 using ThreadStore = std::vector<T>;
 
-enum class PromiseTypes : unsigned char {
-    NATIVE,
-    ACTIVE
-};
-
-std::string to_string(PromiseTypes v); 
-
-#ifdef ACTIVE_PROMISES
-template<typename T>
-class ActivePromise;
-
-template<>
-class ActivePromise<void>;
-
-template<typename T>
-using Promise = ActivePromise<T>;
-
-namespace Globals {
-    static constexpr PromiseTypes PROMISE_TYPE = PromiseTypes::ACTIVE;
-}
-
-#else
-template<typename T>
-using Promise = std::promise<T>;
-
-namespace Globals {
-    static constexpr PromiseTypes PROMISE_TYPE = PromiseTypes::NATIVE;
-}
-#endif // ACTIVE_PROMISES
-
 template<typename T>
 class PromisePlus;
 
 template<>
 class PromisePlus<void>;
-
-// Point synchronization
-typedef ThreadStore<std::array<Promise<void>, g::NB_POINTS_PER_ITERATION>> PointPromiseContainer;
-typedef OptionalReference<PointPromiseContainer> PointPromiseStore;
-
-// Block synchronization
-// typedef ThreadStore<Promise<std::vector<MatrixValue>*>> BlockPromiseContainer;
-typedef ThreadStore<Promise<void>> BlockPromiseContainer;
-typedef OptionalReference<BlockPromiseContainer> BlockPromiseStore;
-
-// Increasing points synchronization
-typedef ThreadStore<std::vector<Promise<size_t>>> IncreasingPointPromiseContainer;
-typedef OptionalReference<IncreasingPointPromiseContainer> IncreasingPointPromiseStore;
-
-// Line synchronization
-typedef ThreadStore<std::array<Promise<void>, Globals::NB_J_LINES_PER_ITERATION>> JLinePromiseContainer;
-typedef OptionalReference<JLinePromiseContainer> JLinePromiseStore;
-
-typedef ThreadStore<std::array<Promise<void>, Globals::NB_K_LINES_PER_ITERATION>> KLinePromiseContainer;
-typedef OptionalReference<KLinePromiseContainer> KLinePromiseStore;
-
-// Increasing line synchronization
-typedef ThreadStore<std::vector<Promise<size_t>>> IncreasingJLinePromiseContainer;
-typedef OptionalReference<IncreasingJLinePromiseContainer> IncreasingJLinePromiseStore;
-
-typedef IncreasingJLinePromiseContainer IncreasingKLinePromiseContainer;
-typedef IncreasingJLinePromiseStore IncreasingKLinePromiseStore;
-
-/*
-// Block PromisePlus synchronization
-typedef ThreadStore<PromisePlus<void>> BlockPromisePlusContainer;
-typedef OptionalReference<BlockPromisePlusContainer> BlockPromisePlusStore;
-
-// JLine PromisePlus synchronization
-typedef ThreadStore<PromisePlus<void>> JLinePromisePlusContainer;
-typedef OptionalReference<JLinePromisePlusContainer> JLinePromisePlusStore;
-
-// Increasing JLine PromisePlus synchronization
-typedef ThreadStore<PromisePlus<size_t>> IncreasingJLinePromisePlusContainer;
-typedef OptionalReference<IncreasingJLinePromisePlusContainer> IncreasingJLinePromisePlusStore;
-
-// KLine PromisePlus & Increasing KLine PromisePlus synchronizations
-typedef JLinePromisePlusContainer KLinePromisePlusContainer;
-typedef JLinePromisePlusStore KLinePromisePlusStore;
-
-typedef IncreasingJLinePromisePlusContainer IncreasingKLinePromisePlusContainer;
-typedef IncreasingJLinePromisePlusStore IncreasingKLinePromisePlusStore; */
 
 typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
 typedef std::optional<PromisePlusContainer> PromisePlusStore;
@@ -148,23 +71,15 @@ class NaivePromise;
 template<>
 class NaivePromise<void>;
 
-// typedef ThreadStore<std::promise<void>*> ArrayOfPromisesContainer;
 typedef ThreadStore<NaivePromise<void>*> ArrayOfPromisesContainer;
 typedef std::optional<ArrayOfPromisesContainer> ArrayOfPromisesStore;
 
 typedef ThreadStore<NaivePromise<void>*> PromiseOfArrayContainer;
 typedef std::optional<PromiseOfArrayContainer> PromiseOfArrayStore;
 
-// class MatrixReorderer;
-
 // The initial matrix
 extern Matrix g_start_matrix;
 // The expected final matrix 
 extern Matrix g_expected_matrix;
-
-// The initial reordered matrix
-// extern Matrix g_reordered_start_matrix;
-// The expected final reordered matrix
-// extern MatrixReorderer* g_expected_reordered_matrix;
 
 #endif /* DEFINES_H */

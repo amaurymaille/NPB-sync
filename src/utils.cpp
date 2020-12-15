@@ -25,45 +25,6 @@ namespace Globals {
     RandomGenerator<unsigned char> binary_generator(0, 1);
 }
 
-DimensionConverter<4>::DimensionConverter(size_t dimw, size_t dimx, size_t dimy, size_t dimz) :
-    _dimw(dimw), _dimx(dimx), _dimy(dimy), _dimz(dimz) {
-}
-
-size_t DimensionConverter<4>::to_1d(size_t w, size_t x, size_t y, size_t z) {
-    return w * _dimx * _dimy  * _dimz +
-           x        * _dimy  * _dimz + 
-           y                * _dimz +
-           z;
-}
-
-std::array<size_t, 4> DimensionConverter<4>::from_1d(size_t pos) {
-    size_t z = pos % _dimz;
-    size_t y = ((pos - z) / _dimz) % _dimy;
-    size_t x = ((pos - z - y * _dimz) / (_dimy * _dimz)) % _dimx;
-    size_t w = (pos - z - y * _dimz - x * _dimy * _dimz) / (_dimx * _dimy * _dimz);
-
-    std::array<size_t, 4> result = {w, x, y ,z};
-    return result;
-}
-
-size_t to1d(size_t w, size_t x, size_t y, size_t z) {
-    namespace g = Globals;
-    return w * g::DIM_X * g::DIM_Y  * g::DIM_Z +
-           x            * g::DIM_Y  * g::DIM_Z + 
-           y                        * g::DIM_Z +
-           z;
-}
-
-std::tuple<size_t, size_t, size_t, size_t> to4d(size_t n) {
-    namespace g = Globals;
-    size_t z = n % g::DIM_Z;
-    size_t y = ((n - z) / g::DIM_Z) % g::DIM_Y;
-    size_t x = ((n - z - y * g::DIM_Z) / (g::DIM_Y * g::DIM_Z)) % g::DIM_X;
-    size_t w = (n - z - y * g::DIM_Z - x * g::DIM_Y * g::DIM_Z) / (g::DIM_X * g::DIM_Y * g::DIM_Z);
-
-    return std::make_tuple(w, x, y, z);
-}
-
 /* void init_matrix(double* ptr) {
     namespace g = Globals;
     for (size_t i = 0; i < g::NB_ELEMENTS; ++i) {
@@ -242,44 +203,6 @@ unsigned int omp_nb_threads() {
     return nb_threads;
 }
 
-DeadlockDetector::DeadlockDetector(uint64 limit) : _limit(limit) {
-    _running.store(false, std::memory_order_relaxed);
-    _reset_count.store(0, std::memory_order_relaxed);
-}
-
-void DeadlockDetector::reset() {
-    _reset_count++;
-}
-
-void DeadlockDetector::stop() {
-    _running.store(false, std::memory_order_release);
-}
-
-void DeadlockDetector::run() {
-    if (_running.load(std::memory_order_relaxed)) {
-        throw std::runtime_error("Called run() on already running DeadlockDetector");
-    }
-
-    _running.store(true, std::memory_order_relaxed);
-
-    uint64 time_since_reset = 0;
-    while (_running.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        if (_reset_count.load(std::memory_order_acquire) != 0) {
-            _reset_count.store(0, std::memory_order_release);
-            time_since_reset = 0;
-        } else {
-            time_since_reset += 5LL * TO_NANO;
-
-            if (time_since_reset > _limit) {
-                std::cerr << "Deadlock detected, aborting (time since last reset: " << time_since_reset << ", limit: " << _limit << ")"  << std::endl;
-                std::terminate();
-            }
-        }
-    }
-}
-
 std::string ns_with_leading_zeros(uint64 ns) {
     std::ostringstream str;
     str << ns;
@@ -296,60 +219,3 @@ std::string ns_with_leading_zeros(uint64 ns) {
         return str.str();
     }
 }
-
-/*
-MatrixReorderer::MatrixReorderer(size_t w, size_t x, size_t y, size_t z) : 
-    _matrix(boost::extents[w][x][y][z]) {
-
-}
-
-MatrixReorderer::~MatrixReorderer() {
-    
-}
-
-Matrix& MatrixReorderer::get_matrix() {
-    return _matrix;
-}
-
-
-StandardMatrixReorderer::StandardMatrixReorderer(size_t w, size_t x, size_t y, size_t z) : MatrixReorderer(w, x, y, z) {
-
-}
-
-void StandardMatrixReorderer::init() {
-    init_from_start_matrix(_matrix);
-}
-
-void StandardMatrixReorderer::assert_okay_init() {
-    assert_matrix_equals(_matrix, g_start_matrix);
-}
-
-void StandardMatrixReorderer::assert_okay_compute() {
-    assert_matrix_equals(_matrix, g_expected_matrix->get_matrix());
-}
-
-MatrixValue& StandardMatrixReorderer::operator()(size_t i, size_t j, size_t k, size_t l) {
-    return _matrix[i][j][k][l];
-}
-
-
-JLinePromiseMatrixReorderer::JLinePromiseMatrixReorderer(size_t w, size_t x, size_t y, size_t z) : MatrixReorderer(w, z, y, x) {
-
-}
-
-void JLinePromiseMatrixReorderer::init() {
-    init_from_reordered_start_matrix(_matrix);
-}
-
-void JLinePromiseMatrixReorderer::assert_okay_init() {
-    assert_matrix_equals(_matrix, g_reordered_start_matrix);
-}
-
-void JLinePromiseMatrixReorderer::assert_okay_compute() {
-    assert_matrix_equals(_matrix, g_expected_reordered_matrix->get_matrix());
-}
-
-MatrixValue& JLinePromiseMatrixReorderer::operator()(size_t i, size_t j, size_t k, size_t l) {
-    return _matrix[i][l][k][j];
-}
-*/

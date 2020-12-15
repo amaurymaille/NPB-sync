@@ -14,24 +14,6 @@ namespace ExtraConfig {
 
 class DynamicConfig {
 public:
-    struct SynchronizationPatterns {
-        bool _sequential = false;
-        bool _alt_bit = false;
-        bool _counter = false;
-        bool _block = false;
-        bool _block_plus = false;
-        bool _jline = false;
-        bool _jline_plus = false;
-        bool _increasing_jline = false;
-        bool _increasing_jline_plus = false;
-        bool _kline = false;
-        bool _kline_plus = false;
-        bool _increasing_kline = false;
-        bool _increasing_kline_plus = false;
-        bool _naive_promise_array = false;
-        bool _promise_of_array = false;
-    };
-
     struct Standard {
         std::string _description;
     };
@@ -145,7 +127,6 @@ public:
         return _instance();
     }
 
-    SynchronizationPatterns _patterns;
     Files _files;
     Extra _extra;
     Standard _std;
@@ -161,7 +142,6 @@ private:
 
 #define sDynamicConfig DynamicConfig::instance()
 #define sDynamicConfigStd sDynamicConfig._std
-#define sDynamicConfigPatterns sDynamicConfig._patterns
 #define sDynamicConfigFiles sDynamicConfig._files
 #define sDynamicConfigExtra sDynamicConfig._extra
 
