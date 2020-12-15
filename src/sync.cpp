@@ -492,19 +492,28 @@ private:
     std::array<PromiseOfArrayContainer, g::ITERATIONS> _promises_store;
 };
 
-template<class Synchronizer, class F, class... Args>
-static uint64 measure_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
+template<typename F, typename... Args>
+static uint64 measure_time(F&& f, Args&&... args) {
     struct timespec begin, end;
 
     clock_gettime(CLOCK_MONOTONIC, &begin);
-    synchronizer.run(f, std::forward<Args>(args)...);
+    f(std::forward<Args>(args)...);
     clock_gettime(CLOCK_MONOTONIC, &end);
 
+    uint64 diff = clock_diff(&end, &begin);
+    return diff;
+}
+
+template<class Synchronizer, class F, class... Args>
+static uint64 measure_synchronizer_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
+    // synchronizer.run(f, std::forward<Args>(args)...);
+    uint64 diff = measure_time([&]() {
+        synchronizer.run(f, args...);
+    });
     Globals::deadlock_detector.reset();
 
     synchronizer.assert_okay();
 
-    uint64 diff = clock_diff(&end, &begin);
     return diff;
 }
 
@@ -574,7 +583,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             SequentialSynchronizer seq(matrix);
-            time = measure_time(seq, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
+            time = measure_synchronizer_time(seq, [](auto&& matrix, auto&& m) {
+                heat_cpu(matrix, m);
+            });
             add_time(log, i, time);
         }
 
@@ -589,7 +600,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             AltBitSynchronizer altBit(matrix, nb_threads);
-            time = measure_time(altBit, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
+            time = measure_synchronizer_time(altBit, [](auto&& matrix, auto&& m) {
+                heat_cpu(matrix, m);
+            });
             add_time(log, i, time);
         }
 
@@ -604,7 +617,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             CounterSynchronizer iterationSync(matrix, nb_threads);
-            time = measure_time(iterationSync, std::bind(heat_cpu, std::placeholders::_1, std::placeholders::_2));
+            time = measure_synchronizer_time(iterationSync, [](auto&& matrix, auto&& m) {
+                heat_cpu(matrix, m);
+            });
             add_time(log, i, time);
         }
 
@@ -620,11 +635,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             BlockPromisingSynchronizer blockPromise(matrix, nb_threads);
-            time = measure_time(blockPromise, std::bind(heat_cpu_block_promise, 
-                                                        std::placeholders::_1,
-                                                        std::placeholders::_2,
-                                                        std::placeholders::_3,
-                                                        std::placeholders::_4));
+            time = measure_synchronizer_time(blockPromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_block_promise(matrix, m, dst, src);
+            });
             add_time(log, i, time);
             add_iterations_times_by_thread(iterations_log, i, blockPromise.get_iterations_times_by_thread());
         }
@@ -641,11 +654,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             JLinePromisingSynchronizer jLinePromise(matrix, nb_threads);
-            time = measure_time(jLinePromise, std::bind(heat_cpu_jline_promise,
-                                                        std::placeholders::_1,
-                                                        std::placeholders::_2,
-                                                        std::placeholders::_3,
-                                                        std::placeholders::_4));
+            time = measure_synchronizer_time(jLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_jline_promise(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -660,11 +671,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             IncreasingJLinePromisingSynchronizer increasingJLinePromise(matrix, nb_threads, nb_jlines_for, g::NB_J_LINES_PER_ITERATION);
-            time = measure_time(increasingJLinePromise, std::bind(heat_cpu_increasing_jline_promise,
-                                                                  std::placeholders::_1,
-                                                                  std::placeholders::_2,
-                                                                  std::placeholders::_3,
-                                                                  std::placeholders::_4));
+            time = measure_synchronizer_time(increasingJLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_increasing_jline_promise(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -679,11 +688,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             KLinePromisingSynchronizer kLinePromise(matrix, nb_threads);
-            time = measure_time(kLinePromise, std::bind(heat_cpu_kline_promise,
-                                                        std::placeholders::_1,
-                                                        std::placeholders::_2,
-                                                        std::placeholders::_3,
-                                                        std::placeholders::_4));
+            time = measure_synchronizer_time(kLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_kline_promise(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -698,11 +705,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             IncreasingKLinePromisingSynchronizer increasingKLinePromise(matrix, nb_threads, nb_klines_for, g::NB_K_LINES_PER_ITERATION);
-            time = measure_time(increasingKLinePromise, std::bind(heat_cpu_increasing_kline_promise,
-                                                                  std::placeholders::_1,
-                                                                  std::placeholders::_2,
-                                                                  std::placeholders::_3,
-                                                                  std::placeholders::_4));
+            time = measure_synchronizer_time(increasingKLinePromise, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_increasing_kline_promise(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -719,7 +724,7 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromisePlusSynchronizer<void> jLinePromisePlus(reorderer, nb_threads, builder);
-            time = measure_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
+            time = measure_synchronizer_time(jLinePromisePlus, std::bind(heat_cpu_promise_plus,
                                                             std::placeholders::_1,
                                                             std::placeholders::_2,
                                                             std::placeholders::_3,
@@ -754,11 +759,9 @@ public:
             printf("StaticStep: iteration %d\n", i);
             PromisePlusSynchronizer<void> promisePlusSynchronizer(matrix, nb_threads, builder);
 
-            time = measure_time(promisePlusSynchronizer, std::bind(heat_cpu_promise_plus,
-                                                                      std::placeholders::_1,
-                                                                      std::placeholders::_2,
-                                                                      std::placeholders::_3,
-                                                                      std::placeholders::_4));
+            time = measure_synchronizer_time(promisePlusSynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_promise_plus(matrix, m, dst, src);
+            });
 #ifdef PROMISE_PLUS_ITERATION_TIMER
             add_iterations_times_by_thread(iterations_log, i, promisePlusSynchronizer.get_iterations_times_by_thread());
 #endif
@@ -783,11 +786,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             ArrayOfPromisesSynchronizer arrayOfPromisesSynchronizer(matrix, nb_threads);
-            time = measure_time(arrayOfPromisesSynchronizer, std::bind(heat_cpu_array_of_promises,
-                                                                       std::placeholders::_1,
-                                                                       std::placeholders::_2,
-                                                                       std::placeholders::_3,
-                                                                       std::placeholders::_4));
+            time = measure_synchronizer_time(arrayOfPromisesSynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_array_of_promises(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -802,11 +803,9 @@ public:
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromiseOfArraySynchronizer promiseOfArraySynchronizer(matrix, nb_threads);
-            time = measure_time(promiseOfArraySynchronizer, std::bind(heat_cpu_promise_of_array,
-                                                                         std::placeholders::_1,
-                                                                         std::placeholders::_2,
-                                                                         std::placeholders::_3,
-                                                                         std::placeholders::_4));
+            time = measure_synchronizer_time(promiseOfArraySynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
+                heat_cpu_promise_of_array(matrix, m, dst, src);
+            });
             add_time(log, i, time);
         }
 
@@ -829,13 +828,13 @@ public:
 
         /* {
         AltBitSynchronizer altBitSwitchLoops(n_threads);
-        time = measure_time(altBitSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
+        time = measure_synchronizer_time(altBitSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
         add_time("AltBitSynchronizer", "heat_cpu_switch_loops", time);
         } */
 
         /* {
         CounterSynchronizer iterationSyncSwitchLoops(n_threads);
-        time = measure_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
+        time = measure_synchronizer_time(iterationSyncSwitchLoops, std::bind(heat_cpu_switch_loops, std::placeholders::_1, std::placeholders::_2));
         add_time("CounterSynchronizer", "heat_cpu_switch_loops", time);
         } */
 
