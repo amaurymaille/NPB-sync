@@ -13,7 +13,8 @@ add_executable (sync functions.cpp sync.cpp utils.cpp
                      defines.cpp "${INCREASE_SRC}" 
                      ${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h 
                      active_promise.cpp promise_plus.cpp "${PROMISE_FILES}"
-                     argv.cpp dynamic_config.cpp matrix_core.cpp)
+                     argv.cpp dynamic_config.cpp matrix_core.cpp
+                     lu.cpp)
 
 add_executable (matrix_generator matrix_core.cpp matrix_generator.cpp)
 

@@ -43,6 +43,12 @@ typedef boost::multi_array<int, 4> Matrix;
 typedef Matrix::element MatrixValue;
 // typedef MatrixValue Matrix[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z];
 
+typedef boost::multi_array<float, 2> Matrix2D;
+typedef Matrix2D::element Matrix2DValue;
+
+typedef std::vector<float> Vector1D;
+typedef Vector1D::value_type Vector1DValue;
+
 template<typename T>
 using OptionalReference = std::optional<std::reference_wrapper<T>>;
 
