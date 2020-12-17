@@ -46,12 +46,12 @@ void PassiveNaivePromise<T>::set(int index, T&& value) {
 }
 
 template<typename T>
-void PassiveNaivePromise<T>::set_final(int index, const T& value) {
+void PassiveNaivePromise<T>::set_immediate(int index, const T& value) {
     set_maybe_check(index, value, false);
 }
 
 template<typename T>
-void PassiveNaivePromise<T>::set_final(int index, T&& value) {
+void PassiveNaivePromise<T>::set_immediate(int index, T&& value) {
     set_maybe_check(index, std::move(value), false);
 }
 
@@ -66,12 +66,12 @@ void ActiveNaivePromise<T>::set(int index, T&& value) {
 }
 
 template<typename T>
-void ActiveNaivePromise<T>::set_final(int index, const T& value) {
+void ActiveNaivePromise<T>::set_immediate(int index, const T& value) {
     set_maybe_check(index, value, false);
 }
 
 template<typename T>
-void ActiveNaivePromise<T>::set_final(int index, T&& value) {
+void ActiveNaivePromise<T>::set_immediate(int index, T&& value) {
     set_maybe_check(index, std::move(value), false);
 }
 

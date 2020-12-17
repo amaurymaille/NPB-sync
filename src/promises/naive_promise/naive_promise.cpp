@@ -63,7 +63,7 @@ void PassiveNaivePromise<void>::set(int index) {
     set_maybe_check(index, true);
 }
 
-void PassiveNaivePromise<void>::set_final(int index) {
+void PassiveNaivePromise<void>::set_immediate(int index) {
     set_maybe_check(index, false);
 }
 
@@ -71,7 +71,7 @@ void ActiveNaivePromise<void>::set(int index) {
     set_maybe_check(index, true);
 }
 
-void ActiveNaivePromise<void>::set_final(int index) {
+void ActiveNaivePromise<void>::set_immediate(int index) {
     set_maybe_check(index, false);
 }
 

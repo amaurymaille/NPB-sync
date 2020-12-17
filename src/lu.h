@@ -2,6 +2,7 @@
 #define LU_H
 
 #include "defines.h"
+#include "promise_plus.h"
 
 /** 
  * @brief Compute the LU decomposition of @a matrix

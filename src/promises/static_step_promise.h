@@ -95,8 +95,8 @@ public:
     T& get(int index);
     void set(int index, const T& value);
     void set(int index, T&& value);
-    void set_final(int index, const T& value);
-    void set_final(int index, T&& value);
+    void set_immediate(int index, const T& value);
+    void set_immediate(int index, T&& value);
 
     friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
 
@@ -113,7 +113,7 @@ public:
 
     void get(int index);
     void set(int index);
-    void set_final(int index);
+    void set_immediate(int index);
 
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
     std::tuple<uint64, uint64, uint64> get_debug_data() const {
@@ -142,8 +142,8 @@ public:
     T& get(int index);
     void set(int index, const T& value);
     void set(int index, T&& value);
-    void set_final(int index, const T& value);
-    void set_final(int index, T&& value);
+    void set_immediate(int index, const T& value);
+    void set_immediate(int index, T&& value);
 
     friend PromisePlus<T>* StaticStepPromiseBuilder<T>::new_promise() const;
 
@@ -160,7 +160,7 @@ public:
 
     void get(int index);
     void set(int index);
-    void set_final(int index);
+    void set_immediate(int index);
 
     friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
 

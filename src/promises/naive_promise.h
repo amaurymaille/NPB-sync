@@ -57,8 +57,8 @@ public:
     T& get(int index);
     void set(int index, const T& value);
     void set(int index, T&& value);
-    void set_final(int index, const T& value);
-    void set_final(int index, T&& value);
+    void set_immediate(int index, const T& value);
+    void set_immediate(int index, T&& value);
 
 private:
     void set_maybe_check(int index, const T& value, bool check);
@@ -77,8 +77,8 @@ public:
     T& get(int index);
     void set(int index, const T& value);
     void set(int index, T&& value);
-    void set_final(int index, const T& value);
-    void set_final(int index, T&& value);
+    void set_immediate(int index, const T& value);
+    void set_immediate(int index, T&& value);
 
 private:
     void set_maybe_check(int index, const T& value, bool check);
@@ -96,7 +96,7 @@ public:
 
     void get(int index);
     void set(int index);
-    void set_final(int index);
+    void set_immediate(int index);
 
 private:
     void set_maybe_check(int index, bool check);
@@ -113,7 +113,7 @@ public:
 
     void get(int index);
     void set(int index);
-    void set_final(int index);
+    void set_immediate(int index);
 
 private:
     void set_maybe_check(int index, bool check);

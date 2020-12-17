@@ -48,8 +48,8 @@ public:
     virtual T& get(int index) = 0;
     virtual void set(int index, const T& value) = 0;
     virtual void set(int index, T&& value) = 0;
-    virtual void set_final(int index, const T& value) = 0;
-    virtual void set_final(int index, T&& value) = 0;
+    virtual void set_immediate(int index, const T& value) = 0;
+    virtual void set_immediate(int index, T&& value) = 0;
 
     inline void set_nb_values(int nb_values) {
         _values.resize(nb_values);
@@ -69,7 +69,7 @@ public:
 
     virtual void get(int index) = 0;
     virtual void set(int index) = 0;
-    virtual void set_final(int index) = 0;
+    virtual void set_immediate(int index) = 0;
 };
 
 struct PromisePlusAbstractReadyCheck {

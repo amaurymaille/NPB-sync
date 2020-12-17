@@ -97,7 +97,7 @@ void PassiveStaticStepPromise<T>::set(int index, T&& value) {
 }
 
 template<typename T>
-void ActiveStaticStepPromise<T>::set_final(int index, const T& value) {
+void ActiveStaticStepPromise<T>::set_immediate(int index, const T& value) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
@@ -109,7 +109,7 @@ void ActiveStaticStepPromise<T>::set_final(int index, const T& value) {
 }
 
 template<typename T>
-void PassiveStaticStepPromise<T>::set_final(int index, const T& value) {
+void PassiveStaticStepPromise<T>::set_immediate(int index, const T& value) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
@@ -122,7 +122,7 @@ void PassiveStaticStepPromise<T>::set_final(int index, const T& value) {
 }
 
 template<typename T>
-void ActiveStaticStepPromise<T>::set_final(int index, T&& value) {
+void ActiveStaticStepPromise<T>::set_immediate(int index, T&& value) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);
@@ -133,7 +133,7 @@ void ActiveStaticStepPromise<T>::set_final(int index, T&& value) {
 }
 
 template<typename T>
-void PassiveStaticStepPromise<T>::set_final(int index, T&& value) {
+void PassiveStaticStepPromise<T>::set_immediate(int index, T&& value) {
     // std::unique_lock<StaticStepSetMutex> lck(_base._common._set_m);
 
     _base.assert_free_index_weak(index);

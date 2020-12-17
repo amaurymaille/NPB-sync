@@ -212,10 +212,10 @@ void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
     for (int i = 0; i < lu.size(); ++i) {
         Matrix2DValue sum = 0;
         for (int j = 0; j < i - 1; j++) {
-            sum += lu[i].get(j) * y[j];
+            sum += lu[i]->get(j) * y[j];
         }
 
-        y[i] = (b[i] - sum) / lu[i].get(i);
+        y[i] = (b[i] - sum) / lu[i]->get(i);
     }
 
     // Compute x
@@ -224,14 +224,14 @@ void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
     for (int i = lu.size() - 1; i >= 0; --i) {
         Matrix2DValue sum = 0;
         for (int j = i + 1; j < lu.size(); ++j) {
-            sum += lu[i].get(j) * x[j];
+            sum += lu[i]->get(j) * x[j];
         }
 
-        x[i] = (y[i] - sum) / lu[i].get(i);
+        x[i] = (y[i] - sum) / lu[i]->get(i);
     }
 }
 
-void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
+void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x) {
     std::vector<std::thread> threads;
