@@ -50,7 +50,7 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out) {
 }
 
 void kernel_lu_omp(Matrix2D const& matrix,
-                   std::vector<PromisePlus<Matrix2DValue>>& promises) {
+                   std::vector<PromisePlus<Matrix2DValue>*>& promises) {
 
 /*    std::vector<std::unique_ptr<PromisePlus<int>>> inner_promises(matrix.size());
     for (int i = 0; i < inner_promises.size(); ++i)
@@ -75,14 +75,23 @@ void kernel_lu_omp(Matrix2D const& matrix,
 
             for (int i = k + 1; i < bsize; ++i) {
                 work[i][k] /= work[k][k];
-                promises[i].set(k, work[i][k]);
+                
+                if (i == bsize - 1) {
+                    promises[i]->set_immediate(k, work[i][k]);
+                } else {
+                    promises[i]->set(k, work[i][k]);
+                }
             }
 
             for (int i = k + 1; i < bsize; ++i) {
                 for (int j = k + 1; j < n; ++j) {
                     work[i][j] -= work[i][k] * work[k][j];
                     if (i == k + 1) {
-                        promises[i].set(j, work[i][j]);
+                        if (j == n -1) {
+                            promises[i]->set_immediate(j, work[i][j]); 
+                        } else {
+                            promises[i]->set(j, work[i][j]);
+                        }
                     }
                 }
             }
@@ -96,7 +105,12 @@ void kernel_lu_omp(Matrix2D const& matrix,
             // This is not optimal.
             for (int i = std::max(rank * bsize, row + 1); i < n; ++i) {
                 work[i][row] /= work[row][row];
-                promises[i].set(row, work[i][row]);
+
+                if (i == rank * bsize + bsize - 1) {
+                    promises[i]->set_immediate(row, work[i][row]);
+                } else {
+                    promises[i]->set(row, work[i][row]);
+                }
             }
 
             for (int i = std::max(rank * bsize, row + 1); i < n; ++i) {
@@ -104,7 +118,11 @@ void kernel_lu_omp(Matrix2D const& matrix,
                     work[i][j] -= work[i][row] * work[row][j];
 
                     if (i == std::max(rank * bsize, row + 1)) {
-                        promises[i].set(j, work[i][j]);
+                        if (j == n - 1) {
+                            promises[i]->set_immediate(j, work[i][j]);
+                        } else {
+                            promises[i]->set(j, work[i][j]);
+                        }
                     }
                 }
             }
@@ -119,7 +137,12 @@ void kernel_lu_omp(Matrix2D const& matrix,
             // This is not optimal.
             for (int i = std::max(rank * bsize, row + 1); i < rank * bsize + bsize; ++i) {
                 work[i][row] /= work[row][row];
-                promises[i].set(row, work[i][row]);
+
+                if (i == rank * bsize + bsize - 1) {
+                    promises[i]->set_immediate(row, work[i][row]);
+                } else {
+                    promises[i]->set(row, work[i][row]);
+                }
             }
 
             for (int i = std::max(rank * bsize, row + 1); i < rank * bsize + bsize; ++i) {
@@ -127,7 +150,11 @@ void kernel_lu_omp(Matrix2D const& matrix,
                     work[i][j] -= work[i][row] * work[row][j];
 
                     if (i == std::max(rank * bsize, row + 1)) {
-                        promises[i].set(j, work[i][j]);
+                        if (j == n - 1) {
+                            promises[i]->set_immediate(j, work[i][j]);
+                        } else {
+                            promises[i]->set(j, work[i][j]);
+                        }
                     }
                 }
             }
@@ -179,7 +206,7 @@ void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
         th.join();
 }
 
-void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
+void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
                         Vector1D const& b, Vector1D& x) {
     Vector1D y;
     for (int i = 0; i < lu.size(); ++i) {
@@ -215,13 +242,16 @@ void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>>& lu,
         th.join(); 
 }
 
-void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x) {
+void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
+                          PromisePlusBuilder<Matrix2DValue> const& builder) {
      
 }
 
 void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D>& b, 
-                                         std::vector<Vector1D>& x) {
-
+                                         std::vector<Vector1D>& x,
+                                         PromisePlusBuilder<Matrix2DValue> const& builder
+                                         ) {
+    
 }
 
 void validate_diagonal(Matrix2D const& matrix) {
