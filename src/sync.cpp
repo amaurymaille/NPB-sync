@@ -105,11 +105,11 @@ public:
         #pragma omp barrier
 
         for (int m = 1; m < g::ITERATIONS; m++) {
-            // sync_left(thread_num, n_threads - 1);
+            sync_left(thread_num, n_threads - 1);
 
             f(_matrix, std::forward<Args>(args)..., m);
 
-            // sync_right(thread_num, n_threads - 1);
+            sync_right(thread_num, n_threads - 1);
         }
     }
     }
@@ -263,7 +263,9 @@ public:
     void run(F&& f, Args&&... args) {
         #pragma omp parallel
         {
+#ifdef PROMISE_PLUS_ITERATION_TIMER
             struct timespec thread_begin, thread_end;
+#endif
             int thread_num = omp_get_thread_num();
             int num_threads = omp_get_num_threads();
 

@@ -32,7 +32,6 @@ static void populate_options(po::options_description& options);
 static void process_files(DynamicConfig::Files& files,
                           po::variables_map const& vm);
 static void init_outfile_if(const char* option, po::variables_map const& vm, std::function<void(std::ostream&)> f);
-static void process_extra(DynamicConfig::Extra& extra, po::variables_map const& vm);
 
 void parse_command_line(int argc, char** argv) {
     DynamicConfig& config = DynamicConfig::_instance();
