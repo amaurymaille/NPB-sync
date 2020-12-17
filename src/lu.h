@@ -25,7 +25,7 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out);
  *
  * Result is stored in the promises in @a promises.
  */
-void kernel_lu_omp(Matrix2D const& matrix,
+void kernel_lu_omp_pp(Matrix2D const& matrix,
                    std::vector<PromisePlus<Matrix2DValue>*>& promises);
 
 /**

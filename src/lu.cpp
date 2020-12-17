@@ -10,8 +10,11 @@
 
 static void validate_diagonal(Matrix2D const& matrix);
 static void prepare_output(Matrix2D const& matrix, Matrix2D& out);
-
 static void validate_diagonal_and_prepare_output(Matrix2D const& matrix, Matrix2D& out);
+
+static void init_promise_plus_vector(Matrix2D const& matrix,
+    std::vector<PromisePlus<Matrix2DValue>*>& promises,
+    PromisePlusBuilder<Matrix2DValue> const& builder);
 
 void kernel_lu(Matrix2D const& matrix, Matrix2D& out) {
     validate_diagonal_and_prepare_output(matrix, out);
@@ -49,8 +52,8 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out) {
     }
 }
 
-void kernel_lu_omp(Matrix2D const& matrix,
-                   std::vector<PromisePlus<Matrix2DValue>*>& promises) {
+void kernel_lu_omp_pp(Matrix2D const& matrix,
+                      std::vector<PromisePlus<Matrix2DValue>*>& promises) {
 
 /*    std::vector<std::unique_ptr<PromisePlus<int>>> inner_promises(matrix.size());
     for (int i = 0; i < inner_promises.size(); ++i)
@@ -244,14 +247,27 @@ void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
 
 void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
                           PromisePlusBuilder<Matrix2DValue> const& builder) {
-     
+    std::vector<PromisePlus<Matrix2DValue>*> promises;
+    init_promise_plus_vector(a, promises, builder);
+
+    std::thread lu(kernel_lu_omp_pp, std::cref(a), std::ref(promises));
+    std::thread solver(kernel_lu_solve_pp, std::ref(promises), std::cref(b), std::ref(x));
+
+    lu.join();
+    solver.join();     
 }
 
 void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D>& b, 
                                          std::vector<Vector1D>& x,
                                          PromisePlusBuilder<Matrix2DValue> const& builder
                                          ) {
-    
+    std::vector<PromisePlus<Matrix2DValue>*> promises; 
+    init_promise_plus_vector(a, promises, builder);
+
+    std::thread lu(kernel_lu_omp_pp, std::cref(a), std::ref(promises));
+    kernel_lu_solve_n_pp(promises, b, x);
+
+    lu.join();
 }
 
 void validate_diagonal(Matrix2D const& matrix) {
@@ -276,3 +292,9 @@ void validate_diagonal_and_prepare_output(Matrix2D const& matrix, Matrix2D& out)
     prepare_output(matrix, out);
 }
 
+void init_promise_plus_vector(Matrix2D const& matrix,
+    std::vector<PromisePlus<Matrix2DValue>*>& promises,
+    PromisePlusBuilder<Matrix2DValue> const& builder) {
+    for (int i = 0; i < matrix.size(); ++i)
+        promises.push_back(builder.new_promise());
+}
