@@ -32,17 +32,27 @@ static void process_options(po::variables_map vm, Args& args);
 static void generate_matrices(Args& args);
 static void generate_start_matrix(Matrix& result, uint64 nb_elements, const std::string& output_file);
 static void generate_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
+// static void 
 static std::ofstream open_out_file(const std::string& output_file);
 static uint64 clock_diff(const struct timespec& end, const struct timespec& begin);
 
 void parse_command_line(int argc, char** argv, Args& args) {
-    po::options_description options("All options");
-    options.add_options()
+    po::options_description base_options("Base options");
+    base_options.add_options()
         ("help,h", "Display this help and exit")
         (o::start_matrix_file, po::value<std::string>(), "Path to the output file for the start matrix")
         (o::compute_matrix_file, po::value<std::string>(), "Path to the output file for the computed matrix")
         (o::parameters_file, po::value<std::string>(), "Path to the JSON file that contains the parameters of the matrix")
         ;
+
+    po::options_description programs("Program choice");
+    programs.add_options()
+        ("base", "heat_cpu program")
+        ("lu", "LU solver")
+        ;
+
+    po::options_description options("All options");
+    options.add(base_options).add(programs);
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
