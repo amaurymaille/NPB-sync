@@ -2,11 +2,12 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/config.h" COMMAND python3
 add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h" COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/generate_dynamic_defines.py -f "${CMAKE_SOURCE_DIR}/src/dynamic_defines.h")
 
 file (GLOB PROMISE_FILES promises/*/*.cpp promises/*/*.tpp)
-add_executable (sync functions.cpp sync.cpp utils.cpp
+file (GLOB FUNCTIONS_FILES functions/*.cpp)
+add_executable (sync sync.cpp utils.cpp
                 ${CMAKE_CURRENT_SOURCE_DIR}/config.h logging.cpp defines.cpp
                 ${CMAKE_CURRENT_SOURCE_DIR}/dynamic_defines.h 
                 promise_plus.cpp "${PROMISE_FILES}" argv.cpp dynamic_config.cpp 
-                matrix_core.cpp lu.cpp)
+                matrix_core.cpp "${FUNCTIONS_FILES}")
 
 add_executable (matrix_generator matrix_core.cpp matrix_generator.cpp)
 

@@ -27,7 +27,7 @@
 #include "config.h"
 #include "defines.h"
 #include "dynamic_config.h"
-#include "functions.h"
+#include "functions/heat_cpu.h"
 #include "logging.h"
 #include "naive_promise.h"
 #include "promise_plus.h"

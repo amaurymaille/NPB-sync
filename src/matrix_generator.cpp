@@ -16,23 +16,31 @@ struct Args {
     std::string start_matrix_filename;
     std::string compute_matrix_filename;
     std::string parameters_filename;
+    std::string program;
 };
 
 namespace Options {
     static const char* start_matrix_file  = "start-matrix-file";
     static const char* compute_matrix_file = "compute-matrix-file";
     static const char* parameters_file = "parameters-file";
+
+    namespace Programs {
+        static const char* base = "base";
+        static const char* lu = "lu";
+    }
 }
 
 namespace po = boost::program_options;
 namespace o = Options;
+namespace prg = o::Programs;
 
 static void parse_command_line(int argc, char** argv, Args& args);
 static void process_options(po::variables_map vm, Args& args);
-static void generate_matrices(Args& args);
-static void generate_start_matrix(Matrix& result, uint64 nb_elements, const std::string& output_file);
-static void generate_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
-// static void 
+static void generate_heat_cpu_matrices(Args& args);
+static void generate_heat_cpu_start_matrix(Matrix& result, uint64 nb_elements, const std::string& output_file);
+static void generate_heat_cpu_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
+static void abort_on_invalid_program(po::variables_map const& vm);
+static void set_program(po::variables_map const& vm, Args& args);
 static std::ofstream open_out_file(const std::string& output_file);
 static uint64 clock_diff(const struct timespec& end, const struct timespec& begin);
 
@@ -47,8 +55,8 @@ void parse_command_line(int argc, char** argv, Args& args) {
 
     po::options_description programs("Program choice");
     programs.add_options()
-        ("base", "heat_cpu program")
-        ("lu", "LU solver")
+        (prg::base, "heat_cpu program")
+        (prg::lu, "LU solver")
         ;
 
     po::options_description options("All options");
@@ -75,12 +83,15 @@ void process_options(po::variables_map vm, Args& args) {
         throw std::runtime_error(str.str());
     }
 
+    abort_on_invalid_program(vm);
+
     args.start_matrix_filename = vm[o::start_matrix_file].as<std::string>();
     args.compute_matrix_filename = vm[o::compute_matrix_file].as<std::string>();
     args.parameters_filename = vm[o::parameters_file].as<std::string>();
+    set_program(vm, args);
 }
 
-void generate_matrices(Args& args) {
+void generate_heat_cpu_matrices(Args& args) {
     std::ifstream in(args.parameters_filename);
     if (!in) {
         std::ostringstream err;
@@ -107,7 +118,7 @@ void generate_matrices(Args& args) {
            check_compute_begin, check_compute_end;
 
     clock_gettime(CLOCK_MONOTONIC, &generate_start_begin);
-    generate_start_matrix(matrix, data["nb_elements"], args.start_matrix_filename);
+    generate_heat_cpu_start_matrix(matrix, data["nb_elements"], args.start_matrix_filename);
     clock_gettime(CLOCK_MONOTONIC, &generate_start_end);
 
     clock_gettime(CLOCK_MONOTONIC, &load_start_begin);
@@ -130,7 +141,7 @@ void generate_matrices(Args& args) {
     std::cout << std::endl << std::endl;
 
     clock_gettime(CLOCK_MONOTONIC, &generate_compute_begin);
-    generate_computed_matrix(matrix, data["nb_elements"], data["w"], data["x"], data["y"], data["z"], args.compute_matrix_filename);
+    generate_heat_cpu_computed_matrix(matrix, data["nb_elements"], data["w"], data["x"], data["y"], data["z"], args.compute_matrix_filename);
     clock_gettime(CLOCK_MONOTONIC, &generate_compute_end);
 
     clock_gettime(CLOCK_MONOTONIC, &load_compute_begin);
@@ -164,7 +175,7 @@ void generate_matrices(Args& args) {
     fn("Check compute", check_compute_end, check_compute_begin);
 }
 
-void generate_start_matrix(Matrix& matrix, uint64 nb_elements, const std::string& output_file) {
+void generate_heat_cpu_start_matrix(Matrix& matrix, uint64 nb_elements, const std::string& output_file) {
     std::ofstream out = open_out_file(output_file);
     Matrix::element* ptr = matrix.data();
 
@@ -173,7 +184,7 @@ void generate_start_matrix(Matrix& matrix, uint64 nb_elements, const std::string
     std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix::element>(out, " "));
 }
 
-void generate_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file) {
+void generate_heat_cpu_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file) {
     std::ofstream out = open_out_file(output_file);
     Matrix::element* ptr = start.data();
 
@@ -198,9 +209,38 @@ uint64 clock_diff(const struct timespec& end, const struct timespec& begin) {
     return diff;
 }
 
+void abort_on_invalid_program(po::variables_map const& vm) {
+    int count = 0;
+    count += vm.count("base");
+    count += vm.count("lu");
+
+    if (count != 1) {
+        if (count == 0) {
+            throw std::runtime_error("One program option must be specified !");
+        } else {
+            throw std::runtime_error("Only one program option can be specified !");
+        }
+    }
+}
+
+void set_program(const po::variables_map& vm, Args& args) {
+    auto extract_program = [&](const std::string& str) {
+        if (vm.count(str)) {
+            args.program = str;
+            return true;
+        }
+
+        return false;
+    };
+
+    if (!extract_program(prg::base) && !extract_program(prg::lu)) {
+        throw std::runtime_error("One program option must be specified. How did you arrive here anyway ?");
+    }
+}
+
 int main(int argc, char** argv) {
     Args args;
     parse_command_line(argc, argv, args);
-    generate_matrices(args);
+    generate_heat_cpu_matrices(args);
     return 0;
 }

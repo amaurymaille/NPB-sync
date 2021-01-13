@@ -16,7 +16,7 @@
 #include <omp.h>
 
 #include "dynamic_config.h"
-#include "functions.h"
+#include "functions/heat_cpu.h"
 #include "matrix_core.h"
 #include "utils.h"
 

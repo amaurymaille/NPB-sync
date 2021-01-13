@@ -6,7 +6,7 @@
 #include <omp.h>
 
 #include "config.h"
-#include "functions.h"
+#include "heat_cpu.h"
 #include "matrix_core.h"
 #include "naive_promise.h"
 #include "promise_plus.h"

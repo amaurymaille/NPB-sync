@@ -64,6 +64,17 @@ void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x);
 
+// Sequential
+void kernel_lu_combine(Matrix2D& a, Vector1D const& b, Vector1D& x);
+// N Sequential
+void kernel_lu_combine_n(Matrix2D& a, std::vector<Vector1D> const& b,
+                                      std::vector<Vector1D>& x);
+
+// OpenMP
+void kernel_lu_combine_omp(Matrix2D& a, Vector1D const& b, Vector1D& x);
+// N OpenMP
+void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
+                                          std::vector<Vector1D>& x);
 /**
  * @brief Compute the solution of Ax = b through LU factorization
  *

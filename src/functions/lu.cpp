@@ -4,9 +4,12 @@
 
 #include <omp.h>
 
+#include "dynamic_defines.h"
 #include "fifo.h"
 #include "lu.h"
 #include "promise_plus.h"
+
+namespace g = Globals;
 
 static void validate_diagonal(Matrix2D const& matrix);
 static void prepare_output(Matrix2D const& matrix, Matrix2D& out);
@@ -20,13 +23,13 @@ void kernel_lu(Matrix2D const& matrix, Matrix2D& out) {
     validate_diagonal_and_prepare_output(matrix, out);
 
     // LU
-    for (int k = 0; k < matrix.size(); ++k) {
-        for (int i = k + 1; i < matrix.size(); ++i) {
+    for (int k = 0; k < g::LU::DIM; ++k) {
+        for (int i = k + 1; i < g::LU::DIM; ++i) {
             out[i][k] /= out[k][k];
         }
 
-        for (int i = k + 1; i < matrix.size(); ++i) {
-            for (int j = k + 1; j < matrix.size(); ++j) {
+        for (int i = k + 1; i < g::LU::DIM; ++i) {
+            for (int j = k + 1; j < g::LU::DIM; ++j) {
                 out[i][j] -= out[i][k] * out[k][j];
             }
         }
@@ -37,15 +40,15 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out) {
     validate_diagonal_and_prepare_output(matrix, out);
 
     // LU
-    for (int k = 0; k < matrix.size(); ++k) {
+    for (int k = 0; k < g::LU::DIM; ++k) {
         #pragma omp parallel for
-        for (int i = k + 1; i < matrix.size(); ++i) {
+        for (int i = k + 1; i < g::LU::DIM; ++i) {
             out[i][k] /= out[k][k];
         }
 
         #pragma omp parallel for
-        for (int i = k + 1; i < matrix.size(); ++i) {
-            for (int j = k + 1; j < matrix.size(); ++j) {
+        for (int i = k + 1; i < g::LU::DIM; ++i) {
+            for (int j = k + 1; j < g::LU::DIM; ++j) {
                 out[i][j] -= out[i][k] * out[k][j];
             }
         }
@@ -61,7 +64,7 @@ void kernel_lu_omp_pp(Matrix2D const& matrix,
 */
     validate_diagonal(matrix);
 
-    const size_t n = matrix.size();
+    constexpr const size_t n = g::LU::DIM;
     Matrix2D work(boost::extents[n][n]);
     memcpy(work.data(), matrix.data(), sizeof(Matrix2DValue) * n * n);
     std::vector<fifo<int>> indices(n);
@@ -244,6 +247,45 @@ void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
     for (auto& th: threads)
         th.join(); 
 }
+
+void kernel_lu_combine(Matrix2D& a, Vector1D const& b, Vector1D& x) {
+    Matrix2D res;
+    kernel_lu(a, res);
+    kernel_lu_solve(res, b, x);
+}
+
+void kernel_lu_combine_n(Matrix2D& a, std::vector<Vector1D> const& b,
+                                      std::vector<Vector1D>& x) {
+    Matrix2D res;
+    kernel_lu(a, res);
+
+    for (int i = 0; i < b.size(); ++i) {
+        kernel_lu_solve(res, b[i], x[i]);
+    }
+}
+
+void kernel_lu_combine_omp(Matrix2D& a, Vector1D const& b, Vector1D& x) {
+    Matrix2D res;
+
+    kernel_lu_omp(a, res);
+    kernel_lu_solve(res, b, x);
+}
+
+void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
+                                          std::vector<Vector1D>& x) {
+    Matrix2D res;
+    std::vector<std::thread> threads;
+
+    kernel_lu_omp(a, res);
+    for (int i = 0; i < b.size(); ++i) {
+        threads.push_back(std::thread(kernel_lu_solve, std::cref(res), std::cref(b[i]), std::ref(x[i])));
+    }
+
+    for (std::thread& th: threads) {
+        th.join();
+    }
+}
+
 
 void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
                           PromisePlusBuilder<Matrix2DValue> const& builder) {
