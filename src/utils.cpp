@@ -27,7 +27,7 @@ namespace Globals {
 
 /* void init_matrix(double* ptr) {
     namespace g = Globals;
-    for (size_t i = 0; i < g::NB_ELEMENTS; ++i) {
+    for (size_t i = 0; i < g::HeatCPU::NB_ELEMENTS; ++i) {
         ptr[i] = double(i % 10);
     }
 } */
@@ -36,10 +36,10 @@ void init_reordered_matrix(Matrix& matrix) {
     namespace g = Globals;
 
     size_t value = 0;
-    for (int i = 0; i < g::DIM_W; ++i) {
-        for (int j = 0; j < g::DIM_X; ++j) {
-            for (int k = 0; k < g::DIM_Y; ++k) {
-                for (int l = 0; l < g::DIM_Z; ++l) {
+    for (int i = 0; i < g::HeatCPU::DIM_W; ++i) {
+        for (int j = 0; j < g::HeatCPU::DIM_X; ++j) {
+            for (int k = 0; k < g::HeatCPU::DIM_Y; ++k) {
+                for (int l = 0; l < g::HeatCPU::DIM_Z; ++l) {
                     matrix[i][l][k][j] = value % 10;
                     value++;
                 }
@@ -57,10 +57,10 @@ void assert_okay_init(Matrix const& matrix) {
 } */
 
 void assert_okay_reordered_compute() {
-    for (int i = 0; i < g::DIM_W; ++i) {
-        for (int j = 0; j < g::DIM_X; ++j) {
-            for (int k = 0; k < g::DIM_Y; ++k) {
-                for (int l = 0; l < g::DIM_Z; ++l) {
+    for (int i = 0; i < g::HeatCPU::DIM_W; ++i) {
+        for (int j = 0; j < g::HeatCPU::DIM_X; ++j) {
+            for (int k = 0; k < g::HeatCPU::DIM_Y; ++k) {
+                for (int l = 0; l < g::HeatCPU::DIM_Z; ++l) {
                     assert((*g_expected_matrix)(i, j, k, l) == (*g_expected_reordered_matrix)(i, j, k, l));
                 }
             }
@@ -109,13 +109,13 @@ uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
 }
 
 void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs) {
-    if (memcmp(lhs.data(), rhs.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue)) != 0) {
+    if (memcmp(lhs.data(), rhs.data(), Globals::HeatCPU::NB_ELEMENTS * sizeof(MatrixValue)) != 0) {
         throw std::runtime_error("Matrix not equals");
     }
 }
 
 void init_matrix_from(Matrix& matrix, Matrix const& src) {
-    memcpy(matrix.data(), src.data(), Globals::NB_ELEMENTS * sizeof(MatrixValue));
+    memcpy(matrix.data(), src.data(), Globals::HeatCPU::NB_ELEMENTS * sizeof(MatrixValue));
 }
 
 void init_start_matrix_once() {
@@ -123,7 +123,7 @@ void init_start_matrix_once() {
     if (start_matrix_filename_opt) {
         init_start_matrix_from_file(start_matrix_filename_opt.value());
     } else {
-        init_matrix(g_start_matrix, Globals::NB_ELEMENTS);
+        init_matrix(g_start_matrix, Globals::HeatCPU::NB_ELEMENTS);
     }
 }
 
@@ -151,8 +151,8 @@ void init_expected_matrix_once() {
         const std::string& filename = input_matrix_filename_opt.value();
         init_expected_matrix_once_from_file(filename);
     } else {
-        compute_matrix(g_expected_matrix, g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
-        /* for (int i = 1; i < Globals::ITERATIONS; ++i) {
+        compute_matrix(g_expected_matrix, g::HeatCPU::DIM_W, g::HeatCPU::DIM_X, g::HeatCPU::DIM_Y, g::HeatCPU::DIM_Z);
+        /* for (int i = 1; i < Globals::HeatCPU::ITERATIONS; ++i) {
             heat_cpu_naive(g_expected_matrix, i);
         } */
     }
@@ -174,7 +174,7 @@ void init_matrix_from_file(Matrix::element* ptr, const std::string& filename) {
 }
 
 /*void init_expected_reordered_matrix_once() {
-    for (int i = 1; i < Globals::ITERATIONS; ++i) {
+    for (int i = 1; i < Globals::HeatCPU::ITERATIONS; ++i) {
         heat_cpu_naive(*g_expected_reordered_matrix, i);
     }
 } */

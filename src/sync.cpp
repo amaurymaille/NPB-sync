@@ -39,12 +39,12 @@ using Clock = std::chrono::system_clock;
 using json = nlohmann::json;
 namespace g = Globals;
 
-Matrix g_start_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-Matrix g_expected_matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
-// MatrixReorderer* g_expected_matrix = new StandardMatrixReorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+Matrix g_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+Matrix g_expected_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+// MatrixReorderer* g_expected_matrix = new StandardMatrixReorderer(g::HeatCPU::DIM_W, g::HeatCPU::DIM_X, g::HeatCPU::DIM_Y, g::HeatCPU::DIM_Z);
 
-// Matrix g_reordered_start_matrix(boost::extents[g::DIM_W][g::DIM_Z][g::DIM_Y][g::DIM_X]);
-// MatrixReorderer* g_expected_reordered_matrix = new JLinePromiseMatrixReorderer(g::DIM_W, g::DIM_X, g::DIM_Y, g::DIM_Z);
+// Matrix g_reordered_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_Z][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_X]);
+// MatrixReorderer* g_expected_reordered_matrix = new JLinePromiseMatrixReorderer(g::HeatCPU::DIM_W, g::HeatCPU::DIM_X, g::HeatCPU::DIM_Y, g::HeatCPU::DIM_Z);
 
 class Synchronizer {
 protected:
@@ -73,7 +73,7 @@ public:
 
     template<typename F, typename... Args>
     void run(F&& f, Args&&... args) {
-        for (int m = 1; m < Globals::ITERATIONS; ++m) {
+        for (int m = 1; m < Globals::HeatCPU::ITERATIONS; ++m) {
             f(_matrix, std::forward<Args>(args)..., m);
         }   
     }
@@ -104,7 +104,7 @@ public:
 
         #pragma omp barrier
 
-        for (int m = 1; m < g::ITERATIONS; m++) {
+        for (int m = 1; m < g::HeatCPU::ITERATIONS; m++) {
             sync_left(thread_num, n_threads - 1);
 
             f(_matrix, std::forward<Args>(args)..., m);
@@ -181,7 +181,7 @@ public:
 
         #pragma omp barrier
 
-        for (int m = 1; m < g::ITERATIONS; ++m) {
+        for (int m = 1; m < g::HeatCPU::ITERATIONS; ++m) {
             sync_left(thread_num, n_threads - 1, m);
 
             f(_matrix, std::forward<Args>(args)..., m);
@@ -229,7 +229,7 @@ private:
     std::vector<std::atomic<unsigned int>> _isync;
 };
 
-typedef std::array<std::vector<uint64>, g::ITERATIONS> IterationTimeByThreadStore;
+typedef std::array<std::vector<uint64>, g::HeatCPU::ITERATIONS> IterationTimeByThreadStore;
 
 template<typename T>
 class PromisePlusSynchronizer : public Synchronizer {
@@ -239,13 +239,13 @@ public:
         _promise_plus_debug_data = json::array();
 #endif
 
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             for (int j = 0; j < n_threads; j++)
                 _promises_store[i].push_back(builder.new_promise());
         }
 
 #ifdef PROMISE_PLUS_ITERATION_TIMER
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             _times_by_thread[i].resize(n_threads);
         }
 #endif 
@@ -269,7 +269,7 @@ public:
             int thread_num = omp_get_thread_num();
             int num_threads = omp_get_num_threads();
 
-            for (int i = 1; i < g::ITERATIONS; ++i) {
+            for (int i = 1; i < g::HeatCPU::ITERATIONS; ++i) {
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
@@ -305,14 +305,14 @@ public:
 #endif
 
 private: 
-    std::array<PromisePlusContainer, g::ITERATIONS> _promises_store;
+    std::array<PromisePlusContainer, g::HeatCPU::ITERATIONS> _promises_store;
 #ifdef PROMISE_PLUS_ITERATION_TIMER
     IterationTimeByThreadStore _times_by_thread;
 #endif
 
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
     void gather_promise_plus_datas() {
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             for (int j = 0; j < _promises_store[i].size(); ++j) {
                 ActiveStaticStepPromise<T>* promise = static_cast<ActiveStaticStepPromise<T>*>(_promises_store[i][j]);
                 auto [wait, strong, weak] = promise->get_debug_data();
@@ -344,17 +344,17 @@ private:
 class ArrayOfPromisesSynchronizer : public Synchronizer {
 public:
     ArrayOfPromisesSynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
-                // _promises_store[i][j] = new std::promise<void>[Globals::DIM_Y];
-                _promises_store[i][j] = new NaivePromise<void>[Globals::DIM_Y];
+                // _promises_store[i][j] = new std::promise<void>[Globals::HeatCPU::DIM_Y];
+                _promises_store[i][j] = new NaivePromise<void>[Globals::HeatCPU::DIM_Y];
             }
         }
     }
 
     ~ArrayOfPromisesSynchronizer() {
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             for (int j = 0; j < _promises_store[i].size(); ++j) {
                 delete[] _promises_store[i][j];
             }
@@ -368,7 +368,7 @@ public:
             int thread_num = omp_get_thread_num();
             int num_threads = omp_get_num_threads();
 
-            for (int i = 1; i < g::ITERATIONS; ++i) {
+            for (int i = 1; i < g::HeatCPU::ITERATIONS; ++i) {
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
@@ -378,13 +378,13 @@ public:
     }
 
 private:
-    std::array<ArrayOfPromisesContainer, g::ITERATIONS> _promises_store;
+    std::array<ArrayOfPromisesContainer, g::HeatCPU::ITERATIONS> _promises_store;
 };
 
 class PromiseOfArraySynchronizer : public Synchronizer {
 public:
     PromiseOfArraySynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
-        for (int i = 0; i < g::ITERATIONS; ++i) {
+        for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
                 _promises_store[i][j] = new NaivePromise<void>();
@@ -399,7 +399,7 @@ public:
             int thread_num = omp_get_thread_num();
             int num_threads = omp_get_num_threads();
 
-            for (int i = 1; i < g::ITERATIONS; ++i) {
+            for (int i = 1; i < g::HeatCPU::ITERATIONS; ++i) {
                 auto src = thread_num != 0 ? std::make_optional(_promises_store[i]) : std::nullopt;
                 auto dst = thread_num != num_threads - 1 ? std::make_optional(_promises_store[i]) : std::nullopt;
 
@@ -409,7 +409,7 @@ public:
     }
 
 private:
-    std::array<PromiseOfArrayContainer, g::ITERATIONS> _promises_store;
+    std::array<PromiseOfArrayContainer, g::HeatCPU::ITERATIONS> _promises_store;
 };
 
 template<typename F, typename... Args>
@@ -498,7 +498,7 @@ public:
     void run_sequential(unsigned int nb_iterations) {
         uint64 time = 0;
         TimeLog log("Sequential", "heat_cpu");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             SequentialSynchronizer seq(matrix);
@@ -515,7 +515,7 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("AltBit", "heat_cpu");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             AltBitSynchronizer altBit(matrix, nb_threads);
@@ -532,7 +532,7 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("Counter", "heat_cpu");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             CounterSynchronizer iterationSync(matrix, nb_threads);
@@ -553,9 +553,9 @@ public:
 
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
          
-        StaticStepPromiseBuilder<void> builder(Globals::DIM_Y, step, nb_threads);
+        StaticStepPromiseBuilder<void> builder(Globals::HeatCPU::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             printf("StaticStep: iteration %d\n", i);
@@ -584,7 +584,7 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("ArrayOfPromises", "array_of_promises");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             ArrayOfPromisesSynchronizer arrayOfPromisesSynchronizer(matrix, nb_threads);
@@ -601,7 +601,7 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("PromiseOfArray", "promise_of_array");
-        Matrix matrix(boost::extents[g::DIM_W][g::DIM_X][g::DIM_Y][g::DIM_Z]);
+        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             PromiseOfArraySynchronizer promiseOfArraySynchronizer(matrix, nb_threads);
@@ -792,10 +792,10 @@ void log_general_data(std::ostream& out) {
     namespace g = Globals;
 
     json data;
-    data["w"] = g::DIM_W;
-    data["x"] = g::DIM_X;
-    data["y"] = g::DIM_Y;
-    data["z"] = g::DIM_Z;
+    data["w"] = g::HeatCPU::DIM_W;
+    data["x"] = g::HeatCPU::DIM_X;
+    data["y"] = g::HeatCPU::DIM_Y;
+    data["z"] = g::HeatCPU::DIM_Z;
     
     std::ifstream stream(sDynamicConfigFiles.get_simulations_filename());
     json simu;
