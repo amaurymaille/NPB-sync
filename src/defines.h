@@ -39,9 +39,8 @@ typedef uint64_t uint64;
 
 namespace g = Globals;
 
-typedef boost::multi_array<int, 4> Matrix;
-typedef Matrix::element MatrixValue;
-// typedef MatrixValue Matrix[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z];
+typedef boost::multi_array<int, 4> Matrix4D;
+typedef Matrix4D::element Matrix4DValue;
 
 typedef boost::multi_array<float, 2> Matrix2D;
 typedef Matrix2D::element Matrix2DValue;

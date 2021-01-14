@@ -21,13 +21,20 @@ namespace Options {
     namespace Standard {
         static const char* description = "description";
     }
+
+    namespace Programs {
+        static const char* heat_cpu = "heat-cpu";
+        static const char* lu = "lu";
+    }
 }
 
 namespace po = boost::program_options;
 namespace f = Options::Files;
 namespace ostd = Options::Standard;
+namespace prg = Options::Programs;
 
 static void process_standard(DynamicConfig& config, po::variables_map const& vm);
+static void process_program(DynamicConfig& config, po::variables_map const& vm);
 static void populate_options(po::options_description& options);
 static void process_files(DynamicConfig::Files& files,
                           po::variables_map const& vm);
@@ -50,6 +57,7 @@ void parse_command_line(int argc, char** argv) {
         exit(1);
     }
 
+    process_program(config, vm);
     process_files(config._files, vm);
     process_standard(config, vm);
 }
@@ -67,7 +75,13 @@ void populate_options(po::options_description& options) {
         (ostd::description, po::value<std::string>(), "Description of the simulation")
         ;
 
-    options.add(generic);
+    po::options_descriptions programs("Programs");
+    programs.add_options()
+        (prg::heat_cpu, "Heat CPU program")
+        (prg::lu, "LU program")
+        ;
+
+    options.add(generic).add(programs);
 }
 
 void process_files(DynamicConfig::Files& files,
@@ -99,5 +113,11 @@ void process_standard(DynamicConfig& config, po::variables_map const& vm) {
         config._std._description = vm[ostd::description].as<std::string>();
     } else {
         throw std::runtime_error("[Argument Processing] Description parameter required");
+    }
+}
+
+void process_program(DynamicConfig& config, po::variables_map const& vm) {
+    if (vm.count(prg::base)) {
+        config._program = 
     }
 }

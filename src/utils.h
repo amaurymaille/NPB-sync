@@ -86,21 +86,16 @@ void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs);
 void init_reordered_matrix(Matrix& matrix);
 
 void assert_okay_init(Matrix const& matrix);
-void assert_okay_reordered_init(Matrix const& matrix);
-void assert_okay_reordered_compute();
 
 void init_from(Matrix&, const Matrix&);
 
 void init_start_matrix_once();
 void init_start_matrix_from_file(const std::string& filename);
-void init_reordered_start_matrix_once();
 
 void init_from_start_matrix(Matrix&);
-void init_from_reordered_start_matrix(Matrix&);
 
 void init_expected_matrix_once();
 void init_expected_matrix_once_from_file(const std::string& filename);
-void init_expected_reordered_matrix_once();
 
 void init_matrix_from_file(Matrix::element* ptr, const std::string& filename);
 

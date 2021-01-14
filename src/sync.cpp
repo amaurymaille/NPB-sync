@@ -39,26 +39,20 @@ using Clock = std::chrono::system_clock;
 using json = nlohmann::json;
 namespace g = Globals;
 
-Matrix g_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
-Matrix g_expected_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
-// MatrixReorderer* g_expected_matrix = new StandardMatrixReorderer(g::HeatCPU::DIM_W, g::HeatCPU::DIM_X, g::HeatCPU::DIM_Y, g::HeatCPU::DIM_Z);
+// Matrix g_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+// Matrix g_expected_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
-// Matrix g_reordered_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_Z][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_X]);
-// MatrixReorderer* g_expected_reordered_matrix = new JLinePromiseMatrixReorderer(g::HeatCPU::DIM_W, g::HeatCPU::DIM_X, g::HeatCPU::DIM_Y, g::HeatCPU::DIM_Z);
-
+template<typename M>
 class Synchronizer {
 protected:
     Synchronizer(Matrix& matrix) : _matrix(matrix) {
         init_from_start_matrix(_matrix);
-        // _matrix.init();
         assert_matrix_equals(_matrix, g_start_matrix);
-        // _matrix.assert_okay_init();
     }
     
 public:
     void assert_okay() {
         assert_matrix_equals(_matrix, g_expected_matrix);
-        // _matrix.assert_okay_compute();
     }
 
 protected:
