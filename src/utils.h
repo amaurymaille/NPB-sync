@@ -80,26 +80,16 @@ uint64 now_as_ns();
 // Add the leading zeros to ns
 std::string ns_with_leading_zeros(uint64 ns);
 
-void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs);
-
-// void init_matrix(double* ptr);
-void init_reordered_matrix(Matrix& matrix);
-
-void assert_okay_init(Matrix const& matrix);
-
-void init_from(Matrix&, const Matrix&);
-
-void init_start_matrix_once();
-void init_start_matrix_from_file(const std::string& filename);
-
-void init_from_start_matrix(Matrix&);
-
-void init_expected_matrix_once();
-void init_expected_matrix_once_from_file(const std::string& filename);
-
-void init_matrix_from_file(Matrix::element* ptr, const std::string& filename);
-
 unsigned int omp_nb_threads();
+
+template<typename Matrix>
+bool same_shape(const Matrix& lhs, const Matrix& rhs) {
+    size_t dims = Matrix::dimensionality;
+    auto lhs_shape = lhs.shape();
+    auto rhs_shape = rhs.shape();
+
+    return ! memcmp(lhs_shape, rhs_shape, sizeof(typename Matrix::size_type) * dims);
+}
 
 #include "utils.tpp"
 

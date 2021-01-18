@@ -317,7 +317,7 @@ void validate_diagonal(Matrix2D const& matrix) {
     for (int i = 0; i < matrix.size(); ++i) {
         if (matrix[i][i] == 0) {
             std::ostringstream stream;
-            stream << "[ERROR] LU: Matrix (" << i << ", " << i << ") is 0" << std::endl;
+            stream << "[ERROR] LU: Matrix4D (" << i << ", " << i << ") is 0" << std::endl;
             throw std::runtime_error(stream.str());
         }
     }

@@ -5,7 +5,6 @@
 
 #include <omp.h>
 
-#include "dynamic_defines.h"
 #include "promises/static_step_promise.h"
 
 // -----------------------------------------------------------------------------

@@ -21,7 +21,7 @@ set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-sign-compare ${OpenMP_CXX_FLAGS} ${CMAKE_THREAD_LIBS_INIT}")
 add_definitions ("${CMAKE_ADDITIONAL_DEFINITIONS}")
 
-include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}" lib/ src/)
+include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}" lib/ lib/json/include src/)
 
 add_subdirectory (src)
 

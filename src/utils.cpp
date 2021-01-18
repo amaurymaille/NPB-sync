@@ -16,7 +16,6 @@
 #include <omp.h>
 
 #include "dynamic_config.h"
-#include "functions/heat_cpu.h"
 #include "matrix_core.h"
 #include "utils.h"
 
@@ -63,17 +62,6 @@ void omp_debug() {
 // Computes a - b
 uint64 clock_diff(const struct timespec* a, const struct timespec* b) {
     return (a->tv_sec - b->tv_sec) * TO_NANO + a->tv_nsec - b->tv_nsec;
-}
-
-void init_matrix_from_file(Matrix::element* ptr, const std::string& filename) {
-    std::ifstream stream(filename);
-    if (!stream.good()) {
-        std::ostringstream err;
-        err << "Unable to open input matrix file " << filename << std::endl;
-        throw std::runtime_error(err.str());
-    }
-
-    std::copy(std::istream_iterator<Matrix::element>(stream), std::istream_iterator<Matrix::element>(), ptr);
 }
 
 uint64 clock_to_ns(const struct timespec& clk) {

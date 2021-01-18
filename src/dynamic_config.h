@@ -109,11 +109,6 @@ public:
         std::optional<std::string> _start_matrix_filename;
     };
 
-    struct Extra {
-        unsigned int _increasing_jline_step;
-        unsigned int _static_step_jline_plus;
-    };
-
 public:
     NO_COPY(DynamicConfig);
 
@@ -128,7 +123,6 @@ public:
     }
 
     Files _files;
-    Extra _extra;
     Standard _std;
 
 private:
@@ -143,6 +137,5 @@ private:
 #define sDynamicConfig DynamicConfig::instance()
 #define sDynamicConfigStd sDynamicConfig._std
 #define sDynamicConfigFiles sDynamicConfig._files
-#define sDynamicConfigExtra sDynamicConfig._extra
 
 #endif // DYNAMIC_CONFIG_H

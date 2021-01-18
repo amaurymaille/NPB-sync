@@ -1,56 +1,58 @@
 #ifndef MATRIX_CORE_H
 #define MATRIX_CORE_H
 
-#include <cmath>
-
-#include "defines.h"
-
-typedef uint64_t uint64;
-
-class HeatCPUMatrix {
+template<typename Matrix>
+/* abstract */ class IReferenceMatrix {
 public:
-    HeatCPUMatrix() { }
-    void init();
-    void assert_okay_init() const;
+    typedef Matrix MatrixT;
+    typedef typename MatrixT::element MatrixTValue;
 
-    void init_expected();
-    void assert_okay_expected();
+    // If a filename is provided on the CLI, init the matrix from this file
+    // Otherwise, init with default values
+    virtual void init() = 0;
+    // Assert that the matrix other was properly initialized by comparing it
+    // with our own initialized matrix
+    virtual void assert_okay_init(const Matrix& other) const = 0;
 
-    void init_from(Matrix const& other);
-    void init_expected_from(Matrix const& other);
+    // If a filename is provided on the CLI, init the expected matrix from this
+    // file. Otherwise, init with default values and compute the expected
+    // matrix from these values
+    virtual void init_expected() = 0;
+    // Assert that the matrix other was properly computed by comparing it
+    // with our own computed matrix
+    virtual void assert_okay_expected(const Matrix& other) const = 0;
 
-    void assert_equals(Matrix const& other);
-    void assert_expected_equals(Matrix const& other);
+    // Init the initial matrix from other
+    virtual void init_from(Matrix const& other) = 0;
+    // Init the expected matrix from other
+    virtual void init_expected_from(Matrix const& other) = 0;
 
-    Matrix& get_matrix() { return _matrix; }
+    // Assert that the matrix other is equal to the initialized matrix
+    virtual void assert_equals(Matrix const& other) const = 0;
+    // Assert that the matrix other is equal to the computed matrix
+    virtual void assert_expected_equals(Matrix const& other) const = 0;
+
+    // Read-access to the initialized matrix
+    const Matrix& get_matrix() const { return _matrix; }
+    // Read-access to the computed matrix
     const Matrix& get_expected() const { return _expected; }
 
-    static void assert_matrix_equals(Matrix const& lhs, Matrix const& rhs);
-    static void init_matrix_from(Matrix& dst, const Matrix& src);
-    static void init_matrix_from_file(Matrix& dst, const std::string& filename);
-
-    static void init_matrix(Matrix& matrix, uint64 nb_elements);
-    static void compute_matrix(Matrix& matrix, size_t dimw, size_t dimx, size_t dimy, size_t dimz);
-
-    static inline void update_matrix(Matrix& matrix, size_t w, size_t x, size_t y, size_t z) {
-        int lx = matrix[w][x - 1][y][z];
-        int ly = matrix[w][x][y - 1][z];
-        int lw = matrix[w - 1][x][y][z];
-
-        for (int i = 0; i < 15; ++i)
-            matrix[w][x][y][z] += std::sqrt(lw) + std::log(lx) + std::sin(ly);
-    }
-
-private:
+protected:
+    // The initial matrix
     Matrix _matrix;
+    // The expected matrix
     Matrix _expected;
 
-    void _init();
-    void _init_expected();
+    // Init the initial matrix with default values
+    virtual void _init() = 0;
+    // Init the expected matrix with default values and then compute the
+    // expected matrix from these values
+    virtual void _init_expected() = 0;
 
-    void init_from_file(std::string const& filename);
-    void init_expected_from_file(std::string const& filename);
+    // Init the initial matrix from the content of the file filaname
+    virtual void init_from_file(std::string const& filename) = 0;
+    // Init the expected matrix from the content of the file filename
+    virtual void init_expected_from_file(std::string const& filename) = 0;
 };
-
 
 #endif /* MATRIX_CORE_H */

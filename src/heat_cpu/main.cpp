@@ -21,47 +21,28 @@
 
 #include "measure-time.h"
 #include "spdlog/spdlog.h"
-#include "nlohmann/json.hpp"
 
 #include "argv.h"
 #include "config.h"
+#include "core.h"
 #include "defines.h"
 #include "dynamic_config.h"
-#include "functions/heat_cpu.h"
+#include "heat_cpu/dynamic_defines.h"
+#include "heat_cpu/heat_cpu.h"
 #include "logging.h"
+#include "heat_cpu/matrix_core.h"
 #include "naive_promise.h"
 #include "promise_plus.h"
 #include "promises/naive_promise.h"
 #include "promises/static_step_promise.h"
 #include "utils.h"
 
-using Clock = std::chrono::system_clock;
 using json = nlohmann::json;
 namespace g = Globals;
 
-// Matrix g_start_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
-// Matrix g_expected_matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
-
-template<typename M>
-class Synchronizer {
-protected:
-    Synchronizer(Matrix& matrix) : _matrix(matrix) {
-        init_from_start_matrix(_matrix);
-        assert_matrix_equals(_matrix, g_start_matrix);
-    }
-    
+class SequentialSynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    void assert_okay() {
-        assert_matrix_equals(_matrix, g_expected_matrix);
-    }
-
-protected:
-    Matrix& _matrix;
-};
-
-class SequentialSynchronizer : public Synchronizer {
-public:
-    SequentialSynchronizer(Matrix& matrix) : Synchronizer(matrix) {
+    SequentialSynchronizer(HeatCPUMatrix const& m, Matrix4D& matrix) : Synchronizer(m, matrix) {
 
     }
 
@@ -71,11 +52,12 @@ public:
             f(_matrix, std::forward<Args>(args)..., m);
         }   
     }
+
 };
 
-class AltBitSynchronizer : public Synchronizer {
+class AltBitSynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    AltBitSynchronizer(Matrix& matrix, int nthreads) : Synchronizer(matrix), _isync(nthreads) {
+    AltBitSynchronizer(HeatCPUMatrix const& m, Matrix4D& matrix, int nthreads) : Synchronizer(m, matrix), _isync(nthreads) {
 
     }
 
@@ -151,9 +133,9 @@ private:
     }
 };
 
-class CounterSynchronizer : public Synchronizer {
+class CounterSynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    CounterSynchronizer(Matrix& matrix, int nthreads) : Synchronizer(matrix), _isync(nthreads) {
+    CounterSynchronizer(HeatCPUMatrix const& m, Matrix4D& matrix, int nthreads) : Synchronizer(m, matrix), _isync(nthreads) {
     
     }
 
@@ -226,9 +208,9 @@ private:
 typedef std::array<std::vector<uint64>, g::HeatCPU::ITERATIONS> IterationTimeByThreadStore;
 
 template<typename T>
-class PromisePlusSynchronizer : public Synchronizer {
+class PromisePlusSynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    PromisePlusSynchronizer(Matrix& matrix, int n_threads, const PromisePlusBuilder<T>& builder) : Synchronizer(matrix) {
+    PromisePlusSynchronizer(HeatCPUMatrix const& m, Matrix4D& matrix, int n_threads, const PromisePlusBuilder<T>& builder) : Synchronizer(m, matrix) {
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
         _promise_plus_debug_data = json::array();
 #endif
@@ -335,9 +317,9 @@ private:
 #endif
 };
 
-class ArrayOfPromisesSynchronizer : public Synchronizer {
+class ArrayOfPromisesSynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    ArrayOfPromisesSynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
+    ArrayOfPromisesSynchronizer(HeatCPUMatrix const& m, Matrix4D& matrix, int nb_threads) : Synchronizer(m, matrix) {
         for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
@@ -375,9 +357,9 @@ private:
     std::array<ArrayOfPromisesContainer, g::HeatCPU::ITERATIONS> _promises_store;
 };
 
-class PromiseOfArraySynchronizer : public Synchronizer {
+class PromiseOfArraySynchronizer : public Synchronizer<HeatCPUMatrix> {
 public:
-    PromiseOfArraySynchronizer(Matrix& matrix, int nb_threads) : Synchronizer(matrix) {
+    PromiseOfArraySynchronizer(HeatCPUMatrix const &m, Matrix4D& matrix, int nb_threads) : Synchronizer(m, matrix) {
         for (int i = 0; i < g::HeatCPU::ITERATIONS; ++i) {
             _promises_store[i].resize(nb_threads);
             for (int j = 0; j < nb_threads; ++j) {
@@ -406,77 +388,8 @@ private:
     std::array<PromiseOfArrayContainer, g::HeatCPU::ITERATIONS> _promises_store;
 };
 
-template<typename F, typename... Args>
-static uint64 measure_time(F&& f, Args&&... args) {
-    struct timespec begin, end;
-
-    clock_gettime(CLOCK_MONOTONIC, &begin);
-    f(std::forward<Args>(args)...);
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    uint64 diff = clock_diff(&end, &begin);
-    return diff;
-}
-
-template<class Synchronizer, class F, class... Args>
-static uint64 measure_synchronizer_time(Synchronizer& synchronizer, F&& f, Args&&... args) {
-    // synchronizer.run(f, std::forward<Args>(args)...);
-    uint64 diff = measure_time([&]() {
-        synchronizer.run(f, args...);
-    });
-
-    synchronizer.assert_okay();
-
-    return diff;
-}
-
-class TimeLog {
+class HeatCPUTimeCollector : public TimeCollector {
 public:
-    TimeLog(std::string const& synchronizer, std::string const& function) {
-        _json["synchronizer"] = synchronizer;
-        _json["function"] = function;
-        _json["extras"] = json::object();
-    }
-
-    void add_time(unsigned int iteration, double time) {
-        _json["times"][iteration] = time;
-    }
-
-    void add_time(unsigned int iteration, double time, json debug_data) {
-        json data;
-        data["time"] = time;
-        data["debug"] = debug_data;
-
-        _json["times"][iteration] = data;
-    }
-
-    void add_time_for_iteration(unsigned int iteration, unsigned int local_iteration, unsigned int thread_id, double time) {
-        _json["times"]["iterations"][iteration]["local_iterations"][local_iteration]["threads"][thread_id] = time;
-    }
-
-    template<typename T>
-    void add_extra_arg(const std::string& key, T const& value) {
-        _json["extras"][key] = value;
-    }
-
-    const json& get_json() const {
-        return _json;
-    }
-
-protected:
-    json _json;
-};
-
-class SynchronizationTimeCollector {
-public:
-    void add_time(TimeLog& log, unsigned int iteration, uint64 time) {
-        log.add_time(iteration, double(time) / BILLION);
-    }
-
-    void add_time(TimeLog& log, unsigned int iteration, uint64 time, json debug_data) {
-        log.add_time(iteration, double(time) / BILLION, debug_data);
-    }
-
     void add_iterations_times_by_thread(TimeLog& log, unsigned int global_iteration, IterationTimeByThreadStore const& times) {
         unsigned int local_iteration = 0;
         for (std::vector<uint64> const& store: times) {
@@ -492,10 +405,10 @@ public:
     void run_sequential(unsigned int nb_iterations) {
         uint64 time = 0;
         TimeLog log("Sequential", "heat_cpu");
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            SequentialSynchronizer seq(matrix);
+            SequentialSynchronizer seq(sHeatCPU, matrix);
             time = measure_synchronizer_time(seq, [](auto&& matrix, auto&& m) {
                 heat_cpu(matrix, m);
             });
@@ -509,10 +422,10 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("AltBit", "heat_cpu");
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            AltBitSynchronizer altBit(matrix, nb_threads);
+            AltBitSynchronizer altBit(sHeatCPU, matrix, nb_threads);
             time = measure_synchronizer_time(altBit, [](auto&& matrix, auto&& m) {
                 heat_cpu(matrix, m);
             });
@@ -526,10 +439,10 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("Counter", "heat_cpu");
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            CounterSynchronizer iterationSync(matrix, nb_threads);
+            CounterSynchronizer iterationSync(sHeatCPU, matrix, nb_threads);
             time = measure_synchronizer_time(iterationSync, [](auto&& matrix, auto&& m) {
                 heat_cpu(matrix, m);
             });
@@ -547,13 +460,13 @@ public:
 
         log.add_extra_arg("step", step);
         iterations_log.add_extra_arg("step", step);
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
          
         StaticStepPromiseBuilder<void> builder(Globals::HeatCPU::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             printf("StaticStep: iteration %d\n", i);
-            PromisePlusSynchronizer<void> promisePlusSynchronizer(matrix, nb_threads, builder);
+            PromisePlusSynchronizer<void> promisePlusSynchronizer(sHeatCPU, matrix, nb_threads, builder);
 
             time = measure_synchronizer_time(promisePlusSynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
                 heat_cpu_promise_plus(matrix, m, dst, src);
@@ -578,10 +491,10 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("ArrayOfPromises", "array_of_promises");
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            ArrayOfPromisesSynchronizer arrayOfPromisesSynchronizer(matrix, nb_threads);
+            ArrayOfPromisesSynchronizer arrayOfPromisesSynchronizer(sHeatCPU, matrix, nb_threads);
             time = measure_synchronizer_time(arrayOfPromisesSynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
                 heat_cpu_array_of_promises(matrix, m, dst, src);
             });
@@ -595,10 +508,10 @@ public:
         unsigned int nb_threads = omp_nb_threads();
         uint64 time = 0;
         TimeLog log("PromiseOfArray", "promise_of_array");
-        Matrix matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
+        Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
-            PromiseOfArraySynchronizer promiseOfArraySynchronizer(matrix, nb_threads);
+            PromiseOfArraySynchronizer promiseOfArraySynchronizer(sHeatCPU, matrix, nb_threads);
             time = measure_synchronizer_time(promiseOfArraySynchronizer, [](auto&& matrix, auto&& m, auto&& dst, auto&& src) {
                 heat_cpu_promise_of_array(matrix, m, dst, src);
             });
@@ -633,25 +546,14 @@ public:
     }
 
 private:
-    std::vector<TimeLog> _times;
     std::vector<TimeLog> _iterations_times;
 };
 
 namespace JSON {
-    namespace Top {
-        static const std::string iterations("iterations");
-        static const std::string runs("runs");
-    }
-
     namespace Run {
-        static const std::string synchronizer("synchronizer");
-        static const std::string extras("extras");
-
         namespace Synchronizers {
-            static const std::string sequential("sequential");
             static const std::string alt_bit("alt-bit");
             static const std::string counter("counter");
-            static const std::string static_step_promise_plus("static-step-plus");
             static const std::string array_of_promises("array-of-promises");
             static const std::string promise_of_array("promise-of-array");
         }
@@ -665,61 +567,15 @@ namespace JSON {
             Synchronizers::promise_of_array
         };
 
-        namespace Extras {
-            static const std::string step("step");
-        }
     }
 }
 
-class Runner {
+namespace Sync = JSON::Run::Synchronizers;
+
+class HeatCPURunner : public Runner {
 public:
-    Runner(std::string const& filename) {
-        init_from_file(filename);
-        validate();
-    }
+    HeatCPURunner(std::string const& filename) : Runner(filename) {
 
-    void run() {
-        unsigned int iterations = _data[JSON::Top::iterations].get<unsigned int>();
-        json runs = _data[JSON::Top::runs];
-
-        for (json run: runs) {
-            process_run(iterations, run);
-        }
-    }
-
-    void dump() {
-        _collector.print_times();
-        _collector.print_iterations_times();
-    }
-
-private:
-    void init_from_file(std::string const& filename) {
-        std::ifstream stream(filename);
-        stream >> _data;
-    }
-
-    void validate() {
-        validate_top();
-        validate_runs();
-    }
-
-    void validate_top() {
-        throw_if_not_present(JSON::Top::iterations);
-        throw_if_not_present(JSON::Top::runs);
-    }
-
-    void validate_runs() {
-        json runs = _data[JSON::Top::runs];
-
-        for (json run: runs) {
-            validate_run(run);
-        }
-    }
-
-    void validate_run(json run) {
-        throw_if_not_present_subobject(run, JSON::Run::synchronizer);
-
-        validate_synchronizer(run[JSON::Run::synchronizer]);
     }
 
     void validate_synchronizer(std::string const& synchronizer) {
@@ -737,22 +593,9 @@ private:
         }
     }
 
-    void throw_if_not_present(std::string const& key) {
-        throw_if_not_present_subobject(_data, key);
-    }
-
-    void throw_if_not_present_subobject(json const& subobject, std::string const& key) {
-        if (!subobject.contains(key)) {
-            std::ostringstream stream;
-            stream << "Key " << key << " not found in JSON" << std::endl;
-            throw std::runtime_error(stream.str());
-        }
-    }
-
     void process_run(unsigned int iterations, json run) {
-        namespace Sync = JSON::Run::Synchronizers;
-
         std::string const& synchronizer = run[JSON::Run::synchronizer];
+
         if (synchronizer == Sync::sequential) {
             _collector.run_sequential(iterations);
         } else if (synchronizer == Sync::alt_bit) {
@@ -778,8 +621,13 @@ private:
         }
     }
 
-    json _data;
-    SynchronizationTimeCollector _collector;
+    void dump() {
+        _collector.print_times();
+        _collector.print_iterations_times();
+    }
+
+private:
+    HeatCPUTimeCollector _collector;
 };
 
 void log_general_data(std::ostream& out) {
@@ -824,17 +672,7 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    Runner runner(sDynamicConfigFiles.get_simulations_filename());
-
-    init_start_matrix_once();
-    init_from_start_matrix(g_expected_matrix);
-    // assert_matrix_equals(g_start_matrix, g_expected_matrix->get_matrix());
-
-    // assert_matrix_equals(g_reordered_start_matrix, g_expected_reordered_matrix->get_matrix());
-
-    init_expected_matrix_once();
-
-    // assert_okay_reordered_compute();
+    HeatCPURunner runner(sDynamicConfigFiles.get_simulations_filename());
 
     runner.run();
     runner.dump();

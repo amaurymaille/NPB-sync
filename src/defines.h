@@ -11,8 +11,6 @@
 
 #include <boost/multi_array.hpp>
 
-#include "dynamic_defines.h"
-
 #define assertM(C, M, ...) do { if (!C) { fprintf(stderr, M, __VA_ARGS__); assert(false); }} while (0);
 
 enum Tenths {
@@ -37,17 +35,6 @@ enum ToSecondsTimes {
 
 typedef uint64_t uint64;
 
-namespace g = Globals;
-
-typedef boost::multi_array<int, 4> Matrix4D;
-typedef Matrix4D::element Matrix4DValue;
-
-typedef boost::multi_array<float, 2> Matrix2D;
-typedef Matrix2D::element Matrix2DValue;
-
-typedef std::vector<float> Vector1D;
-typedef Vector1D::value_type Vector1DValue;
-
 template<typename T>
 using OptionalReference = std::optional<std::reference_wrapper<T>>;
 
@@ -60,25 +47,5 @@ class PromisePlus;
 
 template<>
 class PromisePlus<void>;
-
-typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
-typedef std::optional<PromisePlusContainer> PromisePlusStore;
-
-template<typename T>
-class NaivePromise;
-
-template<>
-class NaivePromise<void>;
-
-typedef ThreadStore<NaivePromise<void>*> ArrayOfPromisesContainer;
-typedef std::optional<ArrayOfPromisesContainer> ArrayOfPromisesStore;
-
-typedef ThreadStore<NaivePromise<void>*> PromiseOfArrayContainer;
-typedef std::optional<PromiseOfArrayContainer> PromiseOfArrayStore;
-
-// The initial matrix
-extern Matrix g_start_matrix;
-// The expected final matrix 
-extern Matrix g_expected_matrix;
 
 #endif /* DEFINES_H */
