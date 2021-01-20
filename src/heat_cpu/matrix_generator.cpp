@@ -8,7 +8,7 @@
 #include "nlohmann/json.hpp"
 #include <sys/time.h>
 
-#include "matrix_core.h"
+#include "heat_cpu/matrix_core.h"
 
 using json = nlohmann::json;
 
@@ -16,31 +16,22 @@ struct Args {
     std::string start_matrix_filename;
     std::string compute_matrix_filename;
     std::string parameters_filename;
-    std::string program;
 };
 
 namespace Options {
     static const char* start_matrix_file  = "start-matrix-file";
     static const char* compute_matrix_file = "compute-matrix-file";
     static const char* parameters_file = "parameters-file";
-
-    namespace Programs {
-        static const char* base = "base";
-        static const char* lu = "lu";
-    }
 }
 
 namespace po = boost::program_options;
 namespace o = Options;
-namespace prg = o::Programs;
 
 static void parse_command_line(int argc, char** argv, Args& args);
 static void process_options(po::variables_map vm, Args& args);
 static void generate_heat_cpu_matrices(Args& args);
-static void generate_heat_cpu_start_matrix(Matrix& result, uint64 nb_elements, const std::string& output_file);
-static void generate_heat_cpu_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
-static void abort_on_invalid_program(po::variables_map const& vm);
-static void set_program(po::variables_map const& vm, Args& args);
+static void generate_heat_cpu_start_matrix(Matrix4D& result, uint64 nb_elements, const std::string& output_file);
+static void generate_heat_cpu_computed_matrix(Matrix4D& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
 static std::ofstream open_out_file(const std::string& output_file);
 static uint64 clock_diff(const struct timespec& end, const struct timespec& begin);
 
@@ -53,14 +44,8 @@ void parse_command_line(int argc, char** argv, Args& args) {
         (o::parameters_file, po::value<std::string>(), "Path to the JSON file that contains the parameters of the matrix")
         ;
 
-    po::options_description programs("Program choice");
-    programs.add_options()
-        (prg::base, "heat_cpu program")
-        (prg::lu, "LU solver")
-        ;
-
     po::options_description options("All options");
-    options.add(base_options).add(programs);
+    options.add(base_options);
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
@@ -83,12 +68,9 @@ void process_options(po::variables_map vm, Args& args) {
         throw std::runtime_error(str.str());
     }
 
-    abort_on_invalid_program(vm);
-
     args.start_matrix_filename = vm[o::start_matrix_file].as<std::string>();
     args.compute_matrix_filename = vm[o::compute_matrix_file].as<std::string>();
     args.parameters_filename = vm[o::parameters_file].as<std::string>();
-    set_program(vm, args);
 }
 
 void generate_heat_cpu_matrices(Args& args) {
@@ -104,9 +86,9 @@ void generate_heat_cpu_matrices(Args& args) {
 
     std::cout << data << std::endl;
 
-    Matrix matrix(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
-    Matrix expected_start(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
-    Matrix expected_compute(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
+    Matrix4D matrix(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
+    Matrix4D expected_start(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
+    Matrix4D expected_compute(boost::extents[data["w"]][data["x"]][data["y"]][data["z"]]);
 
     struct timespec generate_start_begin, generate_start_end,
            load_start_begin, load_start_end,
@@ -126,7 +108,7 @@ void generate_heat_cpu_matrices(Args& args) {
     clock_gettime(CLOCK_MONOTONIC, &load_start_end);
 
     clock_gettime(CLOCK_MONOTONIC, &copy_start_begin);
-    std::copy(std::istream_iterator<Matrix::element>(start), std::istream_iterator<Matrix::element>(), expected_start.data());
+    std::copy(std::istream_iterator<Matrix4D::element>(start), std::istream_iterator<Matrix4D::element>(), expected_start.data());
     clock_gettime(CLOCK_MONOTONIC, &copy_start_end);
 
     std::cout << "Assert start" << std::endl;
@@ -149,7 +131,7 @@ void generate_heat_cpu_matrices(Args& args) {
     clock_gettime(CLOCK_MONOTONIC, &load_compute_end);
 
     clock_gettime(CLOCK_MONOTONIC, &copy_compute_begin);
-    std::copy(std::istream_iterator<Matrix::element>(compute), std::istream_iterator<Matrix::element>(), expected_compute.data());
+    std::copy(std::istream_iterator<Matrix4D::element>(compute), std::istream_iterator<Matrix4D::element>(), expected_compute.data());
     clock_gettime(CLOCK_MONOTONIC, &copy_compute_end);
 
     std::cout << "Assert expected" << std::endl;
@@ -175,22 +157,22 @@ void generate_heat_cpu_matrices(Args& args) {
     fn("Check compute", check_compute_end, check_compute_begin);
 }
 
-void generate_heat_cpu_start_matrix(Matrix& matrix, uint64 nb_elements, const std::string& output_file) {
+void generate_heat_cpu_start_matrix(Matrix4D& matrix, uint64 nb_elements, const std::string& output_file) {
     std::ofstream out = open_out_file(output_file);
-    Matrix::element* ptr = matrix.data();
+    Matrix4D::element* ptr = matrix.data();
 
-    init_matrix(matrix, nb_elements);
+    HeatCPUMatrix::init_matrix(matrix, nb_elements);
 
-    std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix::element>(out, " "));
+    std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix4D::element>(out, " "));
 }
 
-void generate_heat_cpu_computed_matrix(Matrix& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file) {
+void generate_heat_cpu_computed_matrix(Matrix4D& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file) {
     std::ofstream out = open_out_file(output_file);
-    Matrix::element* ptr = start.data();
+    Matrix4D::element* ptr = start.data();
 
-    compute_matrix(start, dimw, dimx, dimy, dimz);
+    HeatCPUMatrix::compute_matrix(start, dimw, dimx, dimy, dimz);
 
-    std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix::element>(out, " "));
+    std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix4D::element>(out, " "));
 }
 
 std::ofstream open_out_file(const std::string& output_file) {
@@ -207,35 +189,6 @@ std::ofstream open_out_file(const std::string& output_file) {
 uint64 clock_diff(const struct timespec& end, const struct timespec& begin) {
     uint64 diff = (end.tv_sec - begin.tv_sec) * 1000000000 + (end.tv_nsec - begin.tv_nsec);
     return diff;
-}
-
-void abort_on_invalid_program(po::variables_map const& vm) {
-    int count = 0;
-    count += vm.count("base");
-    count += vm.count("lu");
-
-    if (count != 1) {
-        if (count == 0) {
-            throw std::runtime_error("One program option must be specified !");
-        } else {
-            throw std::runtime_error("Only one program option can be specified !");
-        }
-    }
-}
-
-void set_program(const po::variables_map& vm, Args& args) {
-    auto extract_program = [&](const std::string& str) {
-        if (vm.count(str)) {
-            args.program = str;
-            return true;
-        }
-
-        return false;
-    };
-
-    if (!extract_program(prg::base) && !extract_program(prg::lu)) {
-        throw std::runtime_error("One program option must be specified. How did you arrive here anyway ?");
-    }
 }
 
 int main(int argc, char** argv) {
