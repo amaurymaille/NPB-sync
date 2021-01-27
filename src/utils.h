@@ -24,6 +24,10 @@
 #define NO_COPY_OP_T(CLASS, T) NO_COPY_OP(CLASS<T>)
 #define NO_COPY_T(CLASS, T) NO_COPY_CTR_T(CLASS, T); NO_COPY_OP_T(CLASS, T)
 
+#define NO_COPY_CTR_T2(CLASS, T1, T2) CLASS(CLASS<T1, T2> const&) = delete
+#define NO_COPY_OP_T2(CLASS, T1, T2) CLASS<T1, T2>& operator=(CLASS<T1, T2> const&) = delete
+#define NO_COPY_T2(CLASS, T1, T2) NO_COPY_CTR_T2(CLASS, T1, T2); NO_COPY_OP_T2(CLASS, T1, T2)
+
 struct timespec;
 
 template<typename IntType>

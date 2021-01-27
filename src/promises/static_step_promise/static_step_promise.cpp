@@ -73,7 +73,6 @@ void ActiveStaticStepPromise<void>::get(int index) {
         }
 
         _base._common._current_index_weak[omp_get_thread_num()] = _base._current_index_strong.load(std::memory_order_acquire);
-        _base._common._current_index_weak[omp_get_thread_num()] = ready_index;
     } 
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
     else {

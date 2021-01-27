@@ -39,6 +39,8 @@ target_link_libraries(lu core)
 #                                        "${Boost_THREAD_LIBRARY}"
 #                                        nlohmann_json::nlohmann_json)
 
+add_subdirectory(tests)
+
 if (NOT SPDLOG_HEADER_ONLY)
     target_link_libraries (heat_cpu "${SPDLOG_LIBRARY}")
     target_link_libraries (lu "${SPDLOG_LIBRARY}")
