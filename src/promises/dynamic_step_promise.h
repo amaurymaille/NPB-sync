@@ -104,7 +104,7 @@ private:
     std::atomic<int> _current_index_strong;
     std::vector<int> _current_index_weak;
     std::atomic<int> _last_index;
-    std::shared_mutex _step_m;
+    std::mutex _step_m;
     std::atomic<unsigned int> _step_strong;
     unsigned int _step_weak;
     std::vector<std::chrono::time_point<std::chrono::steady_clock>> _sets_times;
