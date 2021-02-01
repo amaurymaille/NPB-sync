@@ -69,6 +69,12 @@ constexpr bool NUnblocksV = !UnblocksV<mode> && !IsTimerV<mode>;
 template<DynamicStepPromiseMode mode>
 constexpr bool CanSetStepV = !IsTimerV<mode>;
 
+template<DynamicStepPromiseMode mode>
+constexpr bool RequiresLockV = UnblocksV<mode> && (IsConsumerV<mode> || IsBothV<mode>);
+
+template<DynamicStepPromiseMode mode>
+constexpr bool RequiresStrongSyncV = IsProducerV<mode> || IsBothV<mode>;
+
 template<typename T, DynamicStepPromiseMode mode>
 class DynamicStepPromiseBuilder : public PromisePlusBuilder<T> {
 public:
@@ -105,15 +111,26 @@ private:
     std::vector<int> _last_unblock_index_weak;
     std::atomic<int> _current_index;
     std::mutex _step_m;
-    std::atomic<unsigned int> _step_strong;
-    unsigned int _step_weak;
+    std::atomic<unsigned int> _step;
     std::vector<std::chrono::time_point<std::chrono::steady_clock>> _sets_times;
 
-    inline unsigned int step() {
+    inline void set_current_index(int index) {
         if constexpr (UnblocksV<mode>) {
-            return _step_weak;
+            if constexpr (IsProducerV<mode>) {
+                _current_index.store(index, std::memory_order_relaxed);
+            } else {
+                _current_index.store(index, std::memory_order_release);
+            }
         } else {
-            return _step_strong.load(std::memory_order_acquire);
+            (void)index;
+        }
+    }
+
+    inline unsigned int get_step() const {
+        if constexpr (RequiresLockV<mode>) {
+            return _step.load(std::memory_order_acquire);
+        } else {
+            return _step.load(std::memory_order_relaxed);
         }
     }
 };
