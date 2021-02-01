@@ -101,9 +101,9 @@ public:
     void set_step(unsigned int new_step);
 
 private:
-    std::atomic<int> _current_index_strong;
-    std::vector<int> _current_index_weak;
-    std::atomic<int> _last_index;
+    std::atomic<int> _last_unblock_index_strong;
+    std::vector<int> _last_unblock_index_weak;
+    std::atomic<int> _current_index;
     std::mutex _step_m;
     std::atomic<unsigned int> _step_strong;
     unsigned int _step_weak;
