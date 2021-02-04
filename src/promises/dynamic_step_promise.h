@@ -100,8 +100,14 @@ public:
     void set(int index, const T& value);
     void set(int index, T&& value);
 
+    void set_no_timer(int index, const T& value);
+    void set_no_timer(int index, T&& value);
+
     void set_immediate(int index, const T& value);
     void set_immediate(int index, T&& value);
+
+    void set_immediate_no_timer(int index, const T& value);
+    void set_immediate_no_timer(int index, T&& value);
 
     friend PromisePlus<T>* DynamicStepPromiseBuilder<T, mode>::new_promise() const;
 

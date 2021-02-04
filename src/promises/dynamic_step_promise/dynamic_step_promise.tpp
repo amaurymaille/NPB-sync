@@ -42,6 +42,11 @@ void DynamicStepPromise<T, mode>::set(int index, const T& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
 
+    set_no_timer(index, value);
+}
+
+template<typename T, DynamicStepPromiseMode mode>
+void DynamicStepPromise<T, mode>::set_no_timer(int index, const T& value) {
     this->_values[index] = value;
 
     set_current_index(index);
@@ -54,7 +59,6 @@ void DynamicStepPromise<T, mode>::set(int index, const T& value) {
         if (index - _last_unblock_index_strong.load(std::memory_order_acquire) >= get_step())
             _last_unblock_index_strong.store(index, std::memory_order_release);
     }
-
 }
 
 template<typename T, DynamicStepPromiseMode mode>
@@ -62,11 +66,14 @@ void DynamicStepPromise<T, mode>::set(int index, T&& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
 
+    set_no_timer(index, std::move(value));
+}
+
+template<typename T, DynamicStepPromiseMode mode>
+void DynamicStepPromise<T, mode>::set_no_timer(int index, T&& value) {
     this->_values[index] = std::move(value);
 
     set_current_index(index);
-
-    // ICI
 
     {
         std::unique_lock<std::mutex> lck;
@@ -83,7 +90,12 @@ template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set_immediate(int index, const T& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
+    
+    set_immediate_no_timer(index, value);
+}
 
+template<typename T, DynamicStepPromiseMode mode>
+void DynamicStepPromise<T, mode>::set_immediate_no_timer(int index, const T& value) {
     this->_values[index] = value;
 
     {
@@ -101,6 +113,11 @@ void DynamicStepPromise<T, mode>::set_immediate(int index, T&& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
 
+    set_immediate_no_timer(index, std::move(value));
+}
+
+template<typename T, DynamicStepPromiseMode mode>
+void DynamicStepPromise<T, mode>::set_immediate_no_timer(int index, T&& value) {
     this->_values[index] = std::move(value);
 
     {
