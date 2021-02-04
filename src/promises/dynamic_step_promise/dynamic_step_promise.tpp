@@ -140,6 +140,9 @@ void DynamicStepPromise<T, mode>::set_step(unsigned int new_step) {
         return;
     }
 
+    if (new_step == 0)
+        new_step = 1;
+
     if constexpr (UnblocksV<mode>) {
         if constexpr (RequiresLockV<mode>) {
             std::unique_lock<std::mutex> lck(_step_m);
