@@ -39,9 +39,7 @@ T& DynamicStepPromise<T, mode>::get(int index) {
 
 template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set(int index, const T& value) {
-    if constexpr (IsTimerV<mode>)
-        _sets_times.push_back(std::chrono::steady_clock::now());
-
+    add_time_and_change_step_if_necessary();
     set_no_timer(index, value);
 }
 
@@ -63,9 +61,7 @@ void DynamicStepPromise<T, mode>::set_no_timer(int index, const T& value) {
 
 template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set(int index, T&& value) {
-    if constexpr (IsTimerV<mode>)
-        _sets_times.push_back(std::chrono::steady_clock::now());
-
+    add_time_and_change_step_if_necessary();
     set_no_timer(index, std::move(value));
 }
 
@@ -88,9 +84,7 @@ void DynamicStepPromise<T, mode>::set_no_timer(int index, T&& value) {
 
 template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set_immediate(int index, const T& value) {
-    if constexpr (IsTimerV<mode>)
-        _sets_times.push_back(std::chrono::steady_clock::now());
-    
+    add_time_and_change_step_if_necessary();
     set_immediate_no_timer(index, value);
 }
 
@@ -110,9 +104,7 @@ void DynamicStepPromise<T, mode>::set_immediate_no_timer(int index, const T& val
 
 template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set_immediate(int index, T&& value) {
-    if constexpr (IsTimerV<mode>)
-        _sets_times.push_back(std::chrono::steady_clock::now());
-
+    add_time_and_change_step_if_necessary();
     set_immediate_no_timer(index, std::move(value));
 }
 

@@ -153,6 +153,32 @@ private:
             return _step.load(std::memory_order_relaxed);
         }
     }
+
+    inline void add_time_and_change_step_if_necessary() {
+        if constexpr (!IsTimerV<mode>)
+            return;
+
+        auto now = std::chrono::steady_clock::now();
+        _sets_times.push_back(now);
+        auto const& origin = _sets_times.front();
+
+        auto diff = std::chrono::duration<double>(now - origin);
+        if (diff.count() >= 1.0) {
+            size_t n = _sets_times.size();
+
+            size_t nb_values_max = this->_values.size();
+
+            // For now, use 1000 because we need to move on
+            // But we should definitely use the max amount of values to attempt
+            // to deduce the lower bound
+            if (n > 1000)
+                set_step(get_step() * 2);
+            else
+                set_step(get_step() / 1.5);
+
+            _sets_times.clear();
+        }
+    }
 };
 
 #include "dynamic_step_promise/dynamic_step_promise.tpp"
