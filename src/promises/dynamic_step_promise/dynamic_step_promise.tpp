@@ -84,10 +84,16 @@ void DynamicStepPromise<T, mode>::set_immediate(int index, const T& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
 
-    set_current_index(index);
-
     this->_values[index] = value;
-    _last_unblock_index_strong.store(index, std::memory_order_release);
+
+    {
+        std::unique_lock<std::mutex> lck;
+        if constexpr (RequiresLockV<mode>)
+            lck = std::move(std::unique_lock<std::mutex>(_step_m));
+
+        set_current_index(index);
+        _last_unblock_index_strong.store(index, std::memory_order_release);
+    }
 }
 
 template<typename T, DynamicStepPromiseMode mode>
@@ -95,20 +101,23 @@ void DynamicStepPromise<T, mode>::set_immediate(int index, T&& value) {
     if constexpr (IsTimerV<mode>)
         _sets_times.push_back(std::chrono::steady_clock::now());
 
-    set_current_index(index);
-
     this->_values[index] = std::move(value);
-    _last_unblock_index_strong.store(index, std::memory_order_release);
 
-    // LÀ
+    {
+        std::unique_lock<std::mutex> lck;
+        if constexpr (RequiresLockV<mode>)
+            lck = std::move(std::unique_lock<std::mutex>(_step_m));
 
+        set_current_index(index);
+        _last_unblock_index_strong.store(index, std::memory_order_release);
+    }
 }
 
 template<typename T, DynamicStepPromiseMode mode>
 void DynamicStepPromise<T, mode>::set_step(unsigned int new_step) {
-    if constexpr (!CanSetStepV<mode>) {
+    /* if constexpr (!CanSetStepV<mode>) {
         return;
-    }
+    } */
 
     if (new_step == get_step()) {
         return;

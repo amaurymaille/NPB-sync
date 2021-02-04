@@ -29,12 +29,21 @@ void test_dynamic_step_promise() {
 using D = DynamicStepPromiseMode;
 
 int main() {
-    test_dynamic_step_promise<D::SET_STEP_PRODUCER_ONLY_NO_UNBLOCK>();
+    /*test_dynamic_step_promise<D::SET_STEP_PRODUCER_ONLY_NO_UNBLOCK>();
     test_dynamic_step_promise<D::SET_STEP_PRODUCER_ONLY_UNBLOCK>();
     test_dynamic_step_promise<D::SET_STEP_CONSUMER_ONLY_NO_UNBLOCK>();
     test_dynamic_step_promise<D::SET_STEP_CONSUMER_ONLY_UNBLOCK>();
     test_dynamic_step_promise<D::SET_STEP_BOTH_NO_UNBLOCK>();
     test_dynamic_step_promise<D::SET_STEP_BOTH_UNBLOCK>();
-    test_dynamic_step_promise<D::SET_STEP_TIMER>();
+    test_dynamic_step_promise<D::SET_STEP_TIMER>(); */
+
+    test_dynamic_step_promise<D::SET_STEP_PRODUCER_ONLY>();
+    test_dynamic_step_promise<D::SET_STEP_CONSUMER_ONLY>();
+    test_dynamic_step_promise<D::SET_STEP_BOTH>();
+    test_dynamic_step_promise<D::SET_STEP_PRODUCER_ONLY_UNBLOCK>();
+    test_dynamic_step_promise<D::SET_STEP_CONSUMER_ONLY_UNBLOCK>();
+    test_dynamic_step_promise<D::SET_STEP_BOTH_UNBLOCK>();
+    test_dynamic_step_promise<D::SET_STEP_PRODUCER_TIMER>();
+    test_dynamic_step_promise<D::SET_STEP_PRODUCER_UNBLOCK_TIMER>();
     return 0;
 }
