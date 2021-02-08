@@ -28,7 +28,7 @@ enum class DynamicStepPromiseMode {
 
 template<DynamicStepPromiseMode mode>
 struct IsConsumer {
-    constexpr static bool value = int(mode) & int(DynamicStepPromiseMode::SET_STEP_CONSUMER_ONLY) != 0;
+    constexpr static bool value = (int(mode) & int(DynamicStepPromiseMode::SET_STEP_CONSUMER_ONLY)) != 0;
 };
 
 template<DynamicStepPromiseMode mode>
@@ -36,7 +36,7 @@ constexpr bool IsConsumerV = IsConsumer<mode>::value;
 
 template<DynamicStepPromiseMode mode>
 struct IsProducer {
-    constexpr static bool value = int(mode) & int(DynamicStepPromiseMode::SET_STEP_PRODUCER_ONLY) != 0;
+    constexpr static bool value = (int(mode) & int(DynamicStepPromiseMode::SET_STEP_PRODUCER_ONLY)) != 0;
 };
 
 template<DynamicStepPromiseMode mode>
@@ -44,18 +44,18 @@ constexpr bool IsProducerV = IsProducer<mode>::value;
 
 template<DynamicStepPromiseMode mode>
 struct IsBoth {
-    constexpr static bool value = int(mode) & int(DynamicStepPromiseMode::SET_STEP_BOTH) != 0;
+    constexpr static bool value = (int(mode) & int(DynamicStepPromiseMode::SET_STEP_BOTH)) != 0;
 };
 
 template<DynamicStepPromiseMode mode>
 constexpr bool IsBothV = IsBoth<mode>::value;
 
 template<DynamicStepPromiseMode mode>
-constexpr bool IsTimerV = int(mode) & int(DynamicStepPromiseMode::SET_STEP_TIMER) != 0;
+constexpr bool IsTimerV = (int(mode) & int(DynamicStepPromiseMode::SET_STEP_TIMER)) != 0;
 
 template<DynamicStepPromiseMode mode>
 struct Unblocks {
-    constexpr static bool value = int(mode) & int(DynamicStepPromiseMode::SET_STEP_UNBLOCK) != 0;
+    constexpr static bool value = (int(mode) & int(DynamicStepPromiseMode::SET_STEP_UNBLOCK)) != 0;
 };
 
 template<DynamicStepPromiseMode mode>
@@ -68,10 +68,10 @@ constexpr bool NUnblocksV = !UnblocksV<mode> && !IsTimerV<mode>;
 constexpr bool CanSetStepV = !IsTimerV<mode>; */
 
 template<DynamicStepPromiseMode mode>
-constexpr bool RequiresLockV = UnblocksV<mode> && (IsConsumerV<mode> || IsBothV<mode>);
+constexpr bool RequiresStrongSyncV = IsProducerV<mode> || IsBothV<mode>;
 
 template<DynamicStepPromiseMode mode>
-constexpr bool RequiresStrongSyncV = IsProducerV<mode> || IsBothV<mode>;
+constexpr bool RequiresLockV = UnblocksV<mode> && RequiresStrongSyncV<mode>;
 
 template<typename T, DynamicStepPromiseMode mode>
 class DynamicStepPromiseBuilder : public PromisePlusBuilder<T> {
@@ -113,6 +113,14 @@ public:
 
     void set_step(unsigned int new_step);
 
+    inline unsigned int get_step() const {
+        if constexpr (RequiresLockV<mode>) {
+            return _step.load(std::memory_order_acquire);
+        } else {
+            return _step.load(std::memory_order_relaxed);
+        }
+    }
+
 private:
     // Producer writes, consumers read
     std::atomic<int> _last_unblock_index_strong;
@@ -146,14 +154,6 @@ private:
         }
     }
 
-    inline unsigned int get_step() const {
-        if constexpr (RequiresLockV<mode>) {
-            return _step.load(std::memory_order_acquire);
-        } else {
-            return _step.load(std::memory_order_relaxed);
-        }
-    }
-
     inline void add_time_and_change_step_if_necessary() {
         if constexpr (!IsTimerV<mode>)
             return;
@@ -167,11 +167,12 @@ private:
             size_t n = _sets_times.size();
 
             size_t nb_values_max = this->_values.size();
+            (void)nb_values_max;
 
             // For now, use 1000 because we need to move on
             // But we should definitely use the max amount of values to attempt
             // to deduce the lower bound
-            if (n > 1000)
+            if (n > 100)
                 set_step(get_step() * 2);
             else
                 set_step(get_step() / 1.5);

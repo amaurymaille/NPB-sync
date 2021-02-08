@@ -128,12 +128,17 @@ void DynamicStepPromise<T, mode>::set_step(unsigned int new_step) {
         return;
     } */
 
+    if (new_step == 0)
+        new_step = 1;
+
+    if (new_step >= this->_values.size())
+        new_step = this->_values.size();
+
     if (new_step == get_step()) {
         return;
     }
 
-    if (new_step == 0)
-        new_step = 1;
+
 
     if constexpr (UnblocksV<mode>) {
         if constexpr (RequiresLockV<mode>) {
