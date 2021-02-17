@@ -3,6 +3,10 @@
 import argparse
 import json
 
+"""
+Generate the JSON file containing the simulation data for a run of a kernel.
+"""
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate a .json file containing the simulation data for a run")
 

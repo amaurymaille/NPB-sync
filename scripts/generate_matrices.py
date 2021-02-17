@@ -6,6 +6,12 @@ import os.path
 import subprocess
 import sys
 
+"""
+Generate the JSON files that contain the data for the starting matrix and the 
+resulting matrix of a kernel. Can generate data for multiple kernels and 
+multiple kernel configurations at once.
+"""
+
 class MatrixData:
     def __init__(self, w, x, y, z, start_filename, compute_filename):
         self._w = w
