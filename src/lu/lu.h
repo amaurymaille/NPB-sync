@@ -2,7 +2,7 @@
 #define LU_H
 
 #include "lu/defines.h"
-#include "promise_plus.h"
+#include "promises/dynamic_step_promise.h"
 
 /** 
  * @brief Compute the LU decomposition of @a matrix
@@ -25,8 +25,9 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out);
  *
  * Result is stored in the promises in @a promises.
  */
+template<DynamicStepPromiseMode mode>
 void kernel_lu_omp_pp(Matrix2D const& matrix,
-                   std::vector<PromisePlus<Matrix2DValue>*>& promises);
+                   std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises);
 
 /**
  * @brief Compute the solution of Ax = b
@@ -51,7 +52,8 @@ void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
  * This solver assumes the PromisePlus in @a lu contain the factorization of
  * the A matrix.
  */
-void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
+template<DynamicStepPromiseMode mode>
+void kernel_lu_solve_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& lu,
                         Vector1D const& b, Vector1D& x);
 
 /**
@@ -60,7 +62,8 @@ void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
  * This solver assumes the PromisePlus in @a lu contain the factorization of
  * the A matrix.
  */
-void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
+template<DynamicStepPromiseMode mode>
+void kernel_lu_solve_n_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& lu,
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x);
 
@@ -81,8 +84,9 @@ void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
  * This solver computes the LU factorization of A and streams it into a
  * triangular solver.
  */
+template<DynamicStepPromiseMode mode>
 void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
-                          PromisePlusBuilder<Matrix2DValue> const& builder);
+                          DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 
 /**
  * @brief Compute the solution of Ax = b for N different b through LU 
@@ -91,8 +95,9 @@ void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
  * This solver compute the LU factorization of A and streams it into N
  * different triangular solvers.
  */
+template<DynamicStepPromiseMode mode>
 void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D> const& b, 
                                          std::vector<Vector1D>& x,
-                                         PromisePlusBuilder<Matrix2DValue> const& builder);
+                                         DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 
 #endif // LU_H

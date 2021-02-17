@@ -15,9 +15,10 @@ static void validate_diagonal(Matrix2D const& matrix);
 static void prepare_output(Matrix2D const& matrix, Matrix2D& out);
 static void validate_diagonal_and_prepare_output(Matrix2D const& matrix, Matrix2D& out);
 
+template<DynamicStepPromiseMode mode>
 static void init_promise_plus_vector(Matrix2D const& matrix,
-    std::vector<PromisePlus<Matrix2DValue>*>& promises,
-    PromisePlusBuilder<Matrix2DValue> const& builder);
+    std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises,
+    DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 
 void kernel_lu(Matrix2D const& matrix, Matrix2D& out) {
     validate_diagonal_and_prepare_output(matrix, out);
@@ -55,12 +56,13 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out) {
     }
 }
 
+template<DynamicStepPromiseMode mode>
 void kernel_lu_omp_pp(Matrix2D const& matrix,
-                      std::vector<PromisePlus<Matrix2DValue>*>& promises) {
+                      std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises) {
 
-/*    std::vector<std::unique_ptr<PromisePlus<int>>> inner_promises(matrix.size());
+/*    std::vector<std::unique_ptr<DynamicStepPromise<int>>> inner_promises(matrix.size());
     for (int i = 0; i < inner_promises.size(); ++i)
-        inner_promises[i].reset(new PromisePlus<int>(matrix.size(), 1));
+        inner_promises[i].reset(new DynamicStepPromise<int>(matrix.size(), 1));
 */
     validate_diagonal(matrix);
 
@@ -212,7 +214,8 @@ void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
         th.join();
 }
 
-void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
+template<DynamicStepPromiseMode mode>
+void kernel_lu_solve_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& lu,
                         Vector1D const& b, Vector1D& x) {
     Vector1D y;
     for (int i = 0; i < lu.size(); ++i) {
@@ -237,7 +240,8 @@ void kernel_lu_solve_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
     }
 }
 
-void kernel_lu_solve_n_pp(std::vector<PromisePlus<Matrix2DValue>*>& lu,
+template<DynamicStepPromiseMode mode>
+void kernel_lu_solve_n_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& lu,
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x) {
     std::vector<std::thread> threads;
@@ -287,9 +291,10 @@ void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
 }
 
 
+template<DynamicStepPromiseMode mode>
 void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
-                          PromisePlusBuilder<Matrix2DValue> const& builder) {
-    std::vector<PromisePlus<Matrix2DValue>*> promises;
+                          DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder) {
+    std::vector<DynamicStepPromise<Matrix2DValue, mode>*> promises;
     init_promise_plus_vector(a, promises, builder);
 
     std::thread lu(kernel_lu_omp_pp, std::cref(a), std::ref(promises));
@@ -299,11 +304,12 @@ void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
     solver.join();     
 }
 
+template<DynamicStepPromiseMode mode>
 void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D>& b, 
                                          std::vector<Vector1D>& x,
-                                         PromisePlusBuilder<Matrix2DValue> const& builder
+                                         DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder
                                          ) {
-    std::vector<PromisePlus<Matrix2DValue>*> promises; 
+    std::vector<DynamicStepPromise<Matrix2DValue, mode>*> promises; 
     init_promise_plus_vector(a, promises, builder);
 
     std::thread lu(kernel_lu_omp_pp, std::cref(a), std::ref(promises));
@@ -317,7 +323,7 @@ void validate_diagonal(Matrix2D const& matrix) {
     for (int i = 0; i < matrix.size(); ++i) {
         if (matrix[i][i] == 0) {
             std::ostringstream stream;
-            stream << "[ERROR] LU: Matrix4D (" << i << ", " << i << ") is 0" << std::endl;
+            stream << "[ERROR] LU: Matrix2D (" << i << ", " << i << ") is 0" << std::endl;
             throw std::runtime_error(stream.str());
         }
     }
@@ -334,9 +340,10 @@ void validate_diagonal_and_prepare_output(Matrix2D const& matrix, Matrix2D& out)
     prepare_output(matrix, out);
 }
 
+template<DynamicStepPromiseMode mode>
 void init_promise_plus_vector(Matrix2D const& matrix,
-    std::vector<PromisePlus<Matrix2DValue>*>& promises,
-    PromisePlusBuilder<Matrix2DValue> const& builder) {
+    std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises,
+    DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder) {
     for (int i = 0; i < matrix.size(); ++i)
         promises.push_back(builder.new_promise());
 }
