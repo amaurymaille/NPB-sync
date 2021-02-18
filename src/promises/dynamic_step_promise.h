@@ -23,7 +23,8 @@ enum class DynamicStepPromiseMode {
     SET_STEP_TIMER         = 1 << 4, // Step is autotuned during the calls to set / set_immediate
     SET_STEP_PRODUCER_TIMER = SET_STEP_PRODUCER_ONLY | SET_STEP_TIMER,
     SET_STEP_UNBLOCK_TIMER = SET_STEP_TIMER | SET_STEP_UNBLOCK,
-    SET_STEP_PRODUCER_UNBLOCK_TIMER = SET_STEP_PRODUCER_ONLY | SET_STEP_UNBLOCK_TIMER
+    SET_STEP_PRODUCER_UNBLOCK_TIMER = SET_STEP_PRODUCER_ONLY | SET_STEP_UNBLOCK_TIMER,
+    SET_STEP_NEVER          = 1 << 5, // Set step never called
 };
 
 template<DynamicStepPromiseMode mode>
@@ -72,6 +73,9 @@ constexpr bool RequiresStrongSyncV = IsProducerV<mode> || IsBothV<mode>;
 
 template<DynamicStepPromiseMode mode>
 constexpr bool RequiresLockV = UnblocksV<mode> && RequiresStrongSyncV<mode>;
+
+template<DynamicStepPromiseMode mode>
+constexpr bool SetStepNeverV = mode == DynamicStepPromiseMode::SET_STEP_NEVER;
 
 template<typename T, DynamicStepPromiseMode mode>
 class DynamicStepPromiseBuilder : public PromisePlusBuilder<T> {

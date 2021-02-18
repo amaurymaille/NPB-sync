@@ -128,6 +128,9 @@ void DynamicStepPromise<T, mode>::set_step(unsigned int new_step) {
         return;
     } */
 
+    if constexpr (SetStepNeverV<mode>)
+        throw std::runtime_error("Can't call set on DynamicStepPromise while in SET_STEP_NEVER mode !");
+
     if (new_step == 0)
         new_step = 1;
 
