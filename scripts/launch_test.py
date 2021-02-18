@@ -21,10 +21,6 @@ def parse_args():
     parser.add_argument("--promise-plus-iteration-timer", help="Enable timers on PromisePlusSynchronizer iterations", action="store_true")
     parser.add_argument("--promise-plus-debug-counters", help="Enable debug counters in PromisePlus", action="store_true")
 
-    promise_mode = parser.add_mutually_exclusive_group(required=True)
-    promise_mode.add_argument("--active", help="Use active promises", action="store_true")
-    promise_mode.add_argument("--passive", help="Use passive promises", action="store_true")
-
     parser.add_argument("--spdlog-include", help="spdlog include directory", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/include"))
     parser.add_argument("--spdlog-lib", help="spdlog library file", type=is_path, default=os.path.expanduser("~/NPB-sync/spdlog/build/libspdlog.a"))
 
@@ -36,7 +32,7 @@ def parse_args():
     
     return parser.parse_args()
 
-def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_timer, promise_plus_debug_counters, dims, src_filename, description, start_file, compute_file, debug):
+def run(threads, spdlog_include, spdlog_lib, promise_plus_iteration_timer, promise_plus_debug_counters, dims, src_filename, description, start_file, compute_file, debug):
     os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
     if dims:
@@ -50,8 +46,6 @@ def run(threads, spdlog_include, spdlog_lib, active, promise_plus_iteration_time
 
     cmake_command = ["cmake", "-DCMAKE_ADDITIONAL_DEFINITIONS="]
     additional_definitions = []
-    if active:
-        additional_definitions.append("-DACTIVE_PROMISES")
 
     if promise_plus_iteration_timer:
         additional_definitions.append("-DPROMISE_PLUS_ITERATION_TIMER")
@@ -94,7 +88,7 @@ def main():
 
     threads = args.threads
     
-    run(threads, args.spdlog_include, args.spdlog_lib, args.active, args.promise_plus_iteration_timer, args.promise_plus_debug_counters, args.dims, os.path.abspath(args.file.name), args.description, args.start_file, args.compute_file, args.debug)
+    run(threads, args.spdlog_include, args.spdlog_lib, args.promise_plus_iteration_timer, args.promise_plus_debug_counters, args.dims, os.path.abspath(args.file.name), args.description, args.start_file, args.compute_file, args.debug)
 
 if __name__ == "__main__":
     main()

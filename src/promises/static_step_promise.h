@@ -22,12 +22,11 @@
 template<typename T>
 class StaticStepPromiseBuilder : public PromisePlusBuilder<T> {
 public:
-    StaticStepPromiseBuilder(int, unsigned int, unsigned int, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    StaticStepPromiseBuilder(int, unsigned int, unsigned int);
     PromisePlus<T>* new_promise() const;
 
 private:
     int _nb_values;
-    PromisePlusWaitMode _wait_mode;
     unsigned int _step;
     unsigned int _n_threads;
 };

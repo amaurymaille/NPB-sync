@@ -646,11 +646,6 @@ void log_general_data(std::ostream& out) {
 
     data["file"] = sDynamicConfigFiles.get_simulations_filename();
     data["iterations"] = simu["iterations"];
-#ifdef ACTIVE_PROMISES
-    data["active"] = true;
-#else
-    data["active"] = false;
-#endif
 
     data["threads"] = omp_nb_threads();
     data["description"] = sDynamicConfigStd._description;

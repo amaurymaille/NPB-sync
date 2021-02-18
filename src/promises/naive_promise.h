@@ -124,23 +124,19 @@ private:
 template<typename T>
 class NaivePromiseBuilder : public PromisePlusBuilder<T> {
 public:
-    NaivePromiseBuilder(int nb_values, PromisePlusWaitMode wait_mode = PromisePlusBase::DEFAULT_WAIT_MODE);
+    NaivePromiseBuilder(int nb_values);
 
     PromisePlus<T>* new_promise() const {
-        if (_wait_mode == PromisePlusWaitMode::ACTIVE)
-            return new ActiveNaivePromise<T>(_nb_values);
-        else
-            return new PassiveNaivePromise<T>(_nb_values);
+        return new ActiveNaivePromise<T>(_nb_values);
     }
 
 private:
     int _nb_values;
-    PromisePlusWaitMode _wait_mode;
 };
 
 template<typename T>
-NaivePromiseBuilder<T>::NaivePromiseBuilder(int nb_values, PromisePlusWaitMode wait_mode) : 
-_nb_values(nb_values), _wait_mode(wait_mode) {
+NaivePromiseBuilder<T>::NaivePromiseBuilder(int nb_values) : 
+_nb_values(nb_values) {
 
 }
 

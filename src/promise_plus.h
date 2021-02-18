@@ -10,19 +10,8 @@
 
 #include "utils.h"
 
-enum class PromisePlusWaitMode {
-    PASSIVE,
-    ACTIVE
-};
-
 class PromisePlusBase {
 public:
-#ifdef ACTIVE_PROMISES
-    static constexpr PromisePlusWaitMode DEFAULT_WAIT_MODE = PromisePlusWaitMode::ACTIVE;
-#else
-    static constexpr PromisePlusWaitMode DEFAULT_WAIT_MODE = PromisePlusWaitMode::PASSIVE;
-#endif
-
     PromisePlusBase();
     PromisePlusBase(int max_index);
 
