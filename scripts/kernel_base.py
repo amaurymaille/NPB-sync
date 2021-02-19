@@ -2,9 +2,14 @@ import argparse
 import enum
 import functools
 
+class Kernel:
+    def __init__(self, internal_name, str_name):
+        self._internal = internal_name
+        self._name = str_name
+
 class Kernels(enum.Enum):
-    HEAT_CPU = ("heat_cpu", "Heat CPU")
-    LU = ("lu", "LU")
+    HEAT_CPU = Kernel("heat_cpu", "Heat CPU")
+    LU = Kernel("lu", "LU")
 
 class KernelParserBase:
     def __init__(self, description):
@@ -14,7 +19,7 @@ class KernelParserBase:
         self._callbacks = {}
         
         for kernel in Kernels:
-            subparser = subparsers.add_parser(kernel.value[0])
+            subparser = subparsers.add_parser(kernel.value._internal)
             self._subparsers[kernel.name] = subparser
             self._callbacks[kernel.name] = []
             subparser.set_defaults(func=functools.partial(self.run_callbacks_for_kernel, kernel.name))

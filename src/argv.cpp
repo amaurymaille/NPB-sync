@@ -13,7 +13,7 @@ namespace Options {
         static const char* runs_times_file = "runs-times-file";
         static const char* iterations_times_file = "iterations-times-file";
         static const char* simulations_file = "simulations-file";
-        static const char* parameters_file = "parameters-file";
+        static const char* general_log_file = "general-log-file";
         static const char* input_matrix_file = "input-matrix-file";
         static const char* start_matrix_file = "start-matrix-file";
     }
@@ -61,7 +61,7 @@ void populate_options(po::options_description& options) {
         (f::runs_times_file, po::value<std::string>(), "Path to the file in which the time for each run will be written")
         (f::iterations_times_file, po::value<std::string>(), "Path to the file in which the time for each iteration of each run will be written")
         (f::simulations_file, po::value<std::string>(), "Path to the file that contains the data for the runs")
-        (f::parameters_file, po::value<std::string>(), "Path to the file in which the general data of all simulations will be written")
+        (f::general_log_file, po::value<std::string>(), "Path to the file in which the general data of all simulations will be written")
         (f::start_matrix_file, po::value<std::string>(), "Path to the file in which the data of the start matrix is stored")
         (f::input_matrix_file, po::value<std::string>(), "Path to the file in which the expected output matrix is stored")
         (ostd::description, po::value<std::string>(), "Description of the simulation")
@@ -74,7 +74,7 @@ void process_files(DynamicConfig::Files& files,
                    po::variables_map const& vm) {
     init_outfile_if(f::runs_times_file, vm, std::bind(&DynamicConfig::Files::set_runs_times_file, &files, std::placeholders::_1));
     init_outfile_if(f::iterations_times_file, vm, std::bind(&DynamicConfig::Files::set_iterations_times_file, &files, std::placeholders::_1));
-    init_outfile_if(f::parameters_file, vm, std::bind(&DynamicConfig::Files::set_parameters_file, &files, std::placeholders::_1));
+    init_outfile_if(f::general_log_file, vm, std::bind(&DynamicConfig::Files::set_parameters_file, &files, std::placeholders::_1));
 
     files.set_simulations_filename(vm[f::simulations_file].as<std::string>());
     if (vm.count(f::input_matrix_file)) {

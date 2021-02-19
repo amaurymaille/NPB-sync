@@ -74,7 +74,9 @@ namespace JSON {
 
         namespace Synchronizers {
             static const std::string sequential("sequential");
-            static const std::string static_step_promise_plus("static-step-plus");
+            static const std::string static_step_promise_plus("static_step_plus");
+            static const std::string array_of_promises("array_of_promises");
+            static const std::string promise_of_array("promise_of_array");
         }
 
         namespace Extras {

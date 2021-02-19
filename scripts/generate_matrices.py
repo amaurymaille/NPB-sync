@@ -23,6 +23,9 @@ class MatrixData:
         raise NotImplementedError()
 
     def run(self, data, executable, parameters_filename):
+        if not os.path.isdir("../data"):
+            os.mkdir("../data")
+
         with open(parameters_filename, "w") as f:
             json.dump(data, f)
 
@@ -48,7 +51,8 @@ class HeatCPUMatrixData(MatrixData):
         }
 
         parameters_filename = "../data/heat_cpu_matrix_{}_{}_{}_{}".format(w, x, y, z)
-        self.run(data, "./src/heat_cpu/heat_cpu_matrix_generator", parameters_filename)
+        subprocess.Popen(["make", "-j", "8", "heat_cpu_matrix_generator"]).wait()
+        return self.run(data, "./src/heat_cpu/heat_cpu_matrix_generator", parameters_filename)
 
     @staticmethod
     def init_from_json(data):
@@ -68,7 +72,8 @@ class LUMatrixData(MatrixData):
         }
 
         parameters_filename = "../data/lu_matrix_{}_{}".format(dim, dim)
-        self.run(data, "./src/lu/lu_matrix_generator",  parameters_filename)
+        subprocess.Popen(["make", "-j", "8", "lu_matrix_generator"]).wait()
+        return self.run(data, "./src/lu/lu_matrix_generator",  parameters_filename)
 
     @staticmethod
     def init_from_json(data):
@@ -82,10 +87,11 @@ def parse_args():
 def generate_matrices(matrices_data):
     subprocesses = []
 
+    if not os.path.isdir("../build"):
+        os.mkdir("../build")
+
     os.chdir("../build")
     subprocess.Popen(["cmake", ".."]).wait()
-    subprocess.Popen(["make", "-j", "8", "heat_cpu_matrix_generator"]).wait()
-    subprocess.Popen(["make", "-j", "8", "lu_matrix_generator"]).wait()
 
     for matrix_data in matrices_data:
         subprocesses.append(matrix_data.generate_matrix())
@@ -105,9 +111,9 @@ def parse_file(f):
 
     for matrix_data in content["data"]:
         kernel_type = matrix_data["type"]
-        if kernel_type == kb.Kernels.HEAT_CPU.value[0]:
+        if kernel_type == kb.Kernels.HEAT_CPU.value._internal:
             data.append(HeatCPUMatrixData.init_from_json(matrix_data))
-        elif kernel_type == kb.Kernels.LU.value[0]:
+        elif kernel_type == kb.Kernels.LU.value._internal:
             data.append(LUMatrixData.init_from_json(matrix_data))
         else:
             print("Unknown kernel type {}".format(kernel_type), file=sys.stderr)

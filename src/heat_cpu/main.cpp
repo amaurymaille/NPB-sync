@@ -552,10 +552,8 @@ private:
 namespace JSON {
     namespace Run {
         namespace Synchronizers {
-            static const std::string alt_bit("alt-bit");
+            static const std::string alt_bit("alt_bit");
             static const std::string counter("counter");
-            static const std::string array_of_promises("array-of-promises");
-            static const std::string promise_of_array("promise-of-array");
         }
 
         static const std::vector<std::string> authorized_synchronizers = {
