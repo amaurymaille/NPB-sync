@@ -22,9 +22,10 @@ enum class DynamicStepPromiseMode {
     SET_STEP_BOTH_UNBLOCK = SET_STEP_BOTH | SET_STEP_UNBLOCK,
     SET_STEP_TIMER         = 1 << 4, // Step is autotuned during the calls to set / set_immediate
     SET_STEP_PRODUCER_TIMER = SET_STEP_PRODUCER_ONLY | SET_STEP_TIMER,
-    SET_STEP_UNBLOCK_TIMER = SET_STEP_TIMER | SET_STEP_UNBLOCK,
-    SET_STEP_PRODUCER_UNBLOCK_TIMER = SET_STEP_PRODUCER_ONLY | SET_STEP_UNBLOCK_TIMER,
-    SET_STEP_NEVER          = 1 << 5, // Set step never called
+    SET_STEP_TIMER_UNBLOCK = SET_STEP_TIMER | SET_STEP_UNBLOCK,
+    SET_STEP_PRODUCER_TIMER_UNBLOCK = SET_STEP_PRODUCER_ONLY | SET_STEP_TIMER_UNBLOCK,
+    SET_STEP_MONITOR        = 1 << 5,
+    SET_STEP_NEVER          = 1 << 6, // Set step never called
 };
 
 template<DynamicStepPromiseMode mode>
@@ -93,7 +94,7 @@ template<typename T, DynamicStepPromiseMode mode>
 class DynamicStepPromise : public PromisePlus<T> {
     static_assert(mode != DynamicStepPromiseMode::SET_STEP_UNBLOCK);
     static_assert(mode != DynamicStepPromiseMode::SET_STEP_TIMER);
-    static_assert(mode != DynamicStepPromiseMode::SET_STEP_UNBLOCK_TIMER);
+    static_assert(mode != DynamicStepPromiseMode::SET_STEP_TIMER_UNBLOCK);
 public:
     DynamicStepPromise(int nb_values, unsigned int start_step);
 
