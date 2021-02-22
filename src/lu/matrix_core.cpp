@@ -94,7 +94,47 @@ void LUMatrix::init_matrix_from_file(Matrix2D& dst, const std::string& filename)
 }
 
 void LUMatrix::init_matrix(Matrix2D& matrix, uint64 nb_elements) {
-    throw std::runtime_error("Non");
+    // Based on polybench code
+
+    namespace g = Globals;
+
+    int n = nb_elements / 2;
+    int i, j;
+
+    for (i = 0; i < n; i++) {
+        for (j = 0; j <= i; j++) {
+	        matrix[i][j] = (-j % n) / n + 1;
+        }
+
+        for (j = i+1; j < n; j++) {
+	        matrix[i][j] = 0;
+        }
+        matrix[i][i] = 1;
+    }
+
+    /* Make the matrix positive semi-definite. */
+    /* not necessary for LU, but using same code as cholesky */
+    int r, s, t;
+    Matrix2D tmp(boost::extents[g::LU::DIM][g::LU::DIM]);
+    for (r = 0; r < n; ++r) {
+        for (s = 0; s < n; ++s) {
+            tmp[r][s] = 0;
+        }
+    }
+
+    for (t = 0; t < n; ++t) {
+        for (r = 0; r < n; ++r) {
+            for (s = 0; s < n; ++s) {
+                tmp[r][s] += matrix[r][t] * matrix[s][t];
+            }
+        }
+    }
+
+    for (r = 0; r < n; ++r) {
+        for (s = 0; s < n; ++s) {
+            matrix[r][s] = tmp[r][s];
+        }
+    }
 }
 
 void LUMatrix::compute_matrix(Matrix2D& matrix, size_t dimx, size_t dimy) {
