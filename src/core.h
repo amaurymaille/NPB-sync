@@ -77,6 +77,16 @@ namespace JSON {
             static const std::string static_step_promise_plus("static_step_plus");
             static const std::string array_of_promises("array_of_promises");
             static const std::string promise_of_array("promise_of_array");
+            static const std::string dsp_prod_only("dsp_prod_only");
+            static const std::string dsp_cons_only("dsp_cons_only");
+            static const std::string dsp_both("dsp_both");
+            static const std::string dsp_prod_unblocks("dsp_prod_unblocks");
+            static const std::string dsp_cons_unblocks("dsp_cons_unblocks");
+            static const std::string dsp_both_unblocks("dsp_both_unblocks");
+            static const std::string dsp_prod_timer("dsp_prod_timer");
+            static const std::string dsp_prod_timer_unblocks("dsp_prod_timer_unblocks");
+            static const std::string dsp_monitor("dsp_monitor");
+            static const std::string dsp_never("dsp_never");
         }
 
         namespace Extras {
@@ -84,6 +94,17 @@ namespace JSON {
         }
     }
 }
+
+#define DSP_ALL Synchronizers::dsp_prod_only, \
+                Synchronizers::dsp_cons_only, \
+                Synchronizers::dsp_both, \
+                Synchronizers::dsp_prod_unblocks, \
+                Synchronizers::dsp_cons_unblocks, \
+                Synchronizers::dsp_both_unblocks, \
+                Synchronizers::dsp_prod_timer, \
+                Synchronizers::dsp_prod_timer_unblocks, \
+                Synchronizers::dsp_monitor, \
+                Synchronizers::dsp_never
 
 class Runner {
 public:
