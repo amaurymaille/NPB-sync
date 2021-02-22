@@ -100,4 +100,6 @@ void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D> const& b,
                                          std::vector<Vector1D>& x,
                                          DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 
+#include "lu/lu.tpp"
+
 #endif // LU_H
