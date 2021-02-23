@@ -59,25 +59,27 @@ class HeatCPUMatrixData(MatrixData):
         return HeatCPUMatrixData(data["w"], data["x"], data["y"], data["z"], data["start"], data["compute"])
 
 class LUMatrixData(MatrixData):
-    def __init__(self, dim, start_filename, compute_filename):
+    def __init__(self, dim, nb_vectors, start_filename, compute_filename):
         super(LUMatrixData, self).__init__(start_filename, compute_filename)
         self._dim = dim
+        self._nb_vectors = nb_vectors
 
     def generate_matrix(self):
         dim = self._dim
 
         data = {
             "dim": dim,
-            "nb_elements": dim * dim
+            "nb_elements": dim * dim,
+            "nb_vectors": self._nb_vectors
         }
 
-        parameters_filename = "../data/lu_matrix_{}_{}".format(dim, dim)
+        parameters_filename = "../data/lu_matrix_{}_{}_{}".format(dim, dim, self._nb_vectors)
         subprocess.Popen(["make", "-j", "8", "lu_matrix_generator"]).wait()
         return self.run(data, "./src/lu/lu_matrix_generator",  parameters_filename)
 
     @staticmethod
     def init_from_json(data):
-        return LUMatrixData(data["dim"], data["start"], data["compute"])
+        return LUMatrixData(data["dim"], data["nb_vectors"], data["start"], data["compute"])
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate matrix data files")
@@ -102,8 +104,8 @@ def generate_matrices(matrices_data):
 def generate_heat_cpu_matrix_data(w, x, y, z):
     return HeatCPUMatrixData(w, x, y, z, "../data/heat_cpu_start_{}_{}_{}_{}.data".format(w, x, y, z), "../data/heat_cpu_compute_{}_{}_{}_{}.data".format(w, x, y, z))
 
-def generate_lu_matrix_data(dim):
-    return LUMatrixData(dim, "../data/lu_start_{}.data".format(dim), "../data/lu_compute_{}.data".format(dim))
+def generate_lu_matrix_data(dim, nb_vectors):
+    return LUMatrixData(dim, nb_vectors, "../data/lu_start_{}_{}.data".format(dim, nb_vectors), "../data/lu_compute_{}_{}.data".format(dim, nb_vectors))
 
 def parse_file(f):
     content = json.load(f)

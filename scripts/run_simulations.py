@@ -27,8 +27,6 @@ class Run:
         if generate_initial_files: 
             if initial_generation_file is None:
                 raise RuntimeError("Cannot ask generation of initial files without providing generation parameters!")
-            if not os.path.exists(initial_generation_file):
-                raise RuntimeError("File {} provided for initial generation does not exist!".format(initial_generation_file))
 
             if start_file is None:
                 raise RuntimeError("Cannot ask generation of initial files without providing start file name!")
@@ -188,26 +186,31 @@ class HeatCPURun(Run):
         return command
 
 class LURun(Run):
-    def __init__(self, dim, **kwargs):
+    def __init__(self, dim, nb_vectors, **kwargs):
         self._dim = dim
+        self._nb_vectors = nb_vectors
         super(LURun, self).__init__(**kwargs)
 
     @staticmethod
-    def generate_run(dim, **kwargs):
-        return LURun(dim, **kwargs)
+    def generate_run(dim, nb_vectors, **kwargs):
+        return LURun(dim, nb_vectors, **kwargs)
 
     @staticmethod
     def generate_from_json(content):
         dim = content["dim"]
         del content["dim"]
 
-        return LURun.generate_run(dim, **content)
+        nb_vectors = content["nb_vectors"]
+        del content["nb_vectors"]
+
+        return LURun.generate_run(dim, nb_vectors, **content)
 
     def get_initial_generation_file_content(self):
         return {
             "start": self._start_file,
             "compute": self._compute_file,
-            "dim": self._dim
+            "dim": self._dim,
+            "nb_vectors": self._nb_vectors
         }
 
     def get_kernel_name(self):
