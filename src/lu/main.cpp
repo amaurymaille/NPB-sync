@@ -18,9 +18,9 @@
 namespace g = Globals;
 
 template<typename MatrixValue, DynamicStepPromiseMode mode>
-class LUSynchronizer : public Synchronizer<LUMatrix> {
+class LUSynchronizer : public Synchronizer<LUSolver> {
 public:
-    LUSynchronizer(LUMatrix const& m, Matrix2D& matrix, int nb_threads, DynamicStepPromiseBuilder<MatrixValue, mode> const& builder) : Synchronizer(m, matrix), _n_threads(nb_threads), _builder(builder) {
+    LUSynchronizer(LUSolver const& m, Matrix2D& matrix, int nb_threads, DynamicStepPromiseBuilder<MatrixValue, mode> const& builder) : Synchronizer(m, matrix), _n_threads(nb_threads), _builder(builder) {
 
     }
 
@@ -133,7 +133,9 @@ namespace JSON {
 
 class LURunner : public Runner {
 public:
-    LURunner(std::string const& filename) : Runner(filename) { }
+    LURunner(std::string const& filename) : Runner(filename) { 
+        validate();
+    }
 
     void validate_synchronizer(std::string const& synchronizer) override {
         auto const& authorized = JSON::Run::authorized_synchronizers;

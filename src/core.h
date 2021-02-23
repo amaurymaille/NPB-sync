@@ -110,7 +110,6 @@ class Runner {
 public:
     Runner(std::string const& filename) {
         init_from_file(filename);
-        validate();
     }
 
     void run() {
@@ -129,11 +128,13 @@ private:
         stream >> _data;
     }
 
+protected:
     void validate() {
         validate_top();
         validate_runs();
     }
 
+private:
     void validate_top() {
         throw_if_not_present(JSON::Top::iterations);
         throw_if_not_present(JSON::Top::runs);

@@ -573,7 +573,7 @@ namespace Sync = JSON::Run::Synchronizers;
 class HeatCPURunner : public Runner {
 public:
     HeatCPURunner(std::string const& filename) : Runner(filename) {
-
+        validate();
     }
 
     void validate_synchronizer(std::string const& synchronizer) {
