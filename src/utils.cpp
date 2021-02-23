@@ -104,3 +104,23 @@ std::string ns_with_leading_zeros(uint64 ns) {
         return str.str();
     }
 }
+
+template<typename Stream>
+Stream open_file(const std::string& filename) {
+    Stream str(filename);
+    if (!str) {
+        std::ostringstream err;
+        err << "Error while opening " << filename << std::endl;
+        throw std::runtime_error(err.str());
+    }
+
+    return str;
+}
+
+std::ofstream open_out_file(const std::string& output_file) {
+    return open_file<std::ofstream>(output_file);
+}
+
+std::ifstream open_in_file(const std::string& input_file) {
+    return open_file<std::ifstream>(input_file);
+}

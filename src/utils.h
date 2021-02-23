@@ -95,6 +95,9 @@ bool same_shape(const Matrix& lhs, const Matrix& rhs) {
     return ! memcmp(lhs_shape, rhs_shape, sizeof(typename Matrix::size_type) * dims);
 }
 
+std::ofstream open_out_file(const std::string& output_file);
+std::ifstream open_in_file(const std::string& input_file);
+
 #include "utils.tpp"
 
 #endif /* UTILS_H */
