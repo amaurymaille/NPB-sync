@@ -5,7 +5,7 @@ file (GLOB PROMISE_FILES promises/*/*.cpp promises/*/*.tpp)
 add_library(core STATIC argv.cpp core.h defines.cpp dynamic_config.cpp fifo.h 
                         logging.cpp matrix_core.h naive_promise.h 
                         promise_plus.cpp promise_plus.tpp time_log.h utils.cpp
-                        utils.tpp "${PROMISE_FILES}")
+                        utils.tpp "${PROMISE_FILES}" generator_core.cpp)
 
 target_link_libraries(core "${Boost_PROGRAM_OPTIONS_LIBRARY}"
                            "${Boost_THREAD_LIBRARY}"
