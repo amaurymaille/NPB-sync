@@ -6,72 +6,17 @@
 
 #include <boost/program_options.hpp>
 #include "nlohmann/json.hpp"
+#include <generator_core.h>
 #include <sys/time.h>
+#include <utils.h>
 
 #include "heat_cpu/matrix_core.h"
 
 using json = nlohmann::json;
 
-struct Args {
-    std::string start_matrix_filename;
-    std::string compute_matrix_filename;
-    std::string parameters_filename;
-};
-
-namespace Options {
-    static const char* start_matrix_file  = "start-matrix-file";
-    static const char* compute_matrix_file = "compute-matrix-file";
-    static const char* parameters_file = "parameters-file";
-}
-
-namespace po = boost::program_options;
-namespace o = Options;
-
-static void parse_command_line(int argc, char** argv, Args& args);
-static void process_options(po::variables_map vm, Args& args);
 static void generate_heat_cpu_matrices(Args& args);
 static void generate_heat_cpu_start_matrix(Matrix4D& result, uint64 nb_elements, const std::string& output_file);
 static void generate_heat_cpu_computed_matrix(Matrix4D& start, uint64 nb_elements, int dimw, int dimx, int dimy, int dimz, const std::string& output_file);
-static std::ofstream open_out_file(const std::string& output_file);
-static uint64 clock_diff(const struct timespec& end, const struct timespec& begin);
-
-void parse_command_line(int argc, char** argv, Args& args) {
-    po::options_description base_options("Base options");
-    base_options.add_options()
-        ("help,h", "Display this help and exit")
-        (o::start_matrix_file, po::value<std::string>(), "Path to the output file for the start matrix")
-        (o::compute_matrix_file, po::value<std::string>(), "Path to the output file for the computed matrix")
-        (o::parameters_file, po::value<std::string>(), "Path to the JSON file that contains the parameters of the matrix")
-        ;
-
-    po::options_description options("All options");
-    options.add(base_options);
-
-    po::variables_map vm;
-    po::command_line_parser parser(argc, argv);
-    parser.options(options);
-    po::store(parser.run(), vm);
-    po::notify(vm);
-
-    if (vm.count("help")) {
-        std::cout << options << std::endl;
-        exit(1);
-    }
-
-    process_options(vm, args);
-} 
-
-void process_options(po::variables_map vm, Args& args) {
-    if (!vm.count(o::start_matrix_file) || !vm.count(o::compute_matrix_file) || !vm.count(o::parameters_file)) {
-        std::ostringstream str;
-        str << o::start_matrix_file << " and " << o::compute_matrix_file << " are both required !" << std::endl;
-        throw std::runtime_error(str.str());
-    }
-
-    args.start_matrix_filename = vm[o::start_matrix_file].as<std::string>();
-    args.compute_matrix_filename = vm[o::compute_matrix_file].as<std::string>();
-    args.parameters_filename = vm[o::parameters_file].as<std::string>();
-}
 
 void generate_heat_cpu_matrices(Args& args) {
     std::ifstream in(args.parameters_filename);
@@ -144,7 +89,7 @@ void generate_heat_cpu_matrices(Args& args) {
     clock_gettime(CLOCK_MONOTONIC, &check_compute_end);
 
     auto fn = [](const std::string& message, const struct timespec& end, const struct timespec& begin) -> void {
-        std::cout << message << ": " << clock_diff(end, begin) << std::endl;
+        std::cout << message << ": " << clock_diff(&end, &begin) << std::endl;
     };
 
     fn("Generate start", generate_start_end, generate_start_end);
@@ -175,17 +120,6 @@ void generate_heat_cpu_computed_matrix(Matrix4D& start, uint64 nb_elements, int 
     std::copy(ptr, ptr + nb_elements, std::ostream_iterator<Matrix4D::element>(out, " "));
 }
 
-std::ofstream open_out_file(const std::string& output_file) {
-    std::ofstream out(output_file);
-    if (!out) {
-        std::ostringstream err;
-        err << "Error while opening " << output_file << std::endl;
-        throw std::runtime_error(err.str());
-    }
-
-    return out;
-}
-
 uint64 clock_diff(const struct timespec& end, const struct timespec& begin) {
     uint64 diff = (end.tv_sec - begin.tv_sec) * 1000000000 + (end.tv_nsec - begin.tv_nsec);
     return diff;
@@ -193,7 +127,7 @@ uint64 clock_diff(const struct timespec& end, const struct timespec& begin) {
 
 int main(int argc, char** argv) {
     Args args;
-    parse_command_line(argc, argv, args);
+    parse_command_line(argc, argv, args, std::nullopt, std::nullopt);
     generate_heat_cpu_matrices(args);
     return 0;
 }
