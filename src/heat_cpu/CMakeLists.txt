@@ -1,4 +1,4 @@
-add_library(heat_cpu_core heat_cpu.cpp matrix_core.cpp)
+add_library(heat_cpu_core STATIC heat_cpu.cpp matrix_core.cpp)
 target_link_libraries(heat_cpu_core core)
 
 add_executable(heat_cpu main.cpp)
