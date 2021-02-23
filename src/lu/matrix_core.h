@@ -1,13 +1,14 @@
 #ifndef LU_MATRIX_CORE_H
 #define LU_MATRIX_CORE_H
 
+#include <defines.h>
 #include <matrix_core.h>
 #include "lu/defines.h"
 
-class LUMatrix final : public IReferenceMatrix<Matrix2D> {
+class LUSolver final : public IReferenceMatrix<Matrix2D> {
 public:
-    static LUMatrix& instance() {
-        static LUMatrix instance;
+    static LUSolver& instance() {
+        static LUSolver instance;
         return instance;
     }
 
@@ -28,10 +29,13 @@ public:
     static void init_matrix_from_file(Matrix2D& dst, const std::string& filename);
 
     static void init_matrix(Matrix2D& matrix, uint64 nb_elements);
-    static void compute_matrix(Matrix2D& matrix, size_t dimx, size_t dimy);
+    static void compute_matrix(Matrix2D const& start, Matrix2D& res, size_t dim);
+
+    static void generate_vectors(Matrix2D const& matrix, std::vector<Vector1D>& xs, std::vector<Vector1D>& bs);
+    static void generate_vector(Matrix2D const& matrix, Vector1D& x, Vector1D& b);
 
 private:
-    LUMatrix();
+    LUSolver();
 
     void _init();
     void _init_expected();
@@ -40,6 +44,6 @@ private:
     void init_expected_from_file(std::string const& filename);
 };
 
-#define sLU LUMatrix::instance()
+#define sLU LUSolver::instance()
 
 #endif // LU_MATRIX_CORE_H

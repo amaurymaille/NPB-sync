@@ -12,16 +12,16 @@
 #include "utils.h"
 
 // ----------------------------------------------------------------------------
-// LUMatrix
+// LUSolver
 
 namespace lu = Globals::LU;
 
-LUMatrix::LUMatrix() {
+LUSolver::LUSolver() {
     _matrix.resize(boost::extents[lu::DIM][lu::DIM]); 
     _expected.resize(boost::extents[lu::DIM][lu::DIM]);
 }
 
-void LUMatrix::init() {
+void LUSolver::init() {
     auto start_matrix_filename_opt = sDynamicConfigFiles.get_start_matrix_filename();
     if (start_matrix_filename_opt) {
         init_from_file(start_matrix_filename_opt.value());
@@ -30,41 +30,41 @@ void LUMatrix::init() {
     }
 }
 
-void LUMatrix::assert_okay_init(const Matrix2D& other) const {
+void LUSolver::assert_okay_init(const Matrix2D& other) const {
     assert_matrix_equals(_matrix, other);
 }
 
-void LUMatrix::init_expected() {
+void LUSolver::init_expected() {
     auto input_matrix_filename_opt = sDynamicConfigFiles.get_input_matrix_filename();
     if (input_matrix_filename_opt) {
         const std::string& filename = input_matrix_filename_opt.value();
         init_expected_from_file(filename);
     } else {
-        compute_matrix(_expected, lu::DIM, lu::DIM);
+        compute_matrix(sLU.get_matrix(), _expected, lu::DIM);
     }
 }
 
-void LUMatrix::assert_okay_expected(const Matrix2D& other) const {
+void LUSolver::assert_okay_expected(const Matrix2D& other) const {
     assert_matrix_equals(_expected, other);
 }
 
-void LUMatrix::init_from(Matrix2D const& other) {
+void LUSolver::init_from(Matrix2D const& other) {
     init_matrix_from(_matrix, other);
 }
 
-void LUMatrix::init_expected_from(Matrix2D const& other) {
+void LUSolver::init_expected_from(Matrix2D const& other) {
     init_matrix_from(_expected, other);
 }
 
-void LUMatrix::assert_equals(Matrix2D const& other) const {
+void LUSolver::assert_equals(Matrix2D const& other) const {
     assert_matrix_equals(_matrix, other);
 }
 
-void LUMatrix::assert_expected_equals(const Matrix2D& other) const {
+void LUSolver::assert_expected_equals(const Matrix2D& other) const {
     assert_matrix_equals(_expected, other);
 }
 
-void LUMatrix::assert_matrix_equals(Matrix2D const& lhs, Matrix2D const& rhs) {
+void LUSolver::assert_matrix_equals(Matrix2D const& lhs, Matrix2D const& rhs) {
     if (!same_shape(lhs, rhs)) {
         throw std::runtime_error("Matrices not equal (different shapes)");
     }
@@ -74,7 +74,7 @@ void LUMatrix::assert_matrix_equals(Matrix2D const& lhs, Matrix2D const& rhs) {
     }
 }
 
-void LUMatrix::init_matrix_from(Matrix2D& dst, const Matrix2D& src) {
+void LUSolver::init_matrix_from(Matrix2D& dst, const Matrix2D& src) {
     if (!same_shape(dst, src)) {
         throw std::runtime_error("Matrices not equal (different shapes)");
     }
@@ -82,7 +82,7 @@ void LUMatrix::init_matrix_from(Matrix2D& dst, const Matrix2D& src) {
     memcpy(dst.data(), src.data(), src.size() * sizeof(MatrixTValue));
 }
 
-void LUMatrix::init_matrix_from_file(Matrix2D& dst, const std::string& filename) {
+void LUSolver::init_matrix_from_file(Matrix2D& dst, const std::string& filename) {
     std::ifstream stream(filename);
     if (!stream.good()) {
         std::ostringstream err_stream;
@@ -93,12 +93,12 @@ void LUMatrix::init_matrix_from_file(Matrix2D& dst, const std::string& filename)
     std::copy(std::istream_iterator<MatrixTValue>(stream), std::istream_iterator<MatrixTValue>(), dst.data());
 }
 
-void LUMatrix::init_matrix(Matrix2D& matrix, uint64 nb_elements) {
+void LUSolver::init_matrix(Matrix2D& matrix, uint64 nb_elements) {
     // Based on polybench code
 
     namespace g = Globals;
 
-    int n = nb_elements / 2;
+    int n = matrix.size();
     int i, j;
 
     for (i = 0; i < n; i++) {
@@ -137,23 +137,51 @@ void LUMatrix::init_matrix(Matrix2D& matrix, uint64 nb_elements) {
     }
 }
 
-void LUMatrix::compute_matrix(Matrix2D& matrix, size_t dimx, size_t dimy) {
-    kernel_lu(sLU.get_matrix(), matrix);
+void LUSolver::compute_matrix(Matrix2D const& start, Matrix2D& res, size_t dim) {
+    (void)dim; // ???
+    kernel_lu(start, res);
 }
 
-void LUMatrix::_init() {
+void LUSolver::_init() {
     init_matrix(_matrix, lu::DIM * lu::DIM);
 }
 
-void LUMatrix::_init_expected() {
-    init_matrix(_expected, lu::DIM * lu::DIM);
-    compute_matrix(_expected, lu::DIM, lu::DIM);
+void LUSolver::_init_expected() {
+    Matrix2D start(boost::extents[lu::DIM][lu::DIM]);
+    init_matrix(start, lu::DIM * lu::DIM);
+    compute_matrix(start, _expected, lu::DIM);
 }
 
-void LUMatrix::init_from_file(std::string const& filename) {
+void LUSolver::init_from_file(std::string const& filename) {
     init_matrix_from_file(_matrix, filename);
 }
 
-void LUMatrix::init_expected_from_file(std::string const& filename) {
+void LUSolver::init_expected_from_file(std::string const& filename) {
     init_matrix_from_file(_expected, filename);
+}
+
+void LUSolver::generate_vectors(Matrix2D const& matrix, std::vector<Vector1D>& xs, std::vector<Vector1D>& bs) {
+    for (int i = 0; i < xs.size(); ++i) {
+        Vector1D& x = xs[i];
+        Vector1D& b = bs[i];
+
+        LUSolver::generate_vector(matrix, x, b);
+    }
+}
+
+void LUSolver::generate_vector(Matrix2D const& matrix, Vector1D& x, Vector1D& b) {
+    // Ax = b
+    RandomGenerator<unsigned int> gen(1, 100);
+
+    for (int i = 0; i < x.size(); ++i)
+        x[i] = gen();
+
+    b.resize(x.size());
+    std::fill(b.begin(), b.end(), 0);
+
+    for (int i = 0; i < matrix.size(); ++i) {
+        for (int j = 0; j < matrix.size(); ++j) {
+            b[i] += matrix[i][j] * x[j];
+        }
+    }
 }
