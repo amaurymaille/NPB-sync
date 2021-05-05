@@ -133,7 +133,7 @@ static inline int ringbuffer_nb_elements(ringbuffer_t const* buf) {
 /* Reinit a ringbuffer.
  * All elements are discarded and the size if set to new_size.
  */
-static inline void reingbuffer_reinit(ringbuffer_t* buf, unsigned int new_size) {
+static inline void ringbuffer_reinit(ringbuffer_t* buf, unsigned int new_size) {
   ringbuffer_destroy(buf);
   ringbuffer_init(buf, new_size);
 }
