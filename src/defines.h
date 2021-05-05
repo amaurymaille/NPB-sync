@@ -48,4 +48,12 @@ class PromisePlus;
 template<>
 class PromisePlus<void>;
 
+typedef boost::multi_array<float, 2> Matrix2D;
+typedef Matrix2D::element Matrix2DValue;
+
+typedef std::vector<float> Vector1D;
+typedef Vector1D::value_type Vector1DValue;
+
+typedef boost::multi_array<int, 4> Matrix4D;
+
 #endif /* DEFINES_H */
