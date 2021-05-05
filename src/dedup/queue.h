@@ -147,7 +147,7 @@ void queue_destroy(queue_t * que);
 
 void queue_terminate(queue_t * que);
 
-int queue_dequeue(queue_t *que, ringbuffer_t *buf, int min, int limit);
+int queue_dequeue(queue_t *que, ringbuffer_t *buf, int limit);
 int queue_enqueue(queue_t *que, ringbuffer_t *buf, int limit);
 
 #endif //_QUEUE_H_

@@ -53,7 +53,7 @@ void queue_terminate(queue_t * que) {
 #endif
 }
 
-int queue_dequeue(queue_t *que, ringbuffer_t *buf, int min, int limit) {
+int queue_dequeue(queue_t *que, ringbuffer_t *buf, int limit) {
   int i;
 
 #ifdef ENABLE_PTHREADS
