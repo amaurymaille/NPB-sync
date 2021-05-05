@@ -28,7 +28,7 @@ struct _queue_t {
   int nTerminated;
 #ifdef ENABLE_PTHREADS
   pthread_mutex_t mutex;
-  pthread_cond_t notEmpty, notFull, smartWait;
+  pthread_cond_t notEmpty, notFull;
 #endif //ENABLE_PTHREADS
 };
 

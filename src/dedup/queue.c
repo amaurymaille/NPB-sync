@@ -15,7 +15,6 @@ void queue_init(queue_t * que, size_t size, int nProducers) {
   pthread_mutex_init(&que->mutex, NULL);
   pthread_cond_init(&que->notEmpty, NULL);
   pthread_cond_init(&que->notFull, NULL);
-  pthread_cond_init(&que->smartWait, NULL);
 #endif
   int init_res = ringbuffer_init(&(que->buf), size);
   assert(!init_res);
@@ -28,7 +27,6 @@ void queue_destroy(queue_t * que) {
   pthread_mutex_destroy(&que->mutex);
   pthread_cond_destroy(&que->notEmpty);
   pthread_cond_destroy(&que->notFull);
-  pthread_cond_destroy(&que->smartWait);
 #endif
   ringbuffer_destroy(&(que->buf));
 }
@@ -50,7 +48,7 @@ void queue_terminate(queue_t * que) {
   que->nTerminated++;
   assert(que->nTerminated <= que->nProducers);
 #ifdef ENABLE_PTHREADS
-  if(queue_isTerminated(que)) { pthread_cond_broadcast(&que->notEmpty); pthread_cond_broadcast(&que->smartWait); }
+  if(queue_isTerminated(que)) { pthread_cond_broadcast(&que->notEmpty); }
   pthread_mutex_unlock(&que->mutex);
 #endif
 }
@@ -68,14 +66,6 @@ int queue_dequeue(queue_t *que, ringbuffer_t *buf, int min, int limit) {
 #ifdef ENABLE_PTHREADS
     pthread_mutex_unlock(&que->mutex);
 #endif
-    return -1;
-  }
-
-  while (ringbuffer_nb_elements(&que->buf) < min && !queue_isTerminated(que))
-    pthread_cond_wait(&que->smartWait, &que->mutex);
-
-  if (ringbuffer_nb_elements(&que->buf) < min && queue_isTerminated(que) && ringbuffer_isEmpty(&que->buf)) {
-    pthread_mutex_unlock(&que->mutex);
     return -1;
   }
 
@@ -127,7 +117,7 @@ int queue_enqueue(queue_t *que, ringbuffer_t *buf, int limit) {
   }
   // printf("[queue enqueue after] Ringbuffer %p has %d elements\n", &que->buf, ringbuffer_nb_elements(&que->buf));
 #ifdef ENABLE_PTHREADS
-  if(i>0) { pthread_cond_signal(&que->notEmpty); pthread_cond_signal(&que->smartWait); }
+  if(i>0) { pthread_cond_signal(&que->notEmpty); }
   pthread_mutex_unlock(&que->mutex);
 #endif
   return i;
