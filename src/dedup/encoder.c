@@ -34,6 +34,7 @@
 #include "config.h"
 #include "rabin.h"
 #include "mbuffer.h"
+#include "step.h"
 
 #ifdef ENABLE_PTHREADS
 #include "queue.h"
@@ -417,15 +418,21 @@ void *Compress(void * targs) {
   init_stats(thread_stats);
 #endif //ENABLE_STATISTICS
 
+  unsigned int recv_step = compress_initial_extract_step();
+  int recv_it = 0;
+  unsigned int send_step = reorder_initial_insert_step(); // Oops
+  int send_it = 0;
   r=0;
-  r += ringbuffer_init(&recv_buf, ITEM_PER_FETCH);
-  r += ringbuffer_init(&send_buf, ITEM_PER_INSERT);
+  r += ringbuffer_init(&recv_buf, recv_step);
+  r += ringbuffer_init(&send_buf, send_step);
   assert(r==0);
 
   while(1) {
     //get items from the queue
     if (ringbuffer_isEmpty(&recv_buf)) {
-      r = queue_dequeue(&compress_que[qid], &recv_buf, 0, ITEM_PER_FETCH);
+      r = queue_dequeue(&compress_que[qid], &recv_buf, recv_step);
+      update_compress_extract_step(&recv_step, recv_it++);
+      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Compress", r, args->tid, qid, &compress_que[qid]);
       if (r < 0) break;
     }
@@ -446,7 +453,9 @@ void *Compress(void * targs) {
 
     //put the item in the next queue for the write thread
     if (ringbuffer_isFull(&send_buf)) {
-      r = queue_enqueue(&reorder_que[qid], &send_buf, ITEM_PER_INSERT);
+      r = queue_enqueue(&reorder_que[qid], &send_buf, send_step);
+      update_reorder_insert_step(&send_step, send_it++);
+      ringbuffer_reinit(&send_buf, send_step);
       // log_enqueue("Compress", "Reorder", r, args->tid, qid, &reorder_que[qid]);
       assert(r>=1);
     }
@@ -540,6 +549,12 @@ void * Deduplicate(void * targs) {
   int r;
   int compress_count = 0, reorder_count = 0;
 
+  unsigned int recv_step = dedup_initial_extract_step();
+  int recv_it = 0;
+  unsigned int send_compress_step = compress_initial_insert_step();
+  int send_compress_it = 0;
+  unsigned int send_reorder_step = reorder_initial_insert_step();
+  int send_reorder_it = 0;
   ringbuffer_t recv_buf, send_buf_reorder, send_buf_compress;
 
 #ifdef ENABLE_STATISTICS
@@ -551,15 +566,17 @@ void * Deduplicate(void * targs) {
 #endif //ENABLE_STATISTICS
 
   r=0;
-  r += ringbuffer_init(&recv_buf, CHUNK_ANCHOR_PER_FETCH);
-  r += ringbuffer_init(&send_buf_reorder, ITEM_PER_INSERT);
-  r += ringbuffer_init(&send_buf_compress, ITEM_PER_INSERT);
+  r += ringbuffer_init(&recv_buf, recv_step);
+  r += ringbuffer_init(&send_buf_reorder, send_reorder_step);
+  r += ringbuffer_init(&send_buf_compress, send_compress_step);
   assert(r==0);
 
   while (1) {
     //if no items available, fetch a group of items from the queue
     if (ringbuffer_isEmpty(&recv_buf)) {
-      r = queue_dequeue(&deduplicate_que[qid], &recv_buf, 0, CHUNK_ANCHOR_PER_FETCH);
+      r = queue_dequeue(&deduplicate_que[qid], &recv_buf, recv_step);
+      update_dedup_extract_step(&recv_step, recv_it++);
+      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
       if (r < 0) break;
     }
@@ -585,7 +602,9 @@ void * Deduplicate(void * targs) {
       ++compress_count;
       assert(r==0);
       if (ringbuffer_isFull(&send_buf_compress)) {
-        r = queue_enqueue(&compress_que[qid], &send_buf_compress, ITEM_PER_INSERT);
+        r = queue_enqueue(&compress_que[qid], &send_buf_compress, send_compress_step);
+        update_compress_insert_step(&send_compress_step, send_compress_it++);
+        ringbuffer_reinit(&send_buf_compress, send_compress_step);
         // log_enqueue("Deduplicate", "Compress", r, args->tid, qid, &compress_que[qid]);
         assert(r>=1);
       }
@@ -594,7 +613,9 @@ void * Deduplicate(void * targs) {
       ++reorder_count;
       assert(r==0);
       if (ringbuffer_isFull(&send_buf_reorder)) {
-        r = queue_enqueue(&reorder_que[qid], &send_buf_reorder, ITEM_PER_INSERT);
+        r = queue_enqueue(&reorder_que[qid], &send_buf_reorder, send_reorder_step);
+        update_reorder_insert_step(&send_reorder_step, send_reorder_it++);
+        ringbuffer_reinit(&send_buf_reorder, send_reorder_step);
         // log_enqueue("Deduplicate", "Reorder", r, args->tid, qid, &reorder_que[qid]);
         assert(r>=1);
       }
@@ -656,9 +677,14 @@ void *FragmentRefine(void * targs) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
 
+  unsigned int recv_step = refine_initial_extract_step();
+  int recv_it = 0;
+  unsigned int send_step = dedup_initial_insert_step();
+  int send_it = 0;
+
   r=0;
-  r += ringbuffer_init(&recv_buf, MAX_PER_FETCH);
-  r += ringbuffer_init(&send_buf, CHUNK_ANCHOR_PER_INSERT);
+  r += ringbuffer_init(&recv_buf, recv_step);
+  r += ringbuffer_init(&send_buf, send_step);
   assert(r==0);
 
 #ifdef ENABLE_STATISTICS
@@ -672,7 +698,9 @@ void *FragmentRefine(void * targs) {
   while (TRUE) {
     //if no item for process, get a group of items from the pipeline
     if (ringbuffer_isEmpty(&recv_buf)) {
-      r = queue_dequeue(&refine_que[qid], &recv_buf, 0, MAX_PER_FETCH);
+      r = queue_dequeue(&refine_que[qid], &recv_buf, recv_step);
+      update_refine_extract_step(&recv_step, recv_it++);
+      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Refine", r, args->tid, qid, &refine_que[qid]);
       fflush(stdout);
       if (r < 0) {
@@ -718,7 +746,9 @@ void *FragmentRefine(void * targs) {
         ++count;
         assert(r==0);
         if (ringbuffer_isFull(&send_buf)) {
-          r = queue_enqueue(&deduplicate_que[qid], &send_buf, CHUNK_ANCHOR_PER_INSERT);
+          r = queue_enqueue(&deduplicate_que[qid], &send_buf, send_step);
+          update_dedup_insert_step(&send_step, send_it++);
+          ringbuffer_reinit(&send_buf, send_step);
           // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
           assert(r>=1);
         }
@@ -742,7 +772,9 @@ void *FragmentRefine(void * targs) {
         ++count;
         assert(r==0);
         if (ringbuffer_isFull(&send_buf)) {
-          r = queue_enqueue(&deduplicate_que[qid], &send_buf, CHUNK_ANCHOR_PER_INSERT);
+          r = queue_enqueue(&deduplicate_que[qid], &send_buf, send_step);
+          update_dedup_insert_step(&send_step, send_it++);
+          ringbuffer_reinit(&send_buf, send_step);
           // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
           assert(r>=1);
         }
@@ -755,7 +787,7 @@ void *FragmentRefine(void * targs) {
 
   //drain buffer
   while(!ringbuffer_isEmpty(&send_buf)) {
-    r = queue_enqueue(&deduplicate_que[qid], &send_buf, CHUNK_ANCHOR_PER_INSERT);
+    r = queue_enqueue(&deduplicate_que[qid], &send_buf, send_step);
     // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
     assert(r>=1);
   }
@@ -1028,7 +1060,9 @@ void *Fragment(void * targs){
     EXIT_TRACE("Memory allocation failed.\n");
   }
 
-  r = ringbuffer_init(&send_buf, ANCHOR_DATA_PER_INSERT);
+  unsigned int step = refine_initial_insert_step();
+  unsigned int it = 0;
+  r = ringbuffer_init(&send_buf, step);
   assert(r==0);
 
   rf_win_dataprocess = 0;
@@ -1165,7 +1199,9 @@ void *Fragment(void * targs){
 
           //send a group of items into the next queue in round-robin fashion
           if(ringbuffer_isFull(&send_buf)) {
-            r = queue_enqueue(&refine_que[qid], &send_buf, ANCHOR_DATA_PER_INSERT);
+            r = queue_enqueue(&refine_que[qid], &send_buf, step);
+            update_refine_insert_step(&step, it++);
+            ringbuffer_reinit(&send_buf, step);
             // log_enqueue("Fragment", "Refine", r, args->tid, qid, &refine_que[qid]);
             assert(r>=1);
             qid = (qid+1) % args->nqueues;
@@ -1193,7 +1229,7 @@ void *Fragment(void * targs){
 
   //drain buffer
   while(!ringbuffer_isEmpty(&send_buf)) {
-    r = queue_enqueue(&refine_que[qid], &send_buf, ANCHOR_DATA_PER_INSERT);
+    r = queue_enqueue(&refine_que[qid], &send_buf, step);
     // log_enqueue("Fragment", "Refine", r, args->tid, qid, &refine_que[qid]);
     assert(r>=1);
     qid = (qid+1) % args->nqueues;
@@ -1256,7 +1292,9 @@ void *Reorder(void * targs) {
   int r;
   int i;
 
-  r = ringbuffer_init(&recv_buf, ITEM_PER_FETCH);
+  unsigned int recv_step = reorder_initial_extract_step();
+  int recv_it = 0;
+  r = ringbuffer_init(&recv_buf, recv_step);
   assert(r==0);
 
   fd = create_output_file(conf->outfile);
@@ -1266,7 +1304,9 @@ void *Reorder(void * targs) {
     if (ringbuffer_isEmpty(&recv_buf)) {
       //process queues in round-robin fashion
       for(i=0,r=0; r<=0 && i<args->nqueues; i++) {
-        r = queue_dequeue(&reorder_que[qid], &recv_buf, 0, ITEM_PER_FETCH);
+        r = queue_dequeue(&reorder_que[qid], &recv_buf, recv_step);
+        update_reorder_extract_step(&recv_step, recv_it++);
+        ringbuffer_reinit(&recv_buf, recv_step);
         // log_dequeue("Reorder", r, args->tid, qid, &reorder_que[qid]);
         qid = (qid+1) % args->nqueues;
       }
