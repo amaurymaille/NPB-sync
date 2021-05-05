@@ -5,8 +5,6 @@
 
 #include <defines.h>
 
-typedef boost::multi_array<int, 4> Matrix4D;
-
 typedef ThreadStore<PromisePlus<void>*> PromisePlusContainer;
 typedef std::optional<PromisePlusContainer> PromisePlusStore;
 
