@@ -1,4 +1,5 @@
 #include <fifo.h>
+#include <promises/static_step_promise.h>
 
 void validate_diagonal(Matrix2D const&);
 
@@ -9,6 +10,7 @@ static void init_promise_plus_vector(Matrix2D const& matrix,
 
 template<DynamicStepPromiseMode mode>
 void kernel_lu_omp_pp(Matrix2D const& matrix,
+                      Matrix2D& work,
                       std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises) {
     namespace g = Globals;
 /*    std::vector<std::unique_ptr<DynamicStepPromise<int>>> inner_promises(matrix.size());
@@ -18,9 +20,12 @@ void kernel_lu_omp_pp(Matrix2D const& matrix,
     validate_diagonal(matrix);
 
     constexpr const size_t n = g::LU::DIM;
-    Matrix2D work(boost::extents[n][n]);
     memcpy(work.data(), matrix.data(), sizeof(Matrix2DValue) * n * n);
-    std::vector<fifo<int>> indices(n);
+    std::vector<ActiveStaticStepPromise<void>*> indices;
+    constexpr const int step = 150;
+    VoidStaticStepPromiseBuilder builder(n, step, omp_nb_threads());
+    for (int i = 0; i < omp_nb_threads(); ++i)
+        indices.push_back(static_cast<ActiveStaticStepPromise<void>*>(builder.new_promise()));
 
 #pragma omp parallel
 {
@@ -30,91 +35,99 @@ void kernel_lu_omp_pp(Matrix2D const& matrix,
 
     if (rank == 0) {
         for (int k = 0; k < n; ++k) {
-            indices[rank + 1].push(k);
+            if (k == n - 1) {
+                indices[rank + 1]->set_immediate(k);
+            } else {
+                indices[rank + 1]->set(k);
+            }
 
             for (int i = k + 1; i < bsize; ++i) {
                 work[i][k] /= work[k][k];
                 
-                if (i == bsize - 1) {
+                /* if (i == bsize - 1) {
                     promises[i]->set_immediate(k, work[i][k]);
                 } else {
                     promises[i]->set(k, work[i][k]);
-                }
+                } */
             }
 
             for (int i = k + 1; i < bsize; ++i) {
                 for (int j = k + 1; j < n; ++j) {
                     work[i][j] -= work[i][k] * work[k][j];
-                    if (i == k + 1) {
+                    /* if (i == k + 1) {
                         if (j == n -1) {
                             promises[i]->set_immediate(j, work[i][j]); 
                         } else {
                             promises[i]->set(j, work[i][j]);
                         }
-                    }
+                    } */
                 }
             }
         }
     } else if (rank == n_threads - 1) {
         for (int k = 0; k < n; ++k) {
-            int row = indices[rank].pop();
-
+            indices[rank]->get(k);
+            int row = k;
             // pragma parallel for workaround : if n % n_threads != 0
             // let the last thread process all the remaining rows
             // This is not optimal.
             for (int i = std::max(rank * bsize, row + 1); i < n; ++i) {
                 work[i][row] /= work[row][row];
 
-                if (i == rank * bsize + bsize - 1) {
+                /* if (i == rank * bsize + bsize - 1) {
                     promises[i]->set_immediate(row, work[i][row]);
                 } else {
                     promises[i]->set(row, work[i][row]);
-                }
+                } */
             }
 
             for (int i = std::max(rank * bsize, row + 1); i < n; ++i) {
                 for (int j = row + 1; j < n; ++j) {
                     work[i][j] -= work[i][row] * work[row][j];
 
-                    if (i == std::max(rank * bsize, row + 1)) {
+                    /* if (i == std::max(rank * bsize, row + 1)) {
                         if (j == n - 1) {
                             promises[i]->set_immediate(j, work[i][j]);
                         } else {
                             promises[i]->set(j, work[i][j]);
                         }
-                    }
+                    } */
                 }
             }
         }
     } else {
-        for (int k = 0; k < n; ++k) {
-            int row = indices[rank].pop();
-            indices[rank + 1].push(row);
-
+        for (int k = 0; k < n; k++) {
+            indices[rank]->get(k);
+            int row = k;
+            if (row == n - 1) {
+                indices[rank + 1]->set_immediate(row);
+            } else {
+                indices[rank + 1]->set(row);
+            }
             // pragma parallel for workaround : if n % n_threads != 0
             // let the last thread process all the remaining rows
             // This is not optimal.
             for (int i = std::max(rank * bsize, row + 1); i < rank * bsize + bsize; ++i) {
                 work[i][row] /= work[row][row];
 
-                if (i == rank * bsize + bsize - 1) {
+                /* if (i == rank * bsize + bsize - 1) {
                     promises[i]->set_immediate(row, work[i][row]);
                 } else {
                     promises[i]->set(row, work[i][row]);
-                }
+                } */
             }
 
             for (int i = std::max(rank * bsize, row + 1); i < rank * bsize + bsize; ++i) {
                 for (int j = row + 1; j < n; ++j) {
                     work[i][j] -= work[i][row] * work[row][j];
 
-                    if (i == std::max(rank * bsize, row + 1)) {
+                    /* if (i == std::max(rank * bsize, row + 1)) {
                         if (j == n - 1) {
                             promises[i]->set_immediate(j, work[i][j]);
                         } else {
                             promises[i]->set(j, work[i][j]);
                         }
-                    }
+                    } */
                 }
             }
         }
@@ -161,26 +174,27 @@ void kernel_lu_solve_n_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>&
 
 }
 template<DynamicStepPromiseMode mode>
-void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
+void kernel_lu_combine_pp(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x,
                           DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder) {
     std::vector<DynamicStepPromise<Matrix2DValue, mode>*> promises;
     init_promise_plus_vector(a, promises, builder);
 
-    std::thread lu(kernel_lu_omp_pp<mode>, std::cref(a), std::ref(promises));
+    std::thread lu(kernel_lu_omp_pp<mode>, std::cref(a), std::ref(out), std::ref(promises));
     kernel_lu_solve_pp(promises, b, x);
 
     lu.join();
 }
 
 template<DynamicStepPromiseMode mode>
-void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D> const& b, 
+void kernel_lu_combine_n_pp(Matrix2D const& a, Matrix2D& out, 
+                                         std::vector<Vector1D> const& b, 
                                          std::vector<Vector1D>& x,
                                          DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder
                                          ) {
     std::vector<DynamicStepPromise<Matrix2DValue, mode>*> promises; 
     init_promise_plus_vector(a, promises, builder);
 
-    std::thread lu(kernel_lu_omp_pp<mode>, std::cref(a), std::ref(promises));
+    std::thread lu(kernel_lu_omp_pp<mode>, std::cref(a), std::ref(out), std::ref(promises));
     kernel_lu_solve_n_pp(promises, b, x);
 
     lu.join();
