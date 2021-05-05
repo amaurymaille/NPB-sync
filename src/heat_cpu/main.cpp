@@ -462,7 +462,7 @@ public:
         iterations_log.add_extra_arg("step", step);
         Matrix4D matrix(boost::extents[g::HeatCPU::DIM_W][g::HeatCPU::DIM_X][g::HeatCPU::DIM_Y][g::HeatCPU::DIM_Z]);
          
-        StaticStepPromiseBuilder<void> builder(Globals::HeatCPU::DIM_Y, step, nb_threads);
+        VoidStaticStepPromiseBuilder builder(Globals::HeatCPU::DIM_Y, step, nb_threads);
 
         for (unsigned int i = 0; i < nb_iterations; ++i) {
             printf("StaticStep: iteration %d\n", i);
