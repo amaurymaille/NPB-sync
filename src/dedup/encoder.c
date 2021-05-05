@@ -1440,7 +1440,8 @@ void Encode(config_t * _conf) {
   struct thread_args generic_args;
 #endif //ENABLE_PTHREADS
 
-  assert(!mbuffer_system_init());
+  int init_res = mbuffer_system_init();
+  assert(!init_res);
 
   /* src file stat */
   if (stat(conf->infile, &filestat) < 0) 
@@ -1641,7 +1642,8 @@ void Encode(config_t * _conf) {
   if (conf->infile != NULL)
     close(fd);
 
-  assert(!mbuffer_system_destroy());
+  int des_res = mbuffer_system_destroy();
+  assert(!des_res);
 
   hashtable_destroy(cache, TRUE);
 

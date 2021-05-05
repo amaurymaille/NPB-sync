@@ -17,7 +17,8 @@ void queue_init(queue_t * que, size_t size, int nProducers) {
   pthread_cond_init(&que->notFull, NULL);
   pthread_cond_init(&que->smartWait, NULL);
 #endif
-  assert(!ringbuffer_init(&(que->buf), size));
+  int init_res = ringbuffer_init(&(que->buf), size);
+  assert(!init_res);
   que->nProducers = nProducers;
   que->nTerminated = 0;
 }
@@ -105,8 +106,9 @@ int queue_enqueue(queue_t *que, ringbuffer_t *buf, int limit) {
 #ifdef ENABLE_PTHREADS
   pthread_mutex_lock(&que->mutex);
   assert(!queue_isTerminated(que));
-  while (ringbuffer_isFull(&que->buf))
+  while (ringbuffer_isFull(&que->buf)) {
     pthread_cond_wait(&que->notFull, &que->mutex);
+  }
 #else
   assert(!queue_isTerminated(que));
 #endif
