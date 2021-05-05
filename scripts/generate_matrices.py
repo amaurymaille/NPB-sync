@@ -50,8 +50,10 @@ class HeatCPUMatrixData(MatrixData):
             "nb_elements": w * x * y *z
         }
 
+        subprocess.Popen(["make", "clean"]).wait()
+
         parameters_filename = "../data/heat_cpu_matrix_{}_{}_{}_{}".format(w, x, y, z)
-        subprocess.Popen(["make", "-j", "8", "heat_cpu_matrix_generator"]).wait()
+        subprocess.Popen(["make", "heat_cpu_matrix_generator"]).wait()
         return self.run(data, "./src/heat_cpu/heat_cpu_matrix_generator", parameters_filename)
 
     @staticmethod
@@ -73,8 +75,10 @@ class LUMatrixData(MatrixData):
             "nb_vectors": self._nb_vectors
         }
 
+        subprocess.Popen(["make", "clean"]).wait()
+
         parameters_filename = "../data/lu_matrix_{}_{}_{}".format(dim, dim, self._nb_vectors)
-        subprocess.Popen(["make", "-j", "8", "lu_matrix_generator"]).wait()
+        subprocess.Popen(["make", "lu_matrix_generator"]).wait()
         return self.run(data, "./src/lu/lu_matrix_generator",  parameters_filename)
 
     @staticmethod
