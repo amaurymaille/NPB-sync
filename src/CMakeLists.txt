@@ -13,6 +13,7 @@ target_link_libraries(core "${Boost_PROGRAM_OPTIONS_LIBRARY}"
 
 add_subdirectory(heat_cpu)
 add_subdirectory(lu)
+add_subdirectory(dedup)
 add_subdirectory(tests)
 
 if (NOT SPDLOG_HEADER_ONLY)
