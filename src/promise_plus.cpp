@@ -7,7 +7,9 @@
 
 #include "promise_plus.h"
 
+#ifndef NDEBUG
 static void assert_free_index_throw(int index, std::string const& mode, int found);
+#endif
 
 PromisePlusBase::PromisePlusBase() {
     _max_index = -1;
@@ -34,6 +36,8 @@ void PromisePlusAbstractReadyCheck::assert_free_index_strong(int index) {
     if (ready_index_strong(index)) {
         assert_free_index_throw(index, "strong", index_strong());
     }
+#else
+    (void)index;
 #endif
 }
 
@@ -42,9 +46,12 @@ void PromisePlusAbstractReadyCheck::assert_free_index_weak(int index) {
     if (ready_index_weak(index)) {
         assert_free_index_throw(index, "weak", index_weak());
     }
+#else
+    (void)index;
 #endif
 }
 
+#ifndef NDEBUG
 void assert_free_index_throw(int index, std::string const& mode, int found) {
     std::ostringstream str;
     str << "Thread " << omp_get_thread_num() << ", PromisePlus: index " << index << " already fulfilled (" << mode << ": " << found << ")" << std::endl;
@@ -54,3 +61,4 @@ void assert_free_index_throw(int index, std::string const& mode, int found) {
     // throw std::runtime_error(str.str());
     assert(false);
 }
+#endif
