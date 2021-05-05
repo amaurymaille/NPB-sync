@@ -13,10 +13,11 @@ import time
 here = None
 
 class Run:
-    def __init__(self, description, iterations, threads, simulation_file, synchronizers, kernel_specific_synchronizers=[], generate_initial_files=False, initial_generation_file=None, start_file=None, compute_file=None):
+    def __init__(self, description, iterations, threads, steps, simulation_file, synchronizers, kernel_specific_synchronizers=[], generate_initial_files=False, initial_generation_file=None, start_file=None, compute_file=None):
         self._description = description
         self._iterations = iterations
         self._threads = threads
+        self._steps = steps
         self._simulation_file = simulation_file
         self._synchronizers = synchronizers
         self._kernel_synchronizers = kernel_specific_synchronizers
@@ -39,6 +40,10 @@ class Run:
         raise NotImplementedError()
 
     def run(self, args):
+        if self.generate_dynamic_defines() != 0:
+            print ("Error while generating dynamic defines")
+            return 1
+
         if self._generate_initial_files:
             if self.generate_initial_files() != 0:
                 print ("Error while generating initial files")
@@ -72,7 +77,7 @@ class Run:
             raise
 
     def generate_simulation_data(self):
-        command = ["python3", "generate_simulation_data.py", "--iterations", str(self._iterations), "--description", self._description, "--file", self._simulation_file] + self._synchronizers + [self.get_kernel_name()] + self._kernel_synchronizers
+        command = ["python3", "generate_simulation_data.py", "--iterations", str(self._iterations), "--description", self._description, "--file", self._simulation_file, "--step"] + [str(x) for x in self._steps] + self._synchronizers + [self.get_kernel_name()] + self._kernel_synchronizers
         try:
             return subprocess.Popen(command).wait()
         except:
@@ -95,10 +100,6 @@ class Run:
         raise NotImplementedError()
 
     def build(self, args):
-        if self.generate_dynamic_defines() != 0:
-            print ("Error while generating dynamic defines")
-            return 1
-
         if not os.path.isdir("../build"):
             os.mkdir("../build")
         os.chdir("../build")
@@ -110,7 +111,7 @@ class Run:
         """
         subprocess.Popen(cmake_command).wait()
 
-        make_command = ["make", "-j", "8", self.get_make_rule_name()]
+        make_command = ["make", self.get_make_rule_name()]
         if subprocess.Popen(make_command).wait() != 0:
             print ("Error while running make command: {}".format(" ".join(make_command)))
             return 1
