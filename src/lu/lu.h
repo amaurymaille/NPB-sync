@@ -4,6 +4,9 @@
 #include "lu/defines.h"
 #include "promises/dynamic_step_promise.h"
 
+// ----------------------------------------------------------------------------
+// Factorization functions
+
 /** 
  * @brief Compute the LU decomposition of @a matrix
  *
@@ -26,8 +29,11 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out);
  * Result is stored in the promises in @a promises.
  */
 template<DynamicStepPromiseMode mode>
-void kernel_lu_omp_pp(Matrix2D const& matrix,
+void kernel_lu_omp_pp(Matrix2D const& matrix, Matrix2D& out,
                    std::vector<DynamicStepPromise<Matrix2DValue, mode>*>& promises);
+
+// ----------------------------------------------------------------------------
+// Solvers
 
 /**
  * @brief Compute the solution of Ax = b
@@ -67,16 +73,19 @@ void kernel_lu_solve_n_pp(std::vector<DynamicStepPromise<Matrix2DValue, mode>*>&
                           std::vector<Vector1D> const& b,
                           std::vector<Vector1D>& x);
 
+// ----------------------------------------------------------------------------
+// Combiners
+
 // Sequential
-void kernel_lu_combine(Matrix2D& a, Vector1D const& b, Vector1D& x);
+void kernel_lu_combine(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x);
 // N Sequential
-void kernel_lu_combine_n(Matrix2D& a, std::vector<Vector1D> const& b,
+void kernel_lu_combine_n(Matrix2D const& a, Matrix2D& out, std::vector<Vector1D> const& b,
                                       std::vector<Vector1D>& x);
 
 // OpenMP
-void kernel_lu_combine_omp(Matrix2D& a, Vector1D const& b, Vector1D& x);
+void kernel_lu_combine_omp(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x);
 // N OpenMP
-void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
+void kernel_lu_combine_n_omp(Matrix2D const& a, Matrix2D& out, std::vector<Vector1D> const& b,
                                           std::vector<Vector1D>& x);
 /**
  * @brief Compute the solution of Ax = b through LU factorization
@@ -85,7 +94,7 @@ void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
  * triangular solver.
  */
 template<DynamicStepPromiseMode mode>
-void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
+void kernel_lu_combine_pp(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x,
                           DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 
 /**
@@ -96,7 +105,8 @@ void kernel_lu_combine_pp(Matrix2D& a, Vector1D const& b, Vector1D& x,
  * different triangular solvers.
  */
 template<DynamicStepPromiseMode mode>
-void kernel_lu_combine_n_pp(Matrix2D& a, std::vector<Vector1D> const& b, 
+void kernel_lu_combine_n_pp(Matrix2D const& a, Matrix2D& out, 
+                                         std::vector<Vector1D> const& b, 
                                          std::vector<Vector1D>& x,
                                          DynamicStepPromiseBuilder<Matrix2DValue, mode> const& builder);
 

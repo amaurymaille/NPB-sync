@@ -36,12 +36,12 @@ void kernel_lu_omp(Matrix2D const& matrix, Matrix2D& out) {
 
     // LU
     for (int k = 0; k < g::LU::DIM; ++k) {
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(static)
         for (int i = k + 1; i < g::LU::DIM; ++i) {
             out[i][k] /= out[k][k];
         }
 
-        #pragma omp parallel for
+        #pragma omp parallel for schedule(static)
         for (int i = k + 1; i < g::LU::DIM; ++i) {
             for (int j = k + 1; j < g::LU::DIM; ++j) {
                 out[i][j] -= out[i][k] * out[k][j];
@@ -95,37 +95,32 @@ void kernel_lu_solve_n(Matrix2D const& lu, std::vector<Vector1D> const& b,
 
 
 
-void kernel_lu_combine(Matrix2D& a, Vector1D const& b, Vector1D& x) {
-    Matrix2D res;
-    kernel_lu(a, res);
-    kernel_lu_solve(res, b, x);
+void kernel_lu_combine(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x) {
+    kernel_lu(a, out);
+    kernel_lu_solve(out, b, x);
 }
 
-void kernel_lu_combine_n(Matrix2D& a, std::vector<Vector1D> const& b,
+void kernel_lu_combine_n(Matrix2D const& a, Matrix2D& out, std::vector<Vector1D> const& b,
                                       std::vector<Vector1D>& x) {
-    Matrix2D res;
-    kernel_lu(a, res);
+    kernel_lu(a, out);
 
     for (int i = 0; i < b.size(); ++i) {
-        kernel_lu_solve(res, b[i], x[i]);
+        kernel_lu_solve(out, b[i], x[i]);
     }
 }
 
-void kernel_lu_combine_omp(Matrix2D& a, Vector1D const& b, Vector1D& x) {
-    Matrix2D res;
-
-    kernel_lu_omp(a, res);
-    kernel_lu_solve(res, b, x);
+void kernel_lu_combine_omp(Matrix2D const& a, Matrix2D& out, Vector1D const& b, Vector1D& x) {
+    kernel_lu_omp(a, out);
+    kernel_lu_solve(out, b, x);
 }
 
-void kernel_lu_combine_n_omp(Matrix2D& a, std::vector<Vector1D> const& b,
+void kernel_lu_combine_n_omp(Matrix2D const& a, Matrix2D& out, std::vector<Vector1D> const& b,
                                           std::vector<Vector1D>& x) {
-    Matrix2D res;
     std::vector<std::thread> threads;
 
-    kernel_lu_omp(a, res);
+    kernel_lu_omp(a, out);
     for (int i = 0; i < b.size(); ++i) {
-        threads.push_back(std::thread(kernel_lu_solve, std::cref(res), std::cref(b[i]), std::ref(x[i])));
+        threads.push_back(std::thread(kernel_lu_solve, std::cref(out), std::cref(b[i]), std::ref(x[i])));
     }
 
     for (std::thread& th: threads) {
