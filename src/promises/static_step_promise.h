@@ -22,11 +22,23 @@
 template<typename T>
 class StaticStepPromiseBuilder : public PromisePlusBuilder<T> {
 public:
-    StaticStepPromiseBuilder(int, unsigned int, unsigned int);
+    StaticStepPromiseBuilder(int, unsigned int, unsigned int, unsigned int);
     PromisePlus<T>* new_promise() const;
 
 private:
     int _nb_values;
+    unsigned int _max_index;
+    unsigned int _step;
+    unsigned int _n_threads;
+};
+
+class VoidStaticStepPromiseBuilder : public PromisePlusBuilder<void> {
+public:
+    VoidStaticStepPromiseBuilder(unsigned int, unsigned int, unsigned int);
+    PromisePlus<void>* new_promise() const;
+
+private:
+    unsigned int _max_index;
     unsigned int _step;
     unsigned int _n_threads;
 };
@@ -87,7 +99,7 @@ struct PassiveStaticStepPromiseBase : public PromisePlusAbstractReadyCheck {
 template<typename T>
 class ActiveStaticStepPromise : public PromisePlus<T> {
 public:
-    ActiveStaticStepPromise(int nb_values, unsigned int step);
+    ActiveStaticStepPromise(int nb_values, unsigned int max_index, unsigned int step);
     
     NO_COPY_T(ActiveStaticStepPromise, T);
 
@@ -106,7 +118,7 @@ private:
 template<>
 class ActiveStaticStepPromise<void> : public PromisePlus<void> {
 public:
-    ActiveStaticStepPromise(int nb_values, unsigned int step);
+    ActiveStaticStepPromise(unsigned int max_index, unsigned int step);
     
     NO_COPY_T(ActiveStaticStepPromise, void);
 
@@ -125,7 +137,7 @@ public:
     } */
 #endif
 
-    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
+    friend PromisePlus<void>* VoidStaticStepPromiseBuilder::new_promise() const;
 
 private:
     ActiveStaticStepPromiseBase _base;
@@ -134,7 +146,7 @@ private:
 template<typename T>
 class PassiveStaticStepPromise : public PromisePlus<T> {
 public:
-    PassiveStaticStepPromise(int nb_values, unsigned int step);
+    PassiveStaticStepPromise(int nb_values, unsigned int max_index, unsigned int step);
     
     NO_COPY_T(PassiveStaticStepPromise, T);
 
@@ -153,7 +165,7 @@ private:
 template<>
 class PassiveStaticStepPromise<void> : public PromisePlus<void> {
 public:
-    PassiveStaticStepPromise(int nb_values, unsigned int step);
+    PassiveStaticStepPromise(unsigned int max_index, unsigned int step);
     
     NO_COPY_T(PassiveStaticStepPromise, void);
 
@@ -161,7 +173,7 @@ public:
     void set(int index);
     void set_immediate(int index);
 
-    friend PromisePlus<void>* StaticStepPromiseBuilder<void>::new_promise() const;
+    friend PromisePlus<void>* VoidStaticStepPromiseBuilder::new_promise() const;
 
 private:
     PassiveStaticStepPromiseBase _base;

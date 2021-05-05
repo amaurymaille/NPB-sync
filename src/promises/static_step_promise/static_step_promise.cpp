@@ -45,16 +45,16 @@ bool PassiveStaticStepPromiseBase::ready_index_weak(int index) {
 // -----------------------------------------------------------------------------
 // StaticStepPromise<void>
 
-ActiveStaticStepPromise<void>::ActiveStaticStepPromise(int nb_values, unsigned int step) : 
-    PromisePlus<void>(nb_values), _base(step) {
+ActiveStaticStepPromise<void>::ActiveStaticStepPromise(unsigned int max_index, unsigned int step) : 
+    PromisePlus<void>(max_index), _base(step) {
 #ifdef PROMISE_PLUS_DEBUG_COUNTERS
     auto& times = _base._common._set_times;
     times.resize(nb_values, 0);
 #endif
 }
 
-PassiveStaticStepPromise<void>::PassiveStaticStepPromise(int nb_values, unsigned int step) : 
-    PromisePlus<void>(nb_values), _base(step) {
+PassiveStaticStepPromise<void>::PassiveStaticStepPromise(unsigned int max_index, unsigned int step) : 
+    PromisePlus<void>(max_index), _base(step) {
 
 }
 
@@ -142,4 +142,16 @@ void PassiveStaticStepPromise<void>::set_immediate(int index) {
     _base._current_index_strong = index;
     _base._index_c.notify_all();
     // _base._common._current_index_weak[omp_get_thread_num()] = index;
+}
+
+VoidStaticStepPromiseBuilder::VoidStaticStepPromiseBuilder(unsigned int max_index, unsigned int step, unsigned int n_threads) {
+    _max_index = max_index;
+    _step = step;
+    _n_threads = n_threads;
+}
+
+PromisePlus<void>* VoidStaticStepPromiseBuilder::new_promise() const {
+    ActiveStaticStepPromise<void>* ptr = new ActiveStaticStepPromise<void>(_max_index, _step);
+    ptr->_base._common._current_index_weak.resize(_n_threads, -1);
+    return ptr;
 }
