@@ -98,6 +98,12 @@ bool same_shape(const Matrix& lhs, const Matrix& rhs) {
 std::ofstream open_out_file(const std::string& output_file);
 std::ifstream open_in_file(const std::string& input_file);
 
+void print_matrix(Matrix2D const& matrix);
+void print_matrix(Matrix4D const& matrix);
+
+std::ostream& serialize_float(std::ostream& out, float const& f);
+std::istream& deserialize_float(std::istream& in, float& f);
+
 #include "utils.tpp"
 
 #endif /* UTILS_H */

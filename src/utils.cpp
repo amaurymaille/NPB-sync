@@ -33,6 +33,10 @@ std::string get_time_fmt(const char* fmt) {
     std::size_t size = std::strftime(res.get(), 100, fmt, now_as_tm);
     assert(size != 0);
 
+#ifdef NDEBUG
+    (void)size;
+#endif
+
     std::string result(res.get());
     return result;
 }
@@ -123,4 +127,40 @@ std::ofstream open_out_file(const std::string& output_file) {
 
 std::ifstream open_in_file(const std::string& input_file) {
     return open_file<std::ifstream>(input_file);
+}
+
+void print_matrix(Matrix2D const& matrix) {
+    for (int i = 0; i < matrix.size(); ++i) {
+        for (int j = 0; j < matrix[i].size(); ++j) {
+            std::cout << matrix[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void print_matrix(Matrix4D const& matrix) {
+    for (int i = 0; i < matrix.size(); ++i) {
+        for (int j = 0; j < matrix[i].size(); ++j) {
+            for (int k = 0; k < matrix[i][j].size(); ++k) {
+                for (int l = 0; l < matrix[i][j][k].size(); ++l) {
+                    std::cout << matrix[i][j][k][l] << " ";
+                }
+                std::cout << std::endl;
+            }
+            std::cout << std::endl;
+        }
+        std::cout << std::endl;
+    }
+}
+
+std::ostream& serialize_float(std::ostream& out, float const& f) {
+    const uint32_t* ptr = reinterpret_cast<const uint32_t*>(&f);
+    out << *ptr;
+    return out;
+}
+
+std::istream& deserialize_float(std::istream& in, float& f) {
+    uint32_t* ptr = reinterpret_cast<uint32_t*>(&f);
+    in >> *ptr;
+    return in;
 }
