@@ -16,7 +16,7 @@ protected:
     }
     
 public:
-    void assert_okay() {
+    virtual void assert_okay() {
         M::assert_matrix_equals(_matrix, _m.get_expected());
     }
 
