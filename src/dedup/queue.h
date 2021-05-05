@@ -103,6 +103,41 @@ static inline int ringbuffer_nb_elements(ringbuffer_t const* buf) {
   return buf->n_elements;
 }
 
+/* Resize the ringbuffer.
+ *
+ * If the new size would result in content loss, the function does nothing.
+ * Content loss happens when the new size is lower than the amont of elements
+ * already stored in the buffer.
+ *
+ * Returns 0 on success, -1 on failure. In case of failure, the ringbuffer is 
+ * not modified.
+ */
+/* static inline int ringbuffer_resize(ringbuffer_t* buf, unsigned int new_size) {
+  if (new_size == buf->size) {
+    return 0;
+  }
+
+  if (new_size > buf->size) {
+    buf->size = new_size;
+  } else {
+    if (buf->n_elements > new_size) {
+      return -1;
+    } else {
+      buf->size = new_size;
+    }
+  }
+
+  return 0;
+} */
+
+/* Reinit a ringbuffer.
+ * All elements are discarded and the size if set to new_size.
+ */
+static inline void reingbuffer_reinit(ringbuffer_t* buf, unsigned int new_size) {
+  ringbuffer_destroy(buf);
+  ringbuffer_init(buf, new_size);
+}
+
 /*
  * Queue interface
  */
