@@ -17,15 +17,15 @@ void update_reorder_insert_step(unsigned int* step, unsigned int it);
 /* When pulling from the reorder queue */
 void update_reorder_extract_step(unsigned int* step, unsigned int it);
 
-inline unsigned int refine_initial_insert_step() { return 1; }
-inline unsigned int refine_initial_extract_step() { return 1; }
+unsigned int refine_initial_insert_step();
+unsigned int refine_initial_extract_step();
 
-inline unsigned int dedup_initial_insert_step() { return 10; }
-inline unsigned int dedup_initial_extract_step() { return 10; }
+unsigned int dedup_initial_insert_step();
+unsigned int dedup_initial_extract_step();
 
-inline unsigned int compress_initial_insert_step() { return 20; }
-inline unsigned int compress_initial_extract_step() { return 20; }
+unsigned int compress_initial_insert_step();
+unsigned int compress_initial_extract_step();
 
-inline unsigned int reorder_initial_insert_step() { return 30; }
-inline unsigned int reorder_initial_extract_step() { return 30; }
+unsigned int reorder_initial_insert_step();
+unsigned int reorder_initial_extract_step();
 
