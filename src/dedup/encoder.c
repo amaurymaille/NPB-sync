@@ -1623,20 +1623,18 @@ void Encode(config_t * _conf) {
 #define BILLION 1000000000
 
   clock_gettime(CLOCK_MONOTONIC, &end);
-  printf("Setting filename\n");
   unsigned long long diff = (end.tv_sec * BILLION + end.tv_nsec) - (begin.tv_sec * BILLION + begin.tv_nsec);
   char filename[4096];
-  // sprintf(filename, "time.%d.log", STEP);
-  sprintf(filename, "/home/amaille/logs/dedup/time.%d.log", 0);
-  printf("filename = %s\n", filename);
+  sprintf(filename, "/home/amaille/logs/dedup/time.log", 0);
   fflush(stdout);
   FILE* log_file = fopen(filename, "a");
   if (log_file == NULL) {
     perror("Error:");
+  } else {
+    printf("Writing in file: %s\n", filename);
+    fprintf(log_file, "%f\n", (double)diff / (double)BILLION);
+    fclose(log_file);
   }
-  printf("File: %p\n", log_file);
-  fprintf(log_file, "%f\n", (double)diff / (double)BILLION);
-  fclose(log_file);
   
 #ifdef ENABLE_PARSEC_HOOKS
   __parsec_roi_end();
