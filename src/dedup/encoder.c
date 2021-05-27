@@ -480,7 +480,6 @@ void *Compress(void * targs) {
   //shutdown
   queue_terminate(&reorder_que[qid]);
 
-  // printf("Compress finished, produced %d values\n", count);
 #ifdef ENABLE_STATISTICS
   return thread_stats;
 #else
@@ -652,7 +651,6 @@ void * Deduplicate(void * targs) {
   //shutdown
   queue_terminate(&compress_que[qid]);
 
-  // printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
 #ifdef ENABLE_STATISTICS
   return thread_stats;
 #else
@@ -815,7 +813,6 @@ void *FragmentRefine(void * targs) {
 
   //shutdown
   queue_terminate(&deduplicate_que[qid]);
-  // printf("FragmentRefine finished, inserted %d values\n", count);
 #ifdef ENABLE_STATISTICS
   return thread_stats;
 #else
@@ -1259,8 +1256,6 @@ void *Fragment(void * targs){
   for(i=0; i<args->nqueues; i++) {
     queue_terminate(&refine_que[i]);
   }
-
-  // printf("Fragment finished. Inserted %d values\n", count);
 
   return NULL;
 }
