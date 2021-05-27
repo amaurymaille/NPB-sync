@@ -17,6 +17,7 @@
  */
 
 #include <assert.h>
+#include <stdbool.h>
 #include <strings.h>
 #include <math.h>
 #include <limits.h>
@@ -420,6 +421,7 @@ void *Compress(void * targs) {
 
   unsigned int recv_step = compress_initial_extract_step();
   int recv_it = 0;
+  bool first = true;
   unsigned int send_step = reorder_initial_insert_step(); // Oops
   int send_it = 0;
   r=0;
@@ -430,9 +432,13 @@ void *Compress(void * targs) {
   while(1) {
     //get items from the queue
     if (ringbuffer_isEmpty(&recv_buf)) {
+      if (!first) {
+        update_compress_extract_step(&recv_step, recv_it++);
+        ringbuffer_reinit(&recv_buf, recv_step);
+      } else {
+        first = false;
+      }
       r = queue_dequeue(&compress_que[qid], &recv_buf, recv_step);
-      update_compress_extract_step(&recv_step, recv_it++);
-      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Compress", r, args->tid, qid, &compress_que[qid]);
       if (r < 0) break;
     }
@@ -551,6 +557,7 @@ void * Deduplicate(void * targs) {
 
   unsigned int recv_step = dedup_initial_extract_step();
   int recv_it = 0;
+  bool first = true;
   unsigned int send_compress_step = compress_initial_insert_step();
   int send_compress_it = 0;
   unsigned int send_reorder_step = reorder_initial_insert_step();
@@ -574,9 +581,13 @@ void * Deduplicate(void * targs) {
   while (1) {
     //if no items available, fetch a group of items from the queue
     if (ringbuffer_isEmpty(&recv_buf)) {
+      if (!first) {
+        update_dedup_extract_step(&recv_step, recv_it++);
+        ringbuffer_reinit(&recv_buf, recv_step);
+      } else {
+        first = false;
+      }
       r = queue_dequeue(&deduplicate_que[qid], &recv_buf, recv_step);
-      update_dedup_extract_step(&recv_step, recv_it++);
-      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
       if (r < 0) break;
     }
@@ -681,6 +692,7 @@ void *FragmentRefine(void * targs) {
   int recv_it = 0;
   unsigned int send_step = dedup_initial_insert_step();
   int send_it = 0;
+  bool first = true;
 
   r=0;
   r += ringbuffer_init(&recv_buf, recv_step);
@@ -698,9 +710,13 @@ void *FragmentRefine(void * targs) {
   while (TRUE) {
     //if no item for process, get a group of items from the pipeline
     if (ringbuffer_isEmpty(&recv_buf)) {
+      if (!first) {
+        update_refine_extract_step(&recv_step, recv_it++);
+        ringbuffer_reinit(&recv_buf, recv_step);
+      } else {
+        first = false;
+      }
       r = queue_dequeue(&refine_que[qid], &recv_buf, recv_step);
-      update_refine_extract_step(&recv_step, recv_it++);
-      ringbuffer_reinit(&recv_buf, recv_step);
       // log_dequeue("Refine", r, args->tid, qid, &refine_que[qid]);
       fflush(stdout);
       if (r < 0) {
@@ -1294,6 +1310,7 @@ void *Reorder(void * targs) {
 
   unsigned int recv_step = reorder_initial_extract_step();
   int recv_it = 0;
+  bool first = true;
   r = ringbuffer_init(&recv_buf, recv_step);
   assert(r==0);
 
@@ -1304,9 +1321,13 @@ void *Reorder(void * targs) {
     if (ringbuffer_isEmpty(&recv_buf)) {
       //process queues in round-robin fashion
       for(i=0,r=0; r<=0 && i<args->nqueues; i++) {
+        if (!first) {
+          update_reorder_extract_step(&recv_step, recv_it++);
+          ringbuffer_reinit(&recv_buf, recv_step);
+        } else {
+          first = false;
+        }
         r = queue_dequeue(&reorder_que[qid], &recv_buf, recv_step);
-        update_reorder_extract_step(&recv_step, recv_it++);
-        ringbuffer_reinit(&recv_buf, recv_step);
         // log_dequeue("Reorder", r, args->tid, qid, &reorder_que[qid]);
         qid = (qid+1) % args->nqueues;
       }
