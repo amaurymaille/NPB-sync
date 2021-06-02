@@ -109,6 +109,10 @@
  *					<appro@fy.chalmers.se>
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if !defined(DATA_ORDER_IS_BIG_ENDIAN) && !defined(DATA_ORDER_IS_LITTLE_ENDIAN)
 #error "DATA_ORDER must be defined!"
 #endif
@@ -281,7 +285,7 @@
 
 int HASH_UPDATE (HASH_CTX *c, const void *data_, size_t len)
 	{
-	const unsigned char *data=data_;
+	const unsigned char *data=(const unsigned char*)data_;
 	unsigned char *p;
 	HASH_LONG l;
 	size_t n;
@@ -405,4 +409,8 @@ int HASH_FINAL (unsigned char *md, HASH_CTX *c)
  * generates better code.
  *				<appro@fy.chalmers.se>
  */
+
+#ifdef __cplusplus
+}
+#endif
 #endif

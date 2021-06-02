@@ -5,26 +5,37 @@
 
 #include "queue.h"
 
-typedef struct script_mgr_s {
-    void* (*queue_push_callbacks[MAX_CALLBACKS])(queue_t*, ringbuffer_t*, int);
-    void* (*queue_pop_callbacks[MAX_CALLBACKS])(queue_t*, ringbuffer_t*, int);
+#include <list>
+#include <functional>
 
-    int nb_push_callbacks;
-    int nb_pop_callbacks;
-} script_mgr_t;
+namespace Scripting {
+    enum class callbacks {
+        PUSH = 0,
+        POP = 1
+    };
 
-typedef enum callbacks_e {
-    PUSH = 0,
-    POP = 1
-} callbacks_t;
+    typedef std::function<void(queue_t*, ringbuffer_t*, int)> queue_push_function;
+    typedef queue_push_function queue_pop_function;
+}
 
-void init(script_mgr_t* mgr);
-void add_callback(script_mgr_t* mgr, callbacks_t callback_id, void* callback);
+class script_mgr {
+private:
+    script_mgr();
+    std::list<Scripting::queue_push_function> _push_callbacks;
+    std::list<Scripting::queue_pop_function> _pop_callbacks;
 
-// Callbacks are called in critical section
-void call_push_callbacks(script_mgr_t* mgr, queue_t*, ringbuffer_t*, int);
-void call_pop_callbacks(script_mgr_t* mgr, queue_t*, ringbuffer_t*, int);
+public:
+    void add_push_callback(Scripting::queue_push_function&&);
+    void add_pop_callback(Scripting::queue_pop_function&&);
 
-extern script_mgr_t script_mgr;
+    void call_push_callbacks(queue_t*, ringbuffer_t*, int);
+    void call_pop_callbacks(queue_t*, ringbuffer_t*, int);
+
+    static script_mgr& instance();
+};
+
+#define sScriptMgr (&script_mgr::instance())
+
+#include "script_mgr.tpp"
 
 #endif // SCRIPT_MGR_H

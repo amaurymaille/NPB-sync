@@ -22,13 +22,13 @@ PriorityQueue Initialize( int InitCapacity ) {
     Error( "Priority queue size is too small" );
   }
 
-  H = malloc( sizeof( struct HeapStruct ) );
+  H = (PriorityQueue)malloc( sizeof( struct HeapStruct ) );
   if( H ==NULL ) {
     FatalError( "Out of space!!!" );
   }
 
   /* Allocate the array plus one extra for sentinel */
-  H->Elements = malloc( ( InitCapacity + 1 ) * sizeof( HeapElementType ) );
+  H->Elements = (HeapElementType*)malloc( ( InitCapacity + 1 ) * sizeof( HeapElementType ) );
   if( H->Elements == NULL ) {
     FatalError( "Out of space!!!" );
   }
@@ -50,7 +50,7 @@ void Insert( HeapElementType X, PriorityQueue H ) {
   if( IsFull( H ) ) {
     /* double capacity of heap */
     H->Capacity = 2 * H->Capacity;
-    H->Elements = realloc( H->Elements, ( H->Capacity + 1 ) * sizeof( HeapElementType ) );
+    H->Elements = (HeapElementType*)realloc( H->Elements, ( H->Capacity + 1 ) * sizeof( HeapElementType ) );
     if( H->Elements == NULL ) {
       FatalError( "Out of space!!!" );
     }

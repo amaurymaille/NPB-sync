@@ -64,7 +64,7 @@ SearchTree TreeInsert( TreeElementType X, SearchTree T ) {
   if (pmin!= NULL && X.l1num < pmin->Element.l1num) pmin = NULL;
   if( T == NULL ) {
     /* Create and return a one-node tree */
-    T = malloc( sizeof( struct TreeNode ) );
+    T = (SearchTree)malloc( sizeof( struct TreeNode ) );
     if( T == NULL ) {
       perror( "Out of space!!!" );
     } else {

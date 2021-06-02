@@ -62,7 +62,7 @@ int mbuffer_system_init() {
   int i;
 
   assert(locks==NULL);
-  locks = malloc(NUMBER_OF_LOCKS * sizeof(pthread_lock_t));
+  locks = (pthread_lock_t*)malloc(NUMBER_OF_LOCKS * sizeof(pthread_lock_t));
   if(locks==NULL) return -1;
   for(i=0; i<NUMBER_OF_LOCKS; i++) {
     if(PTHREAD_LOCK_INIT(&locks[i]) != 0) {
@@ -132,7 +132,7 @@ mbuffer_t *mbuffer_clone(mbuffer_t *m) {
   assert(m->check_flag==MBUFFER_CHECK_MAGIC);
 #endif
 
-  temp = malloc(sizeof(mbuffer_t));
+  temp = (mbuffer_t*)malloc(sizeof(mbuffer_t));
   if(temp==NULL) return NULL;
 
   //Update reference counter
@@ -168,7 +168,7 @@ mbuffer_t *mbuffer_copy(mbuffer_t *m) {
 #endif
 
   //NOTE: No need to update reference counter of master, resulting copy of buffer will be independent
-  temp = malloc(sizeof(mbuffer_t));
+  temp = (mbuffer_t*)malloc(sizeof(mbuffer_t));
   if(temp==NULL) return NULL;
   if(mbuffer_create(temp, m->n)!=0) {
     free(temp);

@@ -65,10 +65,10 @@
 
 
 //The configuration block defined in main
-config_t * conf;
+//config_t * conf;
 
 //Hash table data structure & utility functions
-struct hashtable *cache;
+//struct hashtable *cache;
 
 static unsigned int hash_from_key_fn( void *k ) {
   //NOTE: sha1 sum is integer-aligned
@@ -284,7 +284,7 @@ static void write_chunk_to_file(int fd, chunk_t *chunk) {
   //state is now guaranteed to be either COMPRESSED or FLUSHED
   if(chunk->header.state == CHUNK_STATE_COMPRESSED) {
     //Chunk data has not been written yet, do so now
-    write_file(fd, TYPE_COMPRESS, chunk->compressed_data.n, chunk->compressed_data.ptr);
+    write_file(fd, TYPE_COMPRESS, chunk->compressed_data.n, (u_char*)chunk->compressed_data.ptr);
     mbuffer_free(&chunk->compressed_data);
     chunk->header.state = CHUNK_STATE_FLUSHED;
   } else {
@@ -349,7 +349,7 @@ void sub_Compress(chunk_t *chunk) {
           EXIT_TRACE("Creation of compression buffer failed.\n");
         }
         //compress the block
-        r = compress(chunk->compressed_data.ptr, &n, chunk->uncompressed_data.ptr, chunk->uncompressed_data.n);
+        r = compress((Bytef*)chunk->compressed_data.ptr, &n, (const Bytef*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n);
         if (r != Z_OK) {
           EXIT_TRACE("Compression failed\n");
         }
@@ -369,9 +369,11 @@ void sub_Compress(chunk_t *chunk) {
           EXIT_TRACE("Creation of compression buffer failed.\n");
         }
         //compress the block
-        unsigned int int_n = n;
-        r = BZ2_bzBuffToBuffCompress(chunk->compressed_data.ptr, &int_n, chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, 9, 0, 30);
-        n = int_n;
+        {
+            unsigned int int_n = n;
+            r = BZ2_bzBuffToBuffCompress((char*)chunk->compressed_data.ptr, &int_n, (char*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, 9, 0, 30);
+            n = int_n;
+        }
         if (r != BZ_OK) {
           EXIT_TRACE("Compression failed\n");
         }
@@ -421,7 +423,7 @@ void *Compress(void * targs) {
   ringbuffer_t recv_buf, send_buf;
 
 #ifdef ENABLE_STATISTICS
-  stats_t *thread_stats = malloc(sizeof(stats_t));
+  stats_t *thread_stats = (stats_t*)malloc(sizeof(stats_t));
   if(thread_stats == NULL) EXIT_TRACE("Memory allocation failed.\n");
   init_stats(thread_stats);
 #endif //ENABLE_STATISTICS
@@ -576,7 +578,7 @@ void * Deduplicate(void * targs) {
   ringbuffer_t recv_buf, send_buf_reorder, send_buf_compress;
 
 #ifdef ENABLE_STATISTICS
-  stats_t *thread_stats = malloc(sizeof(stats_t));
+  stats_t *thread_stats = (stats_t*)malloc(sizeof(stats_t));
   if(thread_stats == NULL) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
@@ -697,8 +699,8 @@ void *FragmentRefine(void * targs) {
 
   chunk_t *temp;
   chunk_t *chunk;
-  u32int * rabintab = malloc(256*sizeof rabintab[0]);
-  u32int * rabinwintab = malloc(256*sizeof rabintab[0]);
+  u32int * rabintab = (u32int*)malloc(256*sizeof rabintab[0]);
+  u32int * rabinwintab = (u32int*)malloc(256*sizeof rabintab[0]);
   if(rabintab == NULL || rabinwintab == NULL) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
@@ -715,7 +717,7 @@ void *FragmentRefine(void * targs) {
   assert(r==0);
 
 #ifdef ENABLE_STATISTICS
-  stats_t *thread_stats = malloc(sizeof(stats_t));
+  stats_t *thread_stats = (stats_t*)malloc(sizeof(stats_t));
   if(thread_stats == NULL) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
@@ -749,7 +751,7 @@ void *FragmentRefine(void * targs) {
     sequence_number_t chcount = 0;
     do {
       //Find next anchor with Rabin fingerprint
-      int offset = rabinseg(chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win, rabintab, rabinwintab);
+      int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win, rabintab, rabinwintab);
       //Can we split the buffer?
       if(offset < chunk->uncompressed_data.n) {
         //Allocate a new chunk and create a new memory buffer
@@ -851,8 +853,8 @@ void *SerialIntegratedPipeline(void * targs) {
 
   chunk_t *temp = NULL;
   chunk_t *chunk = NULL;
-  u32int * rabintab = malloc(256*sizeof rabintab[0]);
-  u32int * rabinwintab = malloc(256*sizeof rabintab[0]);
+  u32int * rabintab = (u32int*)malloc(256*sizeof rabintab[0]);
+  u32int * rabinwintab = (u32int*)malloc(256*sizeof rabintab[0]);
   if(rabintab == NULL || rabinwintab == NULL) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
@@ -903,12 +905,12 @@ void *SerialIntegratedPipeline(void * targs) {
     size_t bytes_read=0;
     if(conf->preloading) {
       size_t max_read = MIN(MAXBUF, args->input_file.size-preloading_buffer_seek);
-      memcpy(chunk->uncompressed_data.ptr+bytes_left, args->input_file.buffer+preloading_buffer_seek, max_read);
+      memcpy((char*)(chunk->uncompressed_data.ptr)+bytes_left, (char*)(args->input_file.buffer)+preloading_buffer_seek, max_read);
       bytes_read = max_read;
       preloading_buffer_seek += max_read;
     } else {
       while(bytes_read < MAXBUF) {
-        r = read(fd, chunk->uncompressed_data.ptr+bytes_left+bytes_read, MAXBUF-bytes_read);
+        r = read(fd, (char*)(chunk->uncompressed_data.ptr)+bytes_left+bytes_read, MAXBUF-bytes_read);
         if(r<0) switch(errno) {
           case EAGAIN:
             EXIT_TRACE("I/O error: No data available\n");break;
@@ -984,7 +986,7 @@ void *SerialIntegratedPipeline(void * targs) {
     do {
       split = 0;
       //Try to split the buffer
-      int offset = rabinseg(chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win_dataprocess, rabintab, rabinwintab);
+      int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win_dataprocess, rabintab, rabinwintab);
       //Did we find a split location?
       if(offset == 0) {
         //Split found at the very beginning of the buffer (should never happen due to technical limitations)
@@ -1089,8 +1091,8 @@ void *Fragment(void * targs){
 
   chunk_t *temp = NULL;
   chunk_t *chunk = NULL;
-  u32int * rabintab = malloc(256*sizeof rabintab[0]);
-  u32int * rabinwintab = malloc(256*sizeof rabintab[0]);
+  u32int * rabintab = (u32int*)malloc(256*sizeof rabintab[0]);
+  u32int * rabinwintab = (u32int*)malloc(256*sizeof rabintab[0]);
   if(rabintab == NULL || rabinwintab == NULL) {
     EXIT_TRACE("Memory allocation failed.\n");
   }
@@ -1153,12 +1155,12 @@ void *Fragment(void * targs){
     size_t bytes_read=0;
     if(conf->preloading) {
       size_t max_read = MIN(MAXBUF, args->input_file.size-preloading_buffer_seek);
-      memcpy(chunk->uncompressed_data.ptr+bytes_left, args->input_file.buffer+preloading_buffer_seek, max_read);
+      memcpy((char*)(chunk->uncompressed_data.ptr)+bytes_left, (char*)(args->input_file.buffer)+preloading_buffer_seek, max_read);
       bytes_read = max_read;
       preloading_buffer_seek += max_read;
     } else {
       while(bytes_read < MAXBUF) {
-        r = read(fd, chunk->uncompressed_data.ptr+bytes_left+bytes_read, MAXBUF-bytes_read);
+        r = read(fd, (char*)(chunk->uncompressed_data.ptr)+bytes_left+bytes_read, MAXBUF-bytes_read);
         if(r<0) switch(errno) {
           case EAGAIN:
             EXIT_TRACE("I/O error: No data available\n");break;
@@ -1208,7 +1210,7 @@ void *Fragment(void * targs){
       split = 0;
       //Try to split the buffer at least ANCHOR_JUMP bytes away from its beginning
       if(ANCHOR_JUMP < chunk->uncompressed_data.n) {
-        int offset = rabinseg(chunk->uncompressed_data.ptr + ANCHOR_JUMP, chunk->uncompressed_data.n - ANCHOR_JUMP, rf_win_dataprocess, rabintab, rabinwintab);
+        int offset = rabinseg((uchar*)(chunk->uncompressed_data.ptr) + ANCHOR_JUMP, chunk->uncompressed_data.n - ANCHOR_JUMP, rf_win_dataprocess, rabintab, rabinwintab);
         //Did we find a split location?
         if(offset == 0) {
           //Split found at the very beginning of the buffer (should never happen due to technical limitations)
@@ -1325,7 +1327,7 @@ void *Reorder(void * targs) {
   //a coarse chunk.
   sequence_number_t *chunks_per_anchor;
   unsigned int chunks_per_anchor_max = 1024;
-  chunks_per_anchor = malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
+  chunks_per_anchor = (sequence_number_t*)malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
   if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
   memset(chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
   int r;
@@ -1361,7 +1363,7 @@ void *Reorder(void * targs) {
 
     //Double size of sequence number array if necessary
     if(chunk->sequence.l1num >= chunks_per_anchor_max) {
-      chunks_per_anchor = realloc(chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
+      chunks_per_anchor = (sequence_number_t*)realloc(chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
       if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
       memset(&chunks_per_anchor[chunks_per_anchor_max], 0, chunks_per_anchor_max * sizeof(sequence_number_t));
       chunks_per_anchor_max *= 2;
@@ -1480,9 +1482,8 @@ static void debug_push_queue(queue_t* queue, ringbuffer_t* buffer, int limit) {
  *
  */
 void Encode(config_t * _conf) {
-  init(&script_mgr);
-  add_callback(&script_mgr, POP, &debug_queue);
-  add_callback(&script_mgr, PUSH, &debug_push_queue);
+  sScriptMgr->add_push_callback(debug_queue);
+  sScriptMgr->add_pop_callback(debug_push_queue);
 
   struct stat filestat;
   int32 fd;
@@ -1509,10 +1510,10 @@ void Encode(config_t * _conf) {
   //queue allocation & initialization
   const int nqueues = (conf->nthreads / MAX_THREADS_PER_QUEUE) +
                       ((conf->nthreads % MAX_THREADS_PER_QUEUE != 0) ? 1 : 0);
-  deduplicate_que = malloc(sizeof(queue_t) * nqueues);
-  refine_que = malloc(sizeof(queue_t) * nqueues);
-  reorder_que = malloc(sizeof(queue_t) * nqueues);
-  compress_que = malloc(sizeof(queue_t) * nqueues);
+  deduplicate_que = (queue_t*)malloc(sizeof(queue_t) * nqueues);
+  refine_que = (queue_t*)malloc(sizeof(queue_t) * nqueues);
+  reorder_que = (queue_t*)malloc(sizeof(queue_t) * nqueues);
+  compress_que = (queue_t*)malloc(sizeof(queue_t) * nqueues);
   if( (deduplicate_que == NULL) || (refine_que == NULL) || (reorder_que == NULL) || (compress_que == NULL)) {
     printf("Out of memory\n");
     exit(1);
@@ -1566,7 +1567,7 @@ void Encode(config_t * _conf) {
 
     //Read data until buffer full
     while(bytes_read < filestat.st_size) {
-      r = read(fd, preloading_buffer+bytes_read, filestat.st_size-bytes_read);
+      r = read(fd, (char*)(preloading_buffer)+bytes_read, filestat.st_size-bytes_read);
       if(r<0) switch(errno) {
         case EAGAIN:
           EXIT_TRACE("I/O error: No data available\n");break;

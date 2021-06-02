@@ -36,10 +36,10 @@
 
 
 //The configuration block defined in main
-config_t * conf;
+//config_t * conf;
 
 //Hash table data structure & utility functions
-struct hashtable *cache;
+//struct hashtable *cache;
 
 static unsigned int hash_from_key_fn( void *k ) {
   //NOTE: sha1 sum is integer-aligned
@@ -122,7 +122,7 @@ static int uncompress_chunk(chunk_t *chunk) {
     unsigned long len_64 = UNCOMPRESS_BOUND;
     r = mbuffer_create(&chunk->uncompressed_data, len_64);
     if(r != 0) EXIT_TRACE("Creation of decompression buffer failed.\n");
-    r = uncompress(chunk->uncompressed_data.ptr, &len_64, chunk->compressed_data.ptr, chunk->compressed_data.n);
+    r = uncompress((Bytef*)chunk->uncompressed_data.ptr, &len_64, (const Bytef*)chunk->compressed_data.ptr, chunk->compressed_data.n);
     //TODO: Automatically enlarge buffer if return value is Z_BUF_ERROR
     if(r!=Z_OK) EXIT_TRACE("error uncompressing chunk data\n");
     //Shrink buffer to actual size
@@ -143,7 +143,7 @@ static int uncompress_chunk(chunk_t *chunk) {
     unsigned int len_32 = UNCOMPRESS_BOUND;
     r = mbuffer_create(&chunk->uncompressed_data, len_32);
     if(r != 0) EXIT_TRACE("Creation of decompression buffer failed.\n");
-    r = BZ2_bzBuffToBuffDecompress(chunk->uncompressed_data.ptr, &len_32, chunk->compressed_data.ptr, chunk->compressed_data.n, 0, 0);
+    r = BZ2_bzBuffToBuffDecompress((char*)chunk->uncompressed_data.ptr, &len_32, (char*)chunk->compressed_data.ptr, chunk->compressed_data.n, 0, 0);
     //TODO: Automatically enlarge buffer if return value is BZ_OUTBUFF_FULL
     if(r!=BZ_OK) EXIT_TRACE("error uncompressing chunk data\n");
     //Shrink buffer to actual size
