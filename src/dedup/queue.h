@@ -1,6 +1,7 @@
 #ifndef _QUEUE_H_
 #define _QUEUE_H_
 
+#include <assert.h>
 #include <stdlib.h>
 
 #ifdef ENABLE_PTHREADS
@@ -149,6 +150,10 @@ void queue_terminate(queue_t * que);
 
 int queue_dequeue(queue_t *que, ringbuffer_t *buf, int limit);
 int queue_enqueue(queue_t *que, ringbuffer_t *buf, int limit);
+
+static inline unsigned int queue_size(queue_t const* queue) {
+    return ringbuffer_nb_elements(&queue->buf);
+}
 
 #endif //_QUEUE_H_
 

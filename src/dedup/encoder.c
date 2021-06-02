@@ -36,6 +36,7 @@
 #include "rabin.h"
 #include "mbuffer.h"
 #include "step.h"
+#include "script_mgr.h"
 
 #ifdef ENABLE_PTHREADS
 #include "queue.h"
@@ -143,6 +144,7 @@ static void init_stats(stats_t *s) {
 #ifdef ENABLE_PTHREADS
 //The queues between the pipeline stages
 queue_t *deduplicate_que, *refine_que, *reorder_que, *compress_que;
+pthread_key_t thread_data_key;
 
 //Merge two statistics records: s1=s1+s2
 static void merge_stats(stats_t *s1, stats_t *s2) {
@@ -411,6 +413,11 @@ void *Compress(void * targs) {
   int r;
   int count = 0;
 
+  thread_data_t data;
+  data.thread_id = args->tid;
+  strcpy(data.fname, "Compress");
+  pthread_setspecific(thread_data_key, &data);
+
   ringbuffer_t recv_buf, send_buf;
 
 #ifdef ENABLE_STATISTICS
@@ -422,7 +429,7 @@ void *Compress(void * targs) {
   unsigned int recv_step = compress_initial_extract_step();
   int recv_it = 0;
   bool first = true;
-  unsigned int send_step = reorder_initial_insert_step(); // Oops
+  unsigned int send_step = reorder_initial_insert_step(); 
   int send_it = 0;
   r=0;
   r += ringbuffer_init(&recv_buf, recv_step);
@@ -554,6 +561,11 @@ void * Deduplicate(void * targs) {
   int r;
   int compress_count = 0, reorder_count = 0;
 
+  thread_data_t data;
+  data.thread_id = args->tid;
+  strcpy(data.fname, "Deduplicate");
+  pthread_setspecific(thread_data_key, &data);
+
   unsigned int recv_step = dedup_initial_extract_step();
   int recv_it = 0;
   bool first = true;
@@ -634,12 +646,12 @@ void * Deduplicate(void * targs) {
 
   //empty buffers
   while(!ringbuffer_isEmpty(&send_buf_compress)) {
-    r = queue_enqueue(&compress_que[qid], &send_buf_compress, ITEM_PER_INSERT);
+    r = queue_enqueue(&compress_que[qid], &send_buf_compress, send_compress_step); // ringbuffer_nb_elements(&send_buf_compress));
     // log_enqueue("Deduplicate", "Compress", r, args->tid, qid, &compress_que[qid]);
     assert(r>=1);
   }
   while(!ringbuffer_isEmpty(&send_buf_reorder)) {
-    r = queue_enqueue(&reorder_que[qid], &send_buf_reorder, ITEM_PER_INSERT);
+    r = queue_enqueue(&reorder_que[qid], &send_buf_reorder, send_reorder_step); // ringbuffer_nb_elements(&send_buf_reorder));
     // log_enqueue("Deduplicate", "Reorder", r, args->tid, qid, &reorder_que[qid]);
     assert(r>=1);
   }
@@ -677,6 +689,11 @@ void *FragmentRefine(void * targs) {
   ringbuffer_t recv_buf, send_buf;
   int r;
   int count = 0;
+
+  thread_data_t data;
+  data.thread_id = args->tid;
+  strcpy(data.fname, "Refine");
+  pthread_setspecific(thread_data_key, &data);
 
   chunk_t *temp;
   chunk_t *chunk;
@@ -1060,6 +1077,11 @@ void *Fragment(void * targs){
   int fd = args->fd;
   int i;
 
+  thread_data_t data;
+  data.thread_id = 0;
+  strcpy(data.fname, "Fragment");
+  pthread_setspecific(thread_data_key, &data);
+
   ringbuffer_t send_buf;
   sequence_number_t anchorcount = 0;
   int r;
@@ -1277,9 +1299,15 @@ void *Fragment(void * targs){
  */
 #ifdef ENABLE_PTHREADS
 void *Reorder(void * targs) {
+
   struct thread_args *args = (struct thread_args *)targs;
   int qid = 0;
   int fd = 0;
+
+  thread_data_t data;
+  data.thread_id = 0;
+  strcpy(data.fname, "Reorder");
+  pthread_setspecific(thread_data_key, &data);
 
   ringbuffer_t recv_buf;
   chunk_t *chunk;
@@ -1433,7 +1461,15 @@ void *Reorder(void * targs) {
 }
 #endif //ENABLE_PTHREADS
 
+static void debug_queue(queue_t* queue, ringbuffer_t* buffer, int limit) {
+    thread_data_t* data = (thread_data_t*)pthread_getspecific(thread_data_key);
+    printf("[%s %d] Thread %llu requesting %d elements in queue %p containing %d elements\n", data->fname, data->thread_id, pthread_self(), limit, queue, queue_size(queue));
+}
 
+static void debug_push_queue(queue_t* queue, ringbuffer_t* buffer, int limit) {
+    thread_data_t* data = (thread_data_t*)pthread_getspecific(thread_data_key);
+    printf("[%s %d] Thread %llu adding %d element to queue %p containing %d elements\n", data->fname, data->thread_id, pthread_self(), limit, queue, queue_size(queue));
+}
 
 /*--------------------------------------------------------------------------*/
 /* Encode
@@ -1444,6 +1480,10 @@ void *Reorder(void * targs) {
  *
  */
 void Encode(config_t * _conf) {
+  init(&script_mgr);
+  add_callback(&script_mgr, POP, &debug_queue);
+  add_callback(&script_mgr, PUSH, &debug_push_queue);
+
   struct stat filestat;
   int32 fd;
 
@@ -1451,6 +1491,7 @@ void Encode(config_t * _conf) {
 
 #ifdef ENABLE_STATISTICS
   init_stats(&stats);
+  pthread_key_create(&thread_data_key, NULL);
 #endif
 
   //Create chunk cache

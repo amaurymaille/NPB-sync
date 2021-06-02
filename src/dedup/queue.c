@@ -5,6 +5,7 @@
 #include "util.h"
 #include "queue.h"
 #include "config.h"
+#include "script_mgr.h"
 
 #ifdef ENABLE_PTHREADS
 #include <pthread.h>
@@ -69,6 +70,7 @@ int queue_dequeue(queue_t *que, ringbuffer_t *buf, int limit) {
     return -1;
   }
 
+  call_pop_callbacks(&script_mgr, que, buf, limit);
   // printf("[queue dequeue before] Ringbuffer %p has %d elements\n", &que->buf, ringbuffer_nb_elements(&que->buf));
   //NOTE: This can be optimized by copying whole segments of pointers with memcpy. However,
   //      `limit' is typically small so the performance benefit would be negligible.
@@ -103,6 +105,7 @@ int queue_enqueue(queue_t *que, ringbuffer_t *buf, int limit) {
   assert(!queue_isTerminated(que));
 #endif
 
+  call_push_callbacks(&script_mgr, que, buf, limit);
   // printf("[queue enqueue before] Ringbuffer %p has %d elements\n", &que->buf, ringbuffer_nb_elements(&que->buf));
   //NOTE: This can be optimized by copying whole segments of pointers with memcpy. However,
   //      `limit' is typically small so the performance benefit would be negligible.
