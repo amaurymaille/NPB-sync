@@ -11,4 +11,4 @@ message (STATUS "${DEDUP_SRC}")
 
 add_library(dedup_step SHARED "step.cpp")
 add_executable(dedup "${DEDUP_SRC}")
-target_link_libraries(dedup "${OPENSSL_LIBRARIES}" "${ZLIB_LIBRARIES}" "${BZIP2_LIBRARIES}" m dedup_step)
+target_link_libraries(dedup "${OPENSSL_LIBRARIES}" "${ZLIB_LIBRARIES}" "${BZIP2_LIBRARIES}" m dedup_step core)
