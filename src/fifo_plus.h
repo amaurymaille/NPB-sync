@@ -3,6 +3,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 #include <queue>
 
 #include "tss.h"
@@ -10,6 +11,12 @@
 enum class FIFOPlusPopPolicy {
     POP_NO_WAIT = 0, // Does not wait if not enough elements are available, return early.
     POP_WAIT = 1, // Wait until there are enough elements. May lead to deadlocks.
+};
+
+enum class FIFORole {
+    NONE = 0,
+    PRODUCER = 1,
+    CONSUMER = 2
 };
 
 template<typename T>
@@ -21,10 +28,17 @@ public:
     // template<template<typename> typename Container>
     // void push(Container<T>&& elements);
     // Add the element to the FIFO. It may not be available immediately.
-    void push(const T& value);
+    void push(const T& value, bool reconfigure = true);
+
+    // Add the element to the FIFO and make it available immediately (along the
+    // previous one).
+    void push_immediate(const T& value, bool reconfigure = true);
+
+    // Extract an element from the FIFO.
+    void pop(std::optional<T>& value, bool reconfigure = true);
     // Extract n elements from the FIFO according to the pop policy.
-    template<template<typename> typename Container>
-    void pop(Container<T>& target, size_t n);
+    // template<template<typename> typename Container>
+    // void pop(Container<T>& target, size_t n);
     // Extract all elements from the FIFO without considering the policy.
     template<template<typename> typename Container>
     void empty(Container<T>& target);
@@ -43,16 +57,33 @@ public:
     }
 
     inline unsigned int get_n() const {
-        return _producers_data->_n;
+        return _data->_n;
     }
 
     inline void set_n(unsigned int n) {
-        _producers_data->_n = n;
+        _data->_n = n;
+    }
+
+    inline void set_role(FIFORole role) {
+        if (role == FIFORole::NONE) {
+            throw std::runtime_error("Cannot set the role of a thread to NONE");
+        } else if (_data->_role != FIFORole::NONE) {
+            throw std::runtime_error("Cannot change the role of a thread that has already selected one");
+        }
+
+        _data->_role = role;
+    }
+
+    inline void set_thresholds(unsigned int no_work, unsigned int with_work, unsigned int work_amount) {
+        _data->_no_work_threshold = no_work;
+        _data->_with_work_threshold = with_work;
+        _data->_work_amount_threshold = work_amount;
     }
 
 private:
-    struct ProducerData {
-        // Work buffer that is merged into _buffer when required.
+    struct ProdConsData {
+        // Work buffer. Merged into the active buffer for producers. Inner buffer
+        // merged into it for consumers.
         std::queue<T> _inner_buffer;
 
         // Counters
@@ -67,9 +98,14 @@ private:
 
         // Quantity of work to have in the inner buffer before transfer
         unsigned int _n;
+
+        // Role
+        FIFORole _role = FIFORole::NONE; 
+
+        void transfer();
     };
 
-    TSS<ProducerData> _producers_data;
+    TSS<ProdConsData> _data;
 
     // Policy when popping elements
     FIFOPlusPopPolicy _pop_policy;
@@ -81,11 +117,19 @@ private:
     std::condition_variable _cv;
     std::mutex _m;
 
+    /* check_empty parameter could be related to the comment in pop that talks
+     * about checking how many times in a row the buffer was empty when a thread
+     * tried to pop. I don't see why it would appear in _transfer though.
+     */
+
     // Send content of _inner_buffer in _buffer
-    void _transfer(); 
+    void _transfer(bool empty_check = false); 
 
     // Reconfigure everything
     void _reconfigure();
+
+    // Send content of _buffer to _inner_buffer
+    void _reverse_transfer(bool empty_check = false);
 };
 
 #include "fifo_plus.tpp"

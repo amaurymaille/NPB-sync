@@ -1,44 +1,80 @@
 template<typename T>
-FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers) : _producers_data(identifier, n_producers), _pop_policy(policy) {
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_prod_cons) : _data(identifier, n_prod_cons), _pop_policy(policy) {
 
 }
 
 template<typename T>
 // template<template<typename> typename Container>
 // void FIFOPlus<T>::push(Container<T>&& elements) {
-void FIFOPlus<T>::push(const T& value) {
-    _producers_data->_inner_buffer.push(value);
-    ++_producers_data->_n;
+void FIFOPlus<T>::push(const T& value, bool reconfigure) {
+    _data->_inner_buffer.push(value);
 
-    if (_producers_data->_inner_buffer.size() < _producers_data->_n)
+    // WARNING: deadlock possible. I guess we need a finalizer (ProdConsData::transfer ?).
+#pragma message "This thing is probably going to deadlock one day! Use finalizers!"
+    if (_data->_inner_buffer.size() < _data->_n)
         return;
 
     std::unique_lock<std::mutex> lck(_m);
 
     if (_buffer.size() != 0) {
-        if (_buffer.size() < _producers_data->_work_amount_threshold) {
+        if (_buffer.size() < _data->_work_amount_threshold) {
             _transfer();
         }
 
-        _producers_data->_n_no_work = 0;
-        ++_producers_data->_n_with_work;
+        _data->_n_no_work = 0;
+        ++_data->_n_with_work;
 
-        if (_producers_data->_n_with_work >= _producers_data->_with_work_threshold) {
+        if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
             _reconfigure();
         }
     } else {
-        _producers_data->_n_with_work = 0;
-        ++_producers_data->_n_no_work;
+        _data->_n_with_work = 0;
+        ++_data->_n_no_work;
 
         _transfer();
 
-        if (_producers_data->_n_no_work >= _producers_data->_no_work_threshold) {
+        if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
             _reconfigure();
         }
     }
 }
 
 template<typename T>
+void FIFOPlus<T>::push_immediate(const T& value, bool reconfigure) {
+    _data->_inner_buffer.push(value);
+
+    std::unique_lock<std::mutex> lck(_m);
+    _transfer();
+}
+
+template<typename T>
+void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
+    if (_data->_inner_buffer.empty()) {
+        std::unique_lock<std::mutex> lck(_m);
+        if (_buffer.empty()) {
+            if (_pop_policy == FIFOPlusPopPolicy::POP_NO_WAIT)
+                return;
+
+            /* Maybe we should count how many times in a row the buffer was empty
+             * once we ran out of work. If the buffer is always empty, maybe we
+             * should work less ? It would mean that either other consumers are
+             * consumming too much or that producers are too slow.
+             *
+             * On the other hand, if we consume N at once and then process each of
+             * them, or process one by one N times... ? Is there a strong difference ?
+             * Maybe we need vTune here...
+             */
+            _cv.wait(lck);
+        }
+
+        _reverse_transfer();
+    }
+
+    opt = std::move(_data->_inner_buffer.front());
+    _data->_inner_buffer.pop();
+}
+
+/* template<typename T>
 template<template<typename> typename Container>
 void FIFOPlus<T>::pop(Container<T>& target, size_t n) {
     switch (_pop_policy) {
@@ -71,7 +107,7 @@ void FIFOPlus<T>::pop(Container<T>& target, size_t n) {
     default:
         break;
     }
-}
+} */
 
 template<typename T>
 template<template<typename> typename Container>
@@ -85,16 +121,48 @@ void FIFOPlus<T>::empty(Container<T>& target) {
 }
 
 template<typename T>
-void FIFOPlus<T>::_transfer() {
-    std::queue<T>& fifo = _producers_data->_inner_buffer;
+void FIFOPlus<T>::_transfer(bool check_empty) {
+    std::queue<T>& fifo = _data->_inner_buffer;
 
     while (!fifo.empty()) {
         _buffer.push(std::move(fifo.front()));
         fifo.pop();
+    }
+
+    _cv.notify_all();
+}
+
+template<typename T>
+void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
+    std::queue<T>& fifo = _data->_inner_buffer;
+    unsigned int n = _data->_n;
+
+    for (int i = 0; i < n && !_buffer.empty(); ++i) {
+        fifo.push(_buffer.front());
+        _buffer.pop();
     }
 }
 
 template<typename T>
 void FIFOPlus<T>::_reconfigure() {
 
+}
+
+template<typename T>
+void FIFOPlus<T>::ProdConsData::transfer() {
+    switch (_role) {
+    case FIFORole::NONE:
+        throw std::runtime_error("Cannot transfer when no role has been set");
+
+    case FIFORole::PRODUCER:
+        {
+            std::unique_lock<std::mutex> lck(_m);
+            _transfer(false);
+        }
+        break;
+
+    case FIFORole::CONSUMER:
+        _reverse_transfer(false);
+        break;
+    }
 }
