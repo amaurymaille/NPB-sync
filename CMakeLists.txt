@@ -8,6 +8,9 @@ find_package (OpenMP REQUIRED)
 find_package (Threads REQUIRED)
 find_package (spdlog REQUIRED)
 find_package (Boost REQUIRED COMPONENTS program_options thread)
+find_package (Lua REQUIRED)
+
+# message ("${LUA_INCLUDE_DIR}, ${LUA_LIBRARIES}")
 
 set (CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/lib/json/build" "${CMAKE_MODULE_PATH}")
 find_package (nlohmann_json REQUIRED)
