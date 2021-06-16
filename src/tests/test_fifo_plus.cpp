@@ -38,6 +38,8 @@ namespace Basic {
         for (ThreadCreateData const& data: threads) {
             pthread_join(data._thread_id, NULL);
         }
+
+        delete fifo;
         // return std::unique_ptr<FIFOPlus<T>>(fifo);
     }
 }
@@ -57,9 +59,6 @@ static int test_data_new(lua_State* L) {
     TestData* data = (TestData*)lua_newuserdata(L, sizeof(TestData));
     data->_threads = new std::vector<Basic::ThreadSpecificData>();
     luaL_getmetatable(L, "LuaBook.TestData");
-    lua_pushstring(L, "__gc");
-    lua_getglobal(L, "TestDataDestroy");
-    lua_settable(L, -3);
 
     lua_setmetatable(L, -2);
 
@@ -210,11 +209,16 @@ lua_State* lua_init() {
     lua_pushvalue(L, -2);
     lua_settable(L, -3);
 
+    lua_register(L, "TestDataDestroy", test_data_destroy);
+
+    lua_pushstring(L, "__gc");
+    lua_getglobal(L, "TestDataDestroy");
+    lua_settable(L, -3);
+
     luaL_setfuncs(L, test_data_functions, 0);
     lua_pop(L, 1);
 
     lua_register(L, "TestData", test_data_new);
-    lua_register(L, "TestDataDestroy", test_data_destroy);
 
     lua_newtable(L);
     lua_pushstring(L, "POP_WAIT");

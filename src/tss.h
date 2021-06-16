@@ -12,6 +12,7 @@
 
 class ThreadIdentifier {
 public:
+    virtual ~ThreadIdentifier() { }
     virtual unsigned int thread_id() const = 0;
 };
 
