@@ -1,5 +1,5 @@
 template<typename T>
-FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_prod_cons) : _data(identifier, n_prod_cons), _pop_policy(policy) {
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers) : _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
 
 }
 
@@ -25,7 +25,7 @@ void FIFOPlus<T>::push(const T& value, bool reconfigure) {
         ++_data->_n_with_work;
 
         if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
-            _reconfigure();
+            _reconfigure(ReconfigureReason::WORK);
         }
     } else {
         _data->_n_with_work = 0;
@@ -34,7 +34,7 @@ void FIFOPlus<T>::push(const T& value, bool reconfigure) {
         _transfer();
 
         if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
-            _reconfigure();
+            _reconfigure(ReconfigureReason::NO_WORK);
         }
     }
 }
@@ -144,8 +144,28 @@ void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
 }
 
 template<typename T>
-void FIFOPlus<T>::_reconfigure() {
+void FIFOPlus<T>::_reconfigure(ReconfigureReason reason) {
+    switch (reason) {
+    case ReconfigureReason::WORK: {
+        float diff = _data->_n_with_work / _data->_with_work_threshold;
+        if (diff < 1.f) {
+            throw std::runtime_error("Cannot call _reconfigure when ratio is lower than 1");
+        }
+        // 
+        break;
+    }
 
+    case ReconfigureReason::NO_WORK: {
+        float diff = _data->_n_no_work / _data->_no_work_threshold;
+        if (diff < 1.f) {
+            throw std::runtime_error("Cannot call _reconfigure when ratio is lower than 1");
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
 }
 
 template<typename T>

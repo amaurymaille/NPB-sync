@@ -22,7 +22,7 @@ enum class FIFORole {
 template<typename T>
 class FIFOPlus {
 public:
-    FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t);
+    FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers);
     
     // Add the content of elements to the FIFO. It may not be available immediately.
     // template<template<typename> typename Container>
@@ -74,13 +74,38 @@ public:
         _data->_role = role;
     }
 
+    inline void terminate() {
+        if (_data->role == FIFORole::PRODUCER) {
+            std::unique_lock<std::mutex> lck(_prod_mutex);
+            ++_n_producers_done;
+        }
+    }
+
     inline void set_thresholds(unsigned int no_work, unsigned int with_work, unsigned int work_amount) {
         _data->_no_work_threshold = no_work;
         _data->_with_work_threshold = with_work;
         _data->_work_amount_threshold = work_amount;
     }
 
+    inline void set_multipliers(float increase, float decrease) {
+        _data->_increase_mult = increase;
+        _data->_decrease_mult = decrease;
+    }
+
+    // Terminated once every producer has called terminate()
+    inline bool terminated() const {
+        std::unique_lock<std::mutex> lck(_prod_mutex);
+        return _n_producers == _n_producers_done;
+    }
+
 private:
+    enum class ReconfigureReason {
+        /* There was work to do, and we went over the threshold */
+        WORK = 0,
+        /* There was no work to do, and we went over the threshold */
+        NO_WORK = 1
+    };
+
     struct ProdConsData {
         // Work buffer. Merged into the active buffer for producers. Inner buffer
         // merged into it for consumers.
@@ -102,6 +127,10 @@ private:
         // Role
         FIFORole _role = FIFORole::NONE; 
 
+        // Multipliers for increase / decrease of _n
+        float _increase_mult;
+        float _decrease_mult;
+
         void transfer();
     };
 
@@ -117,6 +146,13 @@ private:
     std::condition_variable _cv;
     std::mutex _m;
 
+    // Number of producers
+    unsigned int _n_producers = 0;
+    // Number of producers that are done
+    unsigned int _n_producers_done = 0;
+    // Producer count mutex
+    std::mutex _prod_mutex;
+
     /* check_empty parameter could be related to the comment in pop that talks
      * about checking how many times in a row the buffer was empty when a thread
      * tried to pop. I don't see why it would appear in _transfer though.
@@ -126,7 +162,7 @@ private:
     void _transfer(bool empty_check = false); 
 
     // Reconfigure everything
-    void _reconfigure();
+    void _reconfigure(ReconfigureReason reason);
 
     // Send content of _buffer to _inner_buffer
     void _reverse_transfer(bool empty_check = false);
