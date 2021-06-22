@@ -9,7 +9,7 @@ find_path(LUA_INCLUDE_DIR
 
 find_library (LUA_LIBRARIES
   NAMES
-    liblua
+    liblua lua
   PATHS
     -- LUA_LIB_PATH --
 )
