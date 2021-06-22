@@ -11,6 +11,8 @@ namespace Basic {
         unsigned int _with_work;
         unsigned int _work_amount;
         FIFORole _role;
+        float _increase_mult;
+        float _decrease_mult;
     };
 
     struct ThreadCreateData {
@@ -32,6 +34,7 @@ namespace Basic {
         fifo->set_role(data->_tss._role);
         fifo->set_n(data->_tss._n);
         fifo->set_thresholds(data->_tss._no_work, data->_tss._with_work, data->_tss._work_amount);
+        fifo->set_multipliers(data->_tss._increase_mult, data->_tss._decrease_mult);
 
         return fifo;
     }

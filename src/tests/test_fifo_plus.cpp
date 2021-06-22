@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include <algorithm>
 #include <iostream>
 
 #include <dlfcn.h>
@@ -22,7 +23,8 @@ namespace Basic {
         PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier();
         // identifier->register_thread();
 
-        FIFOPlus<T>* fifo = new FIFOPlus<T>(pop_policy, identifier, threads.size());
+        unsigned int n_producers = std::count_if(threads.begin(), threads.end(), [](ThreadCreateData const& data) -> bool { return data._tss._role == FIFORole::PRODUCER; });
+        FIFOPlus<T>* fifo = new FIFOPlus<T>(pop_policy, identifier, n_producers, threads.size() - n_producers);
         /* fifo->set_role(FIFORole::PRODUCER);
         fifo->set_n(n);
         fifo->set_thresholds(no_work, with_work, work_amount); */
@@ -83,17 +85,23 @@ static void populate_thread_data(lua_State* L, Basic::ThreadSpecificData& data) 
     int with_work = luaL_checkinteger(L, 4);
     int work_amount = luaL_checkinteger(L, 5);
     FIFORole role = (FIFORole)luaL_checkinteger(L, 6);
+    float increase = luaL_checknumber(L, 7);
+    float decrease = luaL_checknumber(L, 8);
 
     luaL_argcheck(L, n >= 0, 2, "n must be positive");    
     luaL_argcheck(L, no_work >= 0, 3, "no_work must be positive");    
     luaL_argcheck(L, with_work >= 0, 4, "with_work must be positive");    
     luaL_argcheck(L, work_amount >= 0, 5, "work_amount must be positive");    
+    luaL_argcheck(L, increase >= 1.f, 7, "increase must be greater or equal to 1");
+    luaL_argcheck(L, decrease >= 0.f && decrease <= 1.0f, 8, "decrease must be positive and smaller or equal to 1");
 
     data._n = n;
     data._no_work = no_work;
     data._with_work = with_work;
     data._work_amount = work_amount;
     data._role = role;
+    data._increase_mult = increase;
+    data._decrease_mult = decrease;
 }
 
 static int test_data_set_policy(lua_State* L) {
@@ -165,8 +173,20 @@ static int test_data_run(lua_State* L) {
     TestData* data = check_test_data(L);
 
     void* library = dlopen(data->_functions_library, RTLD_LAZY);
+    if (!library) {
+        return luaL_error(L, "Unable to open library %s\n", data->_functions_library);
+    }
+
     void* (*consumer_function)(void*) = reinterpret_cast<void*(*)(void*)>(dlsym(library, data->_consumer_function));
     void* (*producer_function)(void*) = reinterpret_cast<void*(*)(void*)>(dlsym(library, data->_producer_function));
+
+    if (!consumer_function) {
+        return luaL_error(L, "Function %s not found in library %s\n", data->_consumer_function, data->_functions_library);
+    }
+
+    if (!producer_function) {
+        return luaL_error(L, "Function %s not found in library %s\n", data->_producer_function, data->_functions_library);
+    }
 
     std::vector<Basic::ThreadCreateData> thread_data;
     for (Basic::ThreadSpecificData const& tsd: *(data->_threads)) {
