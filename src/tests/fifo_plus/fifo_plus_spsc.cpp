@@ -12,7 +12,7 @@ void* producer(void* arg) {
 
     for (int i = 0; i < 99; ++i) {
         fifo->push(i, false);
-        usleep(100);
+        usleep(10000);
     }
 
     fifo->push_immediate(99);
@@ -21,7 +21,7 @@ void* producer(void* arg) {
 void* consumer(void* arg) {
     FIFOPlus<int>* fifo = Basic::init_get_fifo<int>(arg);
     
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 100; ) {
         std::optional<int> value;
         fifo->pop(value, false);
 
@@ -31,11 +31,20 @@ void* consumer(void* arg) {
             }
         }
 
+        if (!value) {
+            std::cout << "No value available yet\n";
+            continue;
+        }
+
+        std::cout << "Got " << *value << std::endl;
+
         if (value && *value != i) {
             std::ostringstream stream;
             stream << "Order was not preserved, expecting " << i << ", got " << *value << std::endl;
             throw std::runtime_error(stream.str());
         }
+
+        ++i;
     }
 }
 
