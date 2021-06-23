@@ -89,7 +89,7 @@ typedef struct {
     int thread_id;
     char fname[100];
 } thread_data_t;
-extern pthread_key_t thread_data_key;
+// extern pthread_key_t thread_data_key;
 
 typedef struct _sequence_t {
   sequence_number_t l1num; //first level id
