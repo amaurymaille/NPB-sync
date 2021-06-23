@@ -324,6 +324,15 @@ static void write_chunk_to_file(int fd, chunk_t *chunk) {
 int rf_win;
 int rf_win_dataprocess;
 
+static void configure_fifo(FIFOPlus<chunk_t*>& fifo, FIFOData const* data, FIFORole role) {
+    fifo.set_role(role);
+    fifo.set_multipliers(data->_increase_mult, data->_decrease_mult);
+    fifo.set_n(data->_n);
+    fifo.set_thresholds(data->_no_work_threshold,
+                        data->_with_work_threshold,
+                        data->_critical_threshold);
+}
+
 /*
  * Computational kernel of compression stage
  *
@@ -423,7 +432,10 @@ void *Compress(void * targs) {
   struct thread_args *args = (struct thread_args *)targs;
   // const int qid = args->tid / MAX_THREADS_PER_QUEUE;
   FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
+  configure_fifo(*input_fifo, args->_input_fifo_data, FIFORole::CONSUMER);
+
   FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
+  configure_fifo(*output_fifo, args->_output_fifo_data, FIFORole::PRODUCER);
   chunk_t* chunk;
   // int r;
   // int count = 0;
@@ -583,8 +595,14 @@ int sub_Deduplicate(chunk_t *chunk) {
 void * Deduplicate(void * targs) {
   struct thread_args *args = (struct thread_args *)targs;
   FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
+  configure_fifo(*input_fifo, args->_input_fifo_data, FIFORole::CONSUMER);
+
   FIFOPlus<chunk_t*>* compress_fifo = args->_output_fifo;
+  configure_fifo(*compress_fifo, args->_output_fifo_data, FIFORole::PRODUCER);
+
   FIFOPlus<chunk_t*>* reorder_fifo = args->_extra_output_fifo;
+  configure_fifo(*reorder_fifo, args->_extra_output_fifo_data, FIFORole::PRODUCER);
+
   // const int qid = args->tid / MAX_THREADS_PER_QUEUE;
   chunk_t *chunk;
   // int r;
@@ -741,7 +759,10 @@ void *FragmentRefine(void * targs) {
   pthread_setspecific(thread_data_key, &data); */
 
   FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
+  configure_fifo(*input_fifo, args->_input_fifo_data, FIFORole::CONSUMER);
+
   FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
+  configure_fifo(*output_fifo, args->_output_fifo_data, FIFORole::PRODUCER);
 
   chunk_t *temp;
   chunk_t *chunk;
@@ -1134,6 +1155,10 @@ void *Fragment(void * targs){
   struct thread_args *args = (struct thread_args *)targs;
   size_t preloading_buffer_seek = 0;
   FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
+  for (int i = 0; i < args->nqueues; ++i) {
+    configure_fifo(output_fifo[i], args->_output_fifo_data, FIFORole::PRODUCER);
+  }
+
   int qid = 0;
   int fd = args->fd;
 
@@ -1372,6 +1397,9 @@ void *Reorder(void * targs) {
   struct thread_args *args = (struct thread_args *)targs;
   int qid = 0;
   FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
+  for (int i = 0; i < args->nqueues; ++i) {
+    configure_fifo(input_fifo[i], args->_input_fifo_data, FIFORole::PRODUCER);
+  }
   int fd = 0;
 
   /* thread_data_t data;
