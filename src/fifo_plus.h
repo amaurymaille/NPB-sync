@@ -36,6 +36,17 @@ public:
     // previous one).
     void push_immediate(const T& value, bool reconfigure = true);
 
+    // Immediately transfer the content of the inner buffer into the active buffer.
+    // Producers only. This is basically push_immediate without a value to push.
+    inline void transfer() {
+        if (_data->_role != FIFORole::PRODUCER) {
+            throw std::runtime_error("Cannot call transfer when not a producer");
+        }
+
+        std::unique_lock<std::mutex> lck(_m);
+        _transfer();
+    }
+
     // Extract an element from the FIFO.
     void pop(std::optional<T>& value, bool reconfigure = true);
     // Extract n elements from the FIFO according to the pop policy.
@@ -77,9 +88,13 @@ public:
     }
 
     inline void terminate() {
-        if (_data->role == FIFORole::PRODUCER) {
+        if (_data->_role == FIFORole::PRODUCER) {
             std::unique_lock<std::mutex> lck(_prod_mutex);
             ++_n_producers_done;
+
+            if (terminated()) {
+                _cv.notify_all();
+            }
         }
     }
 
@@ -95,8 +110,9 @@ public:
     }
 
     // Terminated once every producer has called terminate()
+    // Needs external synchronization
     inline bool terminated() const {
-        std::unique_lock<std::mutex> lck(_prod_mutex);
+        // std::unique_lock<std::mutex> lck(_prod_mutex);
         return _n_producers == _n_producers_done;
     }
 
@@ -221,6 +237,6 @@ private:
     Gradients _consumer_gradient(ReconfigureReason reason) const;
 };
 
-#include "fifo_plus.tpp"
+// #include "fifo_plus.tpp"
 
 #endif

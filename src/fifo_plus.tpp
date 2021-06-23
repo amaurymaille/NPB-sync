@@ -68,23 +68,29 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
                 _consumer_events.push_back(ConsumerEvents::POP_EMPTY);
             }
 
-            _data->_n_no_work++;
-            _data->_n_with_work = 0;
+            while (_buffer.empty() && !terminated()) {
+                _data->_n_no_work++;
+                _data->_n_with_work = 0;
 
-            if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
-                _reconfigure_consumer(ReconfigureReason::NO_WORK);
+                if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
+                    _reconfigure_consumer(ReconfigureReason::NO_WORK);
+                }
+
+                /* Maybe we should count how many times in a row the buffer was empty
+                 * once we ran out of work. If the buffer is always empty, maybe we
+                 * should work less ? It would mean that either other consumers are
+                 * consumming too much or that producers are too slow.
+                 *
+                 * On the other hand, if we consume N at once and then process each of
+                 * them, or process one by one N times... ? Is there a strong difference ?
+                 * Maybe we need vTune here...
+                 */
+                _cv.wait(lck);
             }
 
-            /* Maybe we should count how many times in a row the buffer was empty
-             * once we ran out of work. If the buffer is always empty, maybe we
-             * should work less ? It would mean that either other consumers are
-             * consumming too much or that producers are too slow.
-             *
-             * On the other hand, if we consume N at once and then process each of
-             * them, or process one by one N times... ? Is there a strong difference ?
-             * Maybe we need vTune here...
-             */
-            _cv.wait(lck);
+            if (_buffer.empty() && terminated()) {
+                return;
+            }
         } else {
             _consumer_events.push_back(ConsumerEvents::POP_CONTENT);
 
