@@ -2,6 +2,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <sstream>
+
 #include "util.h"
 #include "debug.h"
 #include "dedupdef.h"
@@ -9,6 +11,10 @@
 #include "decoder.h"
 #include "config.h"
 #include "queue.h"
+
+#include "lua.hpp"
+#include "lua_core.h"
+#include "fifo_plus.tpp"
 
 #ifdef ENABLE_DMALLOC
 #include <dmalloc.h>
@@ -41,6 +47,336 @@ usage(char* prog)
   printf("-t \t\t\tnumber of threads per stage \n");
   printf("-v \t\t\tverbose output\n");
   printf("-h \t\t\thelp\n");
+}
+
+/* Forward decl */
+static DedupData* check_dedup_data(lua_State* L);
+
+/* Constructors, destructor */
+
+static int dedup_data_new(lua_State* L) {
+    DedupData* data = (DedupData*)lua_newuserdata(L, sizeof(DedupData));
+    luaL_getmetatable(L, "LuaBook.DedupData");
+    lua_setmetatable(L, -2);
+    data->_fifo_data = new std::map<Layers, std::map<Layers, FIFOData>>();
+    return 1;
+}
+
+static int dedup_data_destroy(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    delete data->_fifo_data;
+    return 0;
+}
+
+static int fifo_data_new(lua_State* L) {
+    FIFOData* data = (FIFOData*)lua_newuserdata(L, sizeof(FIFOData));
+    luaL_getmetatable(L, "LuaBook.FIFOData");
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+/* DedupData */
+
+DedupData* check_dedup_data(lua_State* L) {
+    void* res = luaL_checkudata(L, 1, "LuaBook.DedupData");
+    luaL_argcheck(L, res != nullptr, 1, "DedupData expected");
+    return (DedupData*)res;
+}
+
+static int dedup_data_set_input_file(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    const char* filename = luaL_checkstring(L, 2);
+
+    FILE* f = fopen(filename, "r");
+    if (!f) {
+        std::ostringstream error;
+        error << "Input file " << filename << " does not exist" << std::endl;
+        luaL_argerror(L, 2, error.str().c_str());
+    }
+
+    fclose(f);
+    data->_input_filename = filename;
+
+    return 0;
+}
+
+static int dedup_data_set_output_file(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    const char* filename = luaL_checkstring(L, 2);
+
+    FILE* f = fopen(filename, "w");
+    if (!f) {
+        std::ostringstream error;
+        error << "Unable to open output file " << filename << std::endl;
+        luaL_argerror(L, 2, error.str().c_str());
+    }
+
+    fclose(f);
+    data->_output_filename = filename;
+
+    return 0;
+}
+
+static int dedup_data_set_layer_configuration(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    Layers source = (Layers)luaL_checkinteger(L, 2);
+    Layers destination = (Layers)luaL_checkinteger(L, 3);
+    FIFOData* fifo = (FIFOData*)luaL_checkudata(L, 4, "LuaBook.FIFOData");
+
+    if (source < FRAGMENT || source >= REORDER) {
+        std::ostringstream error;
+        error << source << " is not a valid source layer" << std::endl;
+        luaL_argerror(L, 2, error.str().c_str());
+    }
+
+    if (destination <= FRAGMENT || destination > REORDER) {
+        std::ostringstream error;
+        error << destination << " is not a valid destination layer" << std::endl;
+        luaL_argerror(L, 3, error.str().c_str());
+    }
+
+    luaL_argcheck(L, fifo != nullptr, 4, "Expected FIFOData");
+
+    if (data->_fifo_data->find(source) != data->_fifo_data->end()) {
+        std::ostringstream error;
+        error << source << " has already been specified as a source layer" << std::endl;
+        luaL_argerror(L, 2, error.str().c_str());
+    }
+
+    if (data->_fifo_data[source].find(destination) != data->_fifo_data[source].end()) {
+        std::ostringstream error;
+        error << destination << " has already been specified as a destination layer" << std::endl;
+        luaL_argerror(L, 3, error.str().c_str());
+    }
+
+    data->_fifo_data->operator [](source)[destination] = *fifo;
+    return 0;
+}
+
+static int dedup_data_set_nb_threads(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    int nb_threads = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, nb_threads >= 1, 2, "Number of threads must be greater than 1");
+    data->_nb_threads = nb_threads;
+
+    return 0;
+}
+
+static void dedup_data_run_check_layers(lua_State* L, DedupData const* data) {
+    if (data->_fifo_data[FRAGMENT].find(REFINE) == data->_fifo_data[FRAGMENT].end()) {
+        luaL_error(L, "No REFINE layer provided for FRAGMENT layer\n");
+    }
+
+    if (data->_fifo_data[REFINE].find(DEDUPLICATE) == data->_fifo_data[REFINE].end()) {
+        luaL_error(L, "No DEDUPLICATE layer provided for REFINE layer\n");
+    }
+
+    if (data->_fifo_data[DEDUPLICATE].find(COMPRESS) == data->_fifo_data[DEDUPLICATE].end()) {
+        luaL_error(L, "No COMPRESS layer provided for DEDUPLICATE layer\n");
+    }
+
+    if (data->_fifo_data[DEDUPLICATE].find(REORDER) == data->_fifo_data[DEDUPLICATE].end()) {
+        luaL_error(L, "No REORDER layer provided for DEDUPLICATE layer\n");
+    }
+
+    /* if (data->_fifo_data[COMPRESS].find(REORDER) == data->_fifo_data[COMPRESS].end()) {
+        luaL_error(L, "No REORDER layer provided for COMPRESS layer\n");
+    } */
+}
+
+static int dedup_data_run(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+
+    // Do not consider the two paths leading to reorder separately
+    if (data->_fifo_data->size() != REORDER) {
+        luaL_error(L, "Cannot run DedupData. Expected %d source layers, only got %d\n", REORDER, data->_fifo_data->size());
+    }
+
+    dedup_data_run_check_layers(L, data);
+
+    Encode(*data);
+    return 0;
+}
+
+static int dedup_data_set_compression_type(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    int compression_type = luaL_checkinteger(L, 2);
+
+    if (compression_type <= Compressions::NONE && compression_type >= Compressions::GZIP) {
+        std::ostringstream error;
+        error << compression_type << " is not a valid compression type" << std::endl;
+        luaL_argerror(L, 2, error.str().c_str());
+    }
+
+    data->_compression = (Compressions)compression_type;
+    return 0;
+}
+
+static int dedup_data_set_preloading(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    bool preloading = luaL_checkinteger(L, 2);
+    data->_preloading = preloading;
+    return 0;
+}
+
+static luaL_Reg dedup_data_methods[] = {
+    { "SetInputFile", &dedup_data_set_input_file },
+    { "SetOutputFile", &dedup_data_set_output_file },
+    { "SetLayerConfiguration", &dedup_data_set_layer_configuration },
+    { "SetNbThreads", &dedup_data_set_nb_threads },
+    { "SetCompressionType", &dedup_data_set_compression_type },
+    { "SetPreloading", &dedup_data_set_preloading },
+    { "Run", &dedup_data_run },
+    { nullptr, nullptr }
+};
+
+/* FIFOData */
+
+static FIFOData* check_fifo_data(lua_State* L) {
+    void* ud = luaL_checkudata(L, 1, "LuaBook.FIFOData");
+    luaL_argcheck(L, ud != nullptr, 1, "Expected FIFOData");
+    return (FIFOData*)ud;
+}
+
+static int fifo_data_set_n(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    int n = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, n >= 1, 2, "n must be greater or equal to 1");
+    data->_n = n;
+
+    return 0;
+}
+
+static int fifo_data_set_work(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    int threshold = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, threshold >= 1, 2, "Work threshold must be greater or equal to 1");
+    data->_with_work_threshold = threshold;
+
+    return 0;
+}
+
+static int fifo_data_set_no_work(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    int threshold = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, threshold >= 1, 2, "No work threshold must be greater or equal to 1");
+    data->_no_work_threshold = threshold;
+
+    return 0;
+}
+
+static int fifo_data_set_critical(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    int threshold = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, threshold >= 1, 2, "Work amount threshold must be greater or equal to 1");
+    data->_critical_threshold = threshold;
+
+    return 0;
+}
+
+static int fifo_data_set_multipliers(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    float increase = luaL_checknumber(L, 2);
+    float decrease = luaL_checknumber(L, 3);
+
+    luaL_argcheck(L, increase >= 1.f, 2, "Increase multiplier must be greater or equal to 1");
+    luaL_argcheck(L, decrease > 0.f && decrease <= 1.f, 3, "Decrease multiplier must be strictly greater than 0 and at most 1");
+
+    data->_increase_mult = increase;
+    data->_decrease_mult = decrease;
+
+    return 0;
+}
+
+static int fifo_data_set_history_size(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    int history_size = luaL_checknumber(L, 2);
+
+    luaL_argcheck(L, history_size > 0, 2, "History size must be strictly positive");
+
+    data->_history_size = history_size;
+    return 0;
+}
+static luaL_Reg fifo_data_methods[] = {
+    { "SetN", &fifo_data_set_n },
+    { "SetWork", &fifo_data_set_work },
+    { "SetNoWork", &fifo_data_set_no_work },
+    { "SetCritical", &fifo_data_set_critical },
+    { "SetMultipliers", &fifo_data_set_multipliers },
+    { nullptr, nullptr }
+};
+
+static lua_State* init_lua() {
+    lua_State* L = luaL_newstate();
+    luaL_openlibs(L);
+
+    /// DedupData
+    luaL_newmetatable(L, "LuaBook.DedupData");
+    lua_pushstring(L, "__index");
+    lua_pushvalue(L, -2);
+    lua_settable(L, -3);
+
+    lua_register(L, "DedupDataDestroy", dedup_data_destroy);
+
+    lua_pushstring(L, "__gc");
+    lua_getglobal(L, "DedupDataDestroy");
+    lua_settable(L, -3);
+
+    luaL_setfuncs(L, dedup_data_methods, 0);
+
+    /// FIFOData
+    luaL_newmetatable(L, "LuaBook.FIFOData");
+    lua_pushstring(L, "__index");
+    lua_pushvalue(L, -2);
+    lua_settable(L, -3);
+
+    luaL_setfuncs(L, fifo_data_methods, 0);
+
+    lua_pop(L, 2);
+
+    lua_register(L, "DedupData", dedup_data_new);
+    lua_register(L, "FIFOData", fifo_data_new);
+
+    /// Register layers table
+    lua_newtable(L);
+    lua_pushstring(L, "FRAGMENT");
+    lua_pushinteger(L, FRAGMENT);
+    lua_pushstring(L, "REFINE");
+    lua_pushinteger(L, REFINE);
+    lua_pushstring(L, "DEDUPLICATE");
+    lua_pushinteger(L, DEDUPLICATE);
+    lua_pushstring(L, "COMPRESS");
+    lua_pushinteger(L, COMPRESS);
+    lua_pushstring(L, "REORDER");
+    lua_pushinteger(L, REORDER);
+
+    for (int i = 5; i > 0; --i) {
+        lua_settable(L, -2 * (i + 1) + 1);
+    }
+
+    lua_setglobal(L, "Layers");
+
+    /// Registers compression table
+    lua_newtable(L);
+    lua_pushstring(L, "GZIP");
+    lua_pushinteger(L, Compressions::GZIP);
+    lua_pushstring(L, "BZIP2");
+    lua_pushinteger(L, Compressions::BZIP);
+    lua_pushstring(L, "NONE");
+    lua_pushinteger(L, Compressions::NONE);
+
+    for (int i = 3; i > 0; --i) {
+        lua_settable(L, -2 * (i + 1) + 1);
+    }
+
+    lua_setglobal(L, "Compressions");
+
+    return L;
 }
 /*--------------------------------------------------------------------------*/
 int main(int argc, char** argv) {
