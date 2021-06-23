@@ -19,12 +19,13 @@ namespace Basic {
                      unsigned int work_amount, */
                      std::vector<ThreadCreateData>& threads,
                      void* (*prod_fn)(void*), 
-                     void* (*cons_fn)(void*)) {
+                     void* (*cons_fn)(void*),
+                     size_t history_size) {
         PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier();
         // identifier->register_thread();
 
         unsigned int n_producers = std::count_if(threads.begin(), threads.end(), [](ThreadCreateData const& data) -> bool { return data._tss._role == FIFORole::PRODUCER; });
-        FIFOPlus<T>* fifo = new FIFOPlus<T>(pop_policy, identifier, n_producers, threads.size() - n_producers);
+        FIFOPlus<T>* fifo = new FIFOPlus<T>(pop_policy, identifier, n_producers, threads.size() - n_producers, history_size);
         /* fifo->set_role(FIFORole::PRODUCER);
         fifo->set_n(n);
         fifo->set_thresholds(no_work, with_work, work_amount); */
@@ -54,6 +55,7 @@ struct TestData {
     char _consumer_function[100];
     char _producer_function[100];
     char _functions_library[100];
+    size_t _history_size;
     std::vector<Basic::ThreadSpecificData>* _threads;
 };
 
@@ -146,6 +148,15 @@ static int test_data_register_functions_library(lua_State* L) {
     return 0;
 }
 
+static int test_data_register_history_size(lua_State* L) {
+    TestData* data = check_test_data(L);
+    lua_Integer size = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, size > 0, 2, "History size must be stricly positive");
+    data->_history_size = size;
+    return 0;
+}
+
 static void dump_test_data(TestData const* data) {
     std::cout << "policy = " << (unsigned int)data->_policy << std::endl
               << "main_thread = {" << std::endl
@@ -202,7 +213,8 @@ static int test_data_run(lua_State* L) {
         data->_main_thread._work_amount, */
         thread_data,
         producer_function,
-        consumer_function
+        consumer_function,
+        data->_history_size
     );
 
     dlclose(library);
@@ -216,6 +228,7 @@ static luaL_Reg test_data_functions[] = {
     { "RegisterProducerFunction", test_data_register_producer_function },
     { "RegisterConsumerFunction", test_data_register_consumer_function },
     { "RegisterFunctionsLibrary", test_data_register_functions_library },
+    { "RegisterHistorySize", test_data_register_history_size },
     { "Run", test_data_run },
     { nullptr, nullptr }
 };

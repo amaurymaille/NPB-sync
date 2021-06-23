@@ -1,3 +1,6 @@
+//#include <stdio.h>
+// #include <stddef.h>
+
 #include <iostream>
 #include <sstream>
 
@@ -8,7 +11,7 @@
 extern "C" {
 
 void* producer(void* arg) {
-    FIFOPlus<int>* fifo = Basic::init_get_fifo<int>(arg); 
+    FIFOPlus<int>* fifo = Basic::init_get_fifo<int>(arg);
 
     for (int i = 0; i < 99; ++i) {
         fifo->push(i, false);
