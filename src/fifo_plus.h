@@ -6,6 +6,8 @@
 #include <optional>
 #include <queue>
 
+#include <boost/circular_buffer.hpp>
+
 #include "tss.h"
 
 enum class FIFOPlusPopPolicy {
@@ -22,7 +24,7 @@ enum class FIFORole {
 template<typename T>
 class FIFOPlus {
 public:
-    FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers);
+    FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size);
     
     // Add the content of elements to the FIFO. It may not be available immediately.
     // template<template<typename> typename Container>
@@ -106,6 +108,37 @@ private:
         NO_WORK = 1
     };
 
+    enum ProducerEvents {
+        /* The work buffer was empty */
+        PUSH_EMPTY,
+        /* The work buffer had content, but it was quite low on content */
+        PUSH_CRITICAL,
+        /* The work buffer had a reasonable amount of work */
+        PUSH_CONTENT,
+        /* Push immediate */
+        PUSH_IMMEDIATE,
+        MAX_PUSH
+    };
+
+    enum ConsumerEvents {
+        /* The work buffer had no content */
+        POP_EMPTY,
+        /* The work buffer had no content and policy is no wait */
+        POP_EMPTY_NW,
+        /* The work buffer had enough content */
+        POP_CONTENT,
+        MAX_POP
+    };
+
+    enum Gradients {
+        INCOHERENT,
+        FLUCTUATING,
+        COHERENT
+    };
+
+    boost::circular_buffer<ProducerEvents> _producer_events;
+    boost::circular_buffer<ConsumerEvents> _consumer_events;
+
     struct ProdConsData {
         // Work buffer. Merged into the active buffer for producers. Inner buffer
         // merged into it for consumers.
@@ -119,6 +152,7 @@ private:
         unsigned int _no_work_threshold;
         unsigned int _with_work_threshold;
         // Amount of work remaining in the active buffer before transfer
+        // Ignored by the consumer
         unsigned int _work_amount_threshold;
 
         // Quantity of work to have in the inner buffer before transfer
@@ -161,11 +195,30 @@ private:
     // Send content of _inner_buffer in _buffer
     void _transfer(bool empty_check = false); 
 
-    // Reconfigure everything
-    void _reconfigure(ReconfigureReason reason);
+    // Reconfigure a producer
+    void _reconfigure_producer(ReconfigureReason reason, Gradients gradient = COHERENT);
+    // Reconfigure a consumer
+    void _reconfigure_consumer(ReconfigureReason reason, Gradients gradient = COHERENT);
 
     // Send content of _buffer to _inner_buffer
     void _reverse_transfer(bool empty_check = false);
+
+    /* Compute a gradient of the previous events depending on the reason.
+     *
+     * The idea is to get an approximation of the global behaviour of the FIFO
+     * over the past push operations. For example, if a producer sees the FIFO
+     * not empty several times in a row, but overall the FIFO has been empty a
+     * number of times recently, then the gradient is negative.
+     *
+     * The number of events examined to compute the gradient is based on the
+     * thresholds for no work / with work for this particular producer.
+     *
+     * Returns -1 to indicate that the overall behaviour of the FIFO is not
+     * compatible with the reason, 0 to indicate that it seems balanced, 1
+     * to indicate that it is fully compatible.
+     */
+    Gradients _producer_gradient(ReconfigureReason reason) const;
+    Gradients _consumer_gradient(ReconfigureReason reason) const;
 };
 
 #include "fifo_plus.tpp"

@@ -1,5 +1,8 @@
+#include "fifo_plus.h"
+
 template<typename T>
-FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers) : _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size) :
+    _producer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
 
 }
 
@@ -18,23 +21,28 @@ void FIFOPlus<T>::push(const T& value, bool reconfigure) {
 
     if (_buffer.size() != 0) {
         if (_buffer.size() < _data->_work_amount_threshold) {
+            _producer_events.push_back(ProducerEvents::PUSH_CRITICAL);
             _transfer();
+        } else {
+            _producer_events.push_back(ProducerEvents::PUSH_CONTENT);
         }
 
         _data->_n_no_work = 0;
         ++_data->_n_with_work;
 
         if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
-            _reconfigure(ReconfigureReason::WORK);
+            _reconfigure_producer(ReconfigureReason::WORK);
         }
     } else {
         _data->_n_with_work = 0;
         ++_data->_n_no_work;
 
+        _producer_events.push_back(ProducerEvents::PUSH_EMPTY);
+
         _transfer();
 
         if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
-            _reconfigure(ReconfigureReason::NO_WORK);
+            _reconfigure_producer(ReconfigureReason::NO_WORK);
         }
     }
 }
@@ -44,6 +52,7 @@ void FIFOPlus<T>::push_immediate(const T& value, bool reconfigure) {
     _data->_inner_buffer.push(value);
 
     std::unique_lock<std::mutex> lck(_m);
+    _producer_events.push_back(ProducerEvents::PUSH_IMMEDIATE);
     _transfer();
 }
 
@@ -52,8 +61,19 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
     if (_data->_inner_buffer.empty()) {
         std::unique_lock<std::mutex> lck(_m);
         if (_buffer.empty()) {
-            if (_pop_policy == FIFOPlusPopPolicy::POP_NO_WAIT)
+            if (_pop_policy == FIFOPlusPopPolicy::POP_NO_WAIT) {
+                _consumer_events.push_back(ConsumerEvents::POP_EMPTY_NW);
                 return;
+            } else {
+                _consumer_events.push_back(ConsumerEvents::POP_EMPTY);
+            }
+
+            _data->_n_no_work++;
+            _data->_n_with_work = 0;
+
+            if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
+                _reconfigure_consumer(ReconfigureReason::NO_WORK);
+            }
 
             /* Maybe we should count how many times in a row the buffer was empty
              * once we ran out of work. If the buffer is always empty, maybe we
@@ -65,6 +85,15 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
              * Maybe we need vTune here...
              */
             _cv.wait(lck);
+        } else {
+            _consumer_events.push_back(ConsumerEvents::POP_CONTENT);
+
+            _data->_n_no_work = 0;
+            _data->_n_with_work++;
+
+            if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
+                _reconfigure_consumer(ReconfigureReason::WORK);
+            }
         }
 
         _reverse_transfer();
@@ -144,21 +173,89 @@ void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
 }
 
 template<typename T>
-void FIFOPlus<T>::_reconfigure(ReconfigureReason reason) {
+void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
+    Gradients gradient = _producer_gradient(reason);
+
     switch (reason) {
     case ReconfigureReason::WORK: {
         float diff = _data->_n_with_work / _data->_with_work_threshold;
         if (diff < 1.f) {
-            throw std::runtime_error("Cannot call _reconfigure when ratio is lower than 1");
+            throw std::runtime_error("Cannot call _reconfigure_producer when ratio is lower than 1");
         }
-        // 
+
+        if (in_gradient == COHERENT) {
+            switch (gradient) {
+                case INCOHERENT:
+                case FLUCTUATING:
+                    _reconfigure_producer(ReconfigureReason::NO_WORK, gradient);
+                    break;
+
+                case COHERENT:
+                    _data->_n *= _data->_increase_mult;
+                    _data->_n_with_work = 0;
+                    break;
+            }
+        } else {
+            switch (in_gradient) {
+                case FLUCTUATING:
+                    _data->_n = _data->_n * (1 + _data->_increase_mult * 0.75 - 0.75);
+                    break;
+
+                case INCOHERENT:
+                    _data->_n = _data->_n * (1 + _data->_increase_mult * 0.5 - 0.5);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        // If the multiplier is small enough, then we may end up forever blocked
+        // at 1. Forcibly set the value to 2 to avoid this pitfall.
+        if (_data->_n == 1) {
+            _data->_n = 2;
+        }
         break;
     }
 
     case ReconfigureReason::NO_WORK: {
         float diff = _data->_n_no_work / _data->_no_work_threshold;
         if (diff < 1.f) {
-            throw std::runtime_error("Cannot call _reconfigure when ratio is lower than 1");
+            throw std::runtime_error("Cannot call _reconfigure_producer when ratio is lower than 1");
+        }
+
+        if (in_gradient == COHERENT) {
+            switch (gradient) {
+                case INCOHERENT:
+                case FLUCTUATING:
+                    _reconfigure_producer(ReconfigureReason::WORK, gradient);
+                    break;
+
+                case COHERENT:
+                    _data->_n *= _data->_decrease_mult;
+                    // Corner case, cannot decrease below 1
+                    if (_data->_n <= 0) {
+                        _data->_n = 1;
+                    }
+                    _data->_n_no_work = 0;
+            }
+        } else {
+            switch (in_gradient) {
+                case FLUCTUATING:
+                    _data->_n = _data->_n * (1 - _data->_decrease_mult * 0.25 + 0.25);
+                    break;
+
+                case INCOHERENT:
+                    _data->_n = _data->_n * (1 - _data->_decrease_mult * 0.5 + 0.5);
+                    break;
+
+                default:
+                    break;
+            }
+
+            if (_data->_n <= 0) {
+                _data->_n = 1;
+            }
         }
         break;
     }
@@ -185,4 +282,60 @@ void FIFOPlus<T>::ProdConsData::transfer() {
         _reverse_transfer(false);
         break;
     }
+}
+
+template<typename T>
+typename FIFOPlus<T>::Gradients FIFOPlus<T>::_producer_gradient(ReconfigureReason reason) const {
+    std::vector<unsigned int> counts(ProducerEvents::MAX_PUSH, 0);
+    auto populate_vector = [&](size_t limit) -> void {
+        unsigned int min = std::min(_producer_events.size(), limit);
+        unsigned int count = 0;
+        for (typename boost::circular_buffer<ProducerEvents>::const_reverse_iterator iter = _producer_events.rbegin(); iter != _producer_events.rend() && count < min; ++iter) {
+            ++counts[*iter];
+            ++count;
+        }
+    };
+
+    switch (reason) {
+    case ReconfigureReason::WORK: {
+        populate_vector(_data->_no_work_threshold);
+        // Give a lower weight to critical pushs
+        float diff = counts[ProducerEvents::PUSH_EMPTY] - (counts[ProducerEvents::PUSH_CONTENT] + counts[ProducerEvents::PUSH_CRITICAL] * 0.5f);
+        const int FLUCTUATING_LIMIT = 3;
+
+        if (-FLUCTUATING_LIMIT < diff && diff < FLUCTUATING_LIMIT)
+            return FLUCTUATING;
+        else if (diff >= FLUCTUATING_LIMIT)
+            return INCOHERENT;
+        else
+            return COHERENT;
+    }
+
+    case ReconfigureReason::NO_WORK: {
+        populate_vector(_data->_with_work_threshold);
+        // Give a lower weight to critical pushs
+        float diff = counts[ProducerEvents::PUSH_EMPTY] - (counts[ProducerEvents::PUSH_CONTENT] + counts[ProducerEvents::PUSH_CRITICAL] * 0.5f);
+        const int FLUCTUATING_LIMIT = 3;
+
+        if (-FLUCTUATING_LIMIT < diff && diff < FLUCTUATING_LIMIT)
+            return FLUCTUATING;
+        else if (diff <= -FLUCTUATING_LIMIT)
+            return INCOHERENT;
+        else
+            return COHERENT;
+    }
+
+    default:
+        return INCOHERENT;
+    }
+}
+
+template<typename T>
+void FIFOPlus<T>::_reconfigure_consumer(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
+
+}
+
+template<typename T>
+typename FIFOPlus<T>::Gradients FIFOPlus<T>::_consumer_gradient(ReconfigureReason reason) const {
+    return COHERENT;
 }
