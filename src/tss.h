@@ -1,13 +1,17 @@
 #ifndef TSS_H
 #define TSS_H
 
+#include <cstdio>
+
 #include <omp.h>
 #include <pthread.h>
 
 #include <atomic>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <vector>
 
 class ThreadIdentifier {
@@ -26,8 +30,16 @@ public:
     }
 
     unsigned int thread_id() const override {
+        auto iter = _ids.find(pthread_self());
+        if (iter == _ids.end()) {
+            std::ostringstream stream;
+            stream << "[FATAL] Thread " << pthread_self() << "requested access to thread-specific value but thread is not registered!\n" << std::endl;
+            throw std::runtime_error(stream.str());
+        } else {
+            return iter->second;
+        }
         // Fuck you...
-        return const_cast<std::remove_const_t<decltype(_ids)>&>(_ids)[pthread_self()];
+        // return const_cast<std::remove_const_t<decltype(_ids)>&>(_ids)[pthread_self()];
     }
 
     int pthread_create(pthread_t* thread, 
@@ -78,7 +90,15 @@ public:
     inline T& operator*() { return _values[_identifier->thread_id()]; }
     inline const T& operator*() const { return const_cast<TSS<T>*>(this)->operator*(); }
 
-    inline T* operator->() { return _values.data() + _identifier->thread_id(); }
+    inline T* operator->() { 
+        if (_identifier->thread_id() >= _values.size()) {
+            std::ostringstream stream;
+            stream << "Thread " << _identifier->thread_id() << " requested value in TSS (identifier: " << _identifier.get() << "), but there are only " << _values.size() << " values available" << std::endl;
+            throw std::runtime_error(stream.str());
+        }
+        auto retval = _values.data() + _identifier->thread_id(); 
+        return retval; 
+    }
     inline const T* operator->() const { return const_cast<TSS<T>*>(this)->operator->(); }
 
     inline T& get() { return _values[_identifier->thread_id()]; }
