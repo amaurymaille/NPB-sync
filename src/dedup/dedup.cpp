@@ -59,12 +59,16 @@ static int dedup_data_new(lua_State* L) {
     luaL_getmetatable(L, "LuaBook.DedupData");
     lua_setmetatable(L, -2);
     data->_fifo_data = new std::map<Layers, std::map<Layers, FIFOData>>();
+    data->_input_filename = new std::string();
+    data->_output_filename = new std::string();
     return 1;
 }
 
 static int dedup_data_destroy(lua_State* L) {
     DedupData* data = check_dedup_data(L);
     delete data->_fifo_data;
+    delete data->_input_filename;
+    delete data->_output_filename;
     return 0;
 }
 
@@ -95,7 +99,7 @@ static int dedup_data_set_input_file(lua_State* L) {
     }
 
     fclose(f);
-    data->_input_filename = filename;
+    *data->_input_filename = filename;
 
     return 0;
 }
@@ -112,7 +116,7 @@ static int dedup_data_set_output_file(lua_State* L) {
     }
 
     fclose(f);
-    data->_output_filename = filename;
+    *data->_output_filename = filename;
 
     return 0;
 }
@@ -137,13 +141,14 @@ static int dedup_data_set_layer_configuration(lua_State* L) {
 
     luaL_argcheck(L, fifo != nullptr, 4, "Expected FIFOData");
 
-    if (data->_fifo_data->find(source) != data->_fifo_data->end()) {
+    if (data->_fifo_data->find(source) != data->_fifo_data->end() && source != DEDUPLICATE) {
         std::ostringstream error;
         error << source << " has already been specified as a source layer" << std::endl;
         luaL_argerror(L, 2, error.str().c_str());
     }
 
-    if (data->_fifo_data[source].find(destination) != data->_fifo_data[source].end()) {
+    auto source_data = (*data->_fifo_data)[source];
+    if (source_data.find(destination) != source_data.end()) {
         std::ostringstream error;
         error << destination << " has already been specified as a destination layer" << std::endl;
         luaL_argerror(L, 3, error.str().c_str());
@@ -164,19 +169,19 @@ static int dedup_data_set_nb_threads(lua_State* L) {
 }
 
 static void dedup_data_run_check_layers(lua_State* L, DedupData const* data) {
-    if (data->_fifo_data[FRAGMENT].find(REFINE) == data->_fifo_data[FRAGMENT].end()) {
+    if ((*data->_fifo_data)[FRAGMENT].find(REFINE) == (*data->_fifo_data)[FRAGMENT].end()) {
         luaL_error(L, "No REFINE layer provided for FRAGMENT layer\n");
     }
 
-    if (data->_fifo_data[REFINE].find(DEDUPLICATE) == data->_fifo_data[REFINE].end()) {
+    if ((*data->_fifo_data)[REFINE].find(DEDUPLICATE) == (*data->_fifo_data)[REFINE].end()) {
         luaL_error(L, "No DEDUPLICATE layer provided for REFINE layer\n");
     }
 
-    if (data->_fifo_data[DEDUPLICATE].find(COMPRESS) == data->_fifo_data[DEDUPLICATE].end()) {
+    if ((*data->_fifo_data)[DEDUPLICATE].find(COMPRESS) == (*data->_fifo_data)[DEDUPLICATE].end()) {
         luaL_error(L, "No COMPRESS layer provided for DEDUPLICATE layer\n");
     }
 
-    if (data->_fifo_data[DEDUPLICATE].find(REORDER) == data->_fifo_data[DEDUPLICATE].end()) {
+    if ((*data->_fifo_data)[DEDUPLICATE].find(REORDER) == (*data->_fifo_data)[DEDUPLICATE].end()) {
         luaL_error(L, "No REORDER layer provided for DEDUPLICATE layer\n");
     }
 
@@ -189,7 +194,7 @@ static int dedup_data_run(lua_State* L) {
     DedupData* data = check_dedup_data(L);
 
     // Do not consider the two paths leading to reorder separately
-    if (data->_fifo_data->size() != REORDER) {
+    if (data->_fifo_data->size() != COMPRESS) {
         luaL_error(L, "Cannot run DedupData. Expected %d source layers, only got %d\n", REORDER, data->_fifo_data->size());
     }
 
@@ -203,19 +208,39 @@ static int dedup_data_set_compression_type(lua_State* L) {
     DedupData* data = check_dedup_data(L);
     int compression_type = luaL_checkinteger(L, 2);
 
-    if (compression_type <= Compressions::NONE && compression_type >= Compressions::GZIP) {
+    if (compression_type != Compressions::NONE && compression_type != Compressions::GZIP && compression_type != Compressions::BZIP) {
         std::ostringstream error;
         error << compression_type << " is not a valid compression type" << std::endl;
         luaL_argerror(L, 2, error.str().c_str());
     }
 
+#ifndef ENABLE_BZIP2_COMPRESSION
+    if (compression_type == Compressions::BZIP) {
+        luaL_argerror(L, 2, "BZIP2 compression not supported\n");
+    }
+#endif
+
+#ifndef ENABLE_GZIP_COMPRESSION
+    if (compression_type == Compressions::GZIP) {
+        luaL_argerror(L, 2, "GZIP compression not supported\n");
+    }
+#endif
+
     data->_compression = (Compressions)compression_type;
     return 0;
 }
 
+static bool luaL_checkboolean(lua_State* L, int index) {
+    if (lua_isboolean(L, index)) {
+        return lua_toboolean(L, index);
+    } else {
+        luaL_error(L, "bad argument #%d (boolean expected, got %s\n", lua_typename(L, lua_type(L, index)));
+    }
+}
+
 static int dedup_data_set_preloading(lua_State* L) {
     DedupData* data = check_dedup_data(L);
-    bool preloading = luaL_checkinteger(L, 2);
+    bool preloading = luaL_checkboolean(L, 2);
     data->_preloading = preloading;
     return 0;
 }
@@ -302,12 +327,14 @@ static int fifo_data_set_history_size(lua_State* L) {
     data->_history_size = history_size;
     return 0;
 }
+
 static luaL_Reg fifo_data_methods[] = {
     { "SetN", &fifo_data_set_n },
     { "SetWork", &fifo_data_set_work },
     { "SetNoWork", &fifo_data_set_no_work },
     { "SetCritical", &fifo_data_set_critical },
     { "SetMultipliers", &fifo_data_set_multipliers },
+    { "SetHistorySize", &fifo_data_set_history_size },
     { nullptr, nullptr }
 };
 
@@ -396,7 +423,20 @@ int main(int argc, char** argv) {
   //We force the sha1 sum to be integer-aligned, check that the length of a sha1 sum is a multiple of unsigned int
   assert(SHA1_LEN % sizeof(unsigned int) == 0);
 
-  conf = (config_t *) malloc(sizeof(config_t));
+  if (argc != 2) {
+    printf("Usage: ./dedup <input_lua_file>\n");
+    exit(-1);
+  }
+
+  lua_State* L = init_lua();
+  bool result = luaL_dofile(L, argv[1]);
+  if (result) {
+    printf("Error while running Lua file %s:\n%s\n", argv[1], lua_tolstring(L, -1, nullptr));
+    lua_close(L);
+    exit(-1);
+  }
+
+  /*conf = (config_t *) malloc(sizeof(config_t));
   if (conf == NULL) {
     EXIT_TRACE("Memory allocation failed\n");
   }
@@ -493,7 +533,7 @@ int main(int argc, char** argv) {
     Encode(conf);
   } else {
     Decode(conf);
-  }
+  }*/
 
   free(conf);
 

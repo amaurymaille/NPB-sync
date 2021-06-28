@@ -27,12 +27,12 @@ struct FIFOData {
     unsigned int _critical_threshold = 1;
     float _increase_mult = 1.f;
     float _decrease_mult = 1.f;
-    unsigned int _history_size;
+    unsigned int _history_size = 10;
 };
 
 struct DedupData {
-    std::string _input_filename;
-    std::string _output_filename;
+    std::string* _input_filename;
+    std::string* _output_filename;
     unsigned int _nb_threads = 1;
     /// On layer A, contain data for the FIFOs to layers B, C...
     std::map<Layers, std::map<Layers, FIFOData>>* _fifo_data;

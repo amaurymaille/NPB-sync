@@ -927,7 +927,7 @@ void *SerialIntegratedPipeline(void * targs) {
   struct thread_args *args = (struct thread_args *)targs;
   size_t preloading_buffer_seek = 0;
   int fd = args->fd;
-  int fd_out = create_output_file(_g_data._output_filename.c_str());
+  int fd_out = create_output_file(_g_data._output_filename->c_str());
   int r;
 
   chunk_t *temp = NULL;
@@ -1435,7 +1435,7 @@ void *Reorder(void * targs) {
   r = ringbuffer_init(&recv_buf, recv_step);
   assert(r==0); */
 
-  fd = create_output_file(_g_data._output_filename.c_str());
+  fd = create_output_file(_g_data._output_filename->c_str());
 
   while(1) {
     //get a group of items
@@ -1631,18 +1631,18 @@ void Encode(DedupData& data) {
   assert(!init_res);
 
   /* src file stat */
-  if (stat(data._input_filename.c_str(), &filestat) < 0)
-      EXIT_TRACE("stat() %s failed: %s\n", data._input_filename.c_str(), strerror(errno));
+  if (stat(data._input_filename->c_str(), &filestat) < 0)
+      EXIT_TRACE("stat() %s failed: %s\n", data._input_filename->c_str(), strerror(errno));
 
   if (!S_ISREG(filestat.st_mode))
-    EXIT_TRACE("not a normal file: %s\n", data._input_filename.c_str());
+    EXIT_TRACE("not a normal file: %s\n", data._input_filename->c_str());
 #ifdef ENABLE_STATISTICS
   stats.total_input = filestat.st_size;
 #endif //ENABLE_STATISTICS
 
   /* src file open */
-  if((fd = open(data._input_filename.c_str(), O_RDONLY | O_LARGEFILE)) < 0)
-    EXIT_TRACE("%s file open error %s\n", data._input_filename.c_str(), strerror(errno));
+  if((fd = open(data._input_filename->c_str(), O_RDONLY | O_LARGEFILE)) < 0)
+    EXIT_TRACE("%s file open error %s\n", data._input_filename->c_str(), strerror(errno));
 
   //Load entire file into memory if requested by user
   void *preloading_buffer = NULL;
@@ -1870,7 +1870,7 @@ void Encode(DedupData& data) {
   }
 
   /* clean up with the src file */
-  if (!data._input_filename.empty())
+  if (!data._input_filename->empty())
     close(fd);
 
   int des_res = mbuffer_system_destroy();
@@ -1880,8 +1880,8 @@ void Encode(DedupData& data) {
 
 #ifdef ENABLE_STATISTICS
   /* dest file stat */
-  if (stat(data._output_filename.c_str(), &filestat) < 0)
-      EXIT_TRACE("stat() %s failed: %s\n", data._output_filename.c_str(), strerror(errno));
+  if (stat(data._output_filename->c_str(), &filestat) < 0)
+      EXIT_TRACE("stat() %s failed: %s\n", data._output_filename->c_str(), strerror(errno));
   stats.total_output = filestat.st_size;
 
   //Analyze and print statistics

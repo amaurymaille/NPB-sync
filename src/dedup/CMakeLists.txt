@@ -11,4 +11,4 @@ list (REMOVE_ITEM DEDUP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/step.cpp")
 
 add_library(dedup_step SHARED "step.cpp")
 add_executable(dedup "${DEDUP_SRC}")
-target_link_libraries(dedup "${OPENSSL_LIBRARIES}" "${ZLIB_LIBRARIES}" "${BZIP2_LIBRARIES}" "${LUA_LIBRARIES}" m dedup_step core)
+target_link_libraries(dedup "${OPENSSL_LIBRARIES}" "${ZLIB_LIBRARIES}" "${BZIP2_LIBRARIES}" "${LUA_LIBRARIES}" m dedup_step core dl)
