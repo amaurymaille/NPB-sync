@@ -1,8 +1,11 @@
 #include "fifo_plus.h"
 
+#include <iostream>
+#include <sstream>
+
 template<typename T>
 FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size) :
-    _producer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
+    _producer_events(history_size), _consumer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
 
 }
 
@@ -103,6 +106,7 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
         }
 
         _reverse_transfer();
+        assert (_data->_inner_buffer.size() != 0);
     }
 
     opt = std::move(_data->_inner_buffer.front());
@@ -186,7 +190,9 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
     case ReconfigureReason::WORK: {
         float diff = _data->_n_with_work / _data->_with_work_threshold;
         if (diff < 1.f) {
-            throw std::runtime_error("Cannot call _reconfigure_producer when ratio is lower than 1");
+            std::ostringstream stream;
+            stream << "Cannot call _reconfigure_producer when ratio is lower than 1: " << diff;
+            throw std::runtime_error(stream.str());
         }
 
         if (in_gradient == COHERENT) {
@@ -227,7 +233,9 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
     case ReconfigureReason::NO_WORK: {
         float diff = _data->_n_no_work / _data->_no_work_threshold;
         if (diff < 1.f) {
-            throw std::runtime_error("Cannot call _reconfigure_producer when ratio is lower than 1");
+            std::ostringstream stream;
+            stream << "Cannot call _reconfigure_producer when ratio is lower than 1: " << diff;
+            throw std::runtime_error(stream.str());
         }
 
         if (in_gradient == COHERENT) {

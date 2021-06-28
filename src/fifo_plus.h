@@ -25,7 +25,7 @@ template<typename T>
 class FIFOPlus {
 public:
     FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size);
-    
+
     // Add the content of elements to the FIFO. It may not be available immediately.
     // template<template<typename> typename Container>
     // void push(Container<T>&& elements);
