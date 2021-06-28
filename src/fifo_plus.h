@@ -128,7 +128,7 @@ private:
         /* The work buffer was empty */
         PUSH_EMPTY,
         /* The work buffer had content, but it was quite low on content */
-        PUSH_CRITICAL,
+        PUSH_LOW,
         /* The work buffer had a reasonable amount of work */
         PUSH_CONTENT,
         /* Push immediate */
