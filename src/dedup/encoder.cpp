@@ -1587,6 +1587,20 @@ static void debug_push_queue(queue_t* queue, ringbuffer_t* buffer, int limit) {
     printf("[%s %d] Thread %llu adding %d element to queue %p containing %d elements\n", data->fname, data->thread_id, pthread_self(), limit, queue, queue_size(queue));
 } */
 
+struct launch_stage_args {
+    void* (*_start_routine)(void*);
+    void* _arg;
+    std::vector<PThreadThreadIdentifier*> _identifiers;
+};
+
+static void* launch_stage_thread(void* arg) {
+    launch_stage_args* launch = (launch_stage_args*)arg;
+    for (PThreadThreadIdentifier* identifier: launch->_identifiers) {
+        identifier->register_thread();
+    }
+    return launch->_start_routine(launch->_arg);
+}
+
 void Encode(DedupData& data) {
   struct stat filestat;
   int32 fd;
@@ -1696,7 +1710,7 @@ void Encode(DedupData& data) {
     threads_compress[MAX_THREADS],
     threads_send, threads_process;
 
-  PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier();
+  // PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier();
   data_process_args.tid = 0;
   data_process_args.nqueues = nqueues;
   data_process_args.fd = fd;
@@ -1705,22 +1719,29 @@ void Encode(DedupData& data) {
   alignas(FIFOPlus<chunk_t*>) unsigned char compress_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
   alignas(FIFOPlus<chunk_t*>) unsigned char reorder_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
   bool extra_queue = (data._nb_threads % MAX_THREADS_PER_QUEUE) != 0;
+  std::map<void*, PThreadThreadIdentifier*> identifiers;
+
+  auto allocate = [&](void* ptr, unsigned int nb_producers, unsigned int nb_consumers, unsigned int history_size) -> void {
+    PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier;
+    identifiers[ptr] = identifier;
+    new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, nb_producers, nb_consumers, history_size);
+  };
 
   for (int i = 0; i < nqueues; ++i) {
     if (i == nqueues - 1 && extra_queue) {
-      new(refine_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 1, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size);
-      new(deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size);
-      new(compress_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size);
-      new(reorder_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, (*data._fifo_data)[DEDUPLICATE][REORDER]._history_size);
+      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), 1, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size);
+      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size);
+      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size);
+      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, (*data._fifo_data)[DEDUPLICATE][REORDER]._history_size);
       /* refine_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 1, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size));
       deduplicate_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size));
       compress_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size));
       reorder_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, (*data._fifo_data)[DEDUPLICATE][REORDER]._history_size)); */
     } else {
-      new(refine_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 1, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size);
-      new(deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size);
-      new(compress_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size);
-      new(reorder_input + i * sizeof(FIFOPlus<chunk_t*>)) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 2 * MAX_THREADS_PER_QUEUE, 1, (*data._fifo_data)[DEDUPLICATE][REORDER]._history_size);
+      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), 1, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size);
+      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size);
+      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size);
+      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), 2 * MAX_THREADS_PER_QUEUE, 1, (*data._fifo_data)[DEDUPLICATE][REORDER]._history_size);
       /* refine_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, 1, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE]._history_size));
       deduplicate_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE]._history_size));
       compress_input.push_back(FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS]._history_size));
@@ -1742,39 +1763,71 @@ void Encode(DedupData& data) {
   struct timespec begin, end;
   clock_gettime(CLOCK_MONOTONIC, &begin);
   //thread for first pipeline stage (input)
-  identifier->pthread_create(&threads_process, NULL, Fragment, &data_process_args);
+  // identifiers[refine]->pthread_create(&threads_process, NULL, Fragment, &data_process_args);
+  launch_stage_args fragment_args;
+  fragment_args._start_routine = Fragment;
+  fragment_args._arg = &data_process_args;
+  for (int i = 0; i < nqueues; ++i) {
+    fragment_args._identifiers.push_back(identifiers[refine + i]);
+  }
+  pthread_create(&threads_process, nullptr, launch_stage_thread, &fragment_args);
 
+  launch_stage_args refine_args[data._nb_threads];
   //Create 3 thread pools for the intermediate pipeline stages
   struct thread_args anchor_thread_args[data._nb_threads];
   for (i = 0; i < data._nb_threads; i ++) {
-     anchor_thread_args[i].tid = i;
-     anchor_thread_args[i]._input_fifo = &refine[i / MAX_THREADS_PER_QUEUE];
-     anchor_thread_args[i]._output_fifo = &deduplicate[i / MAX_THREADS_PER_QUEUE];
-     anchor_thread_args[i]._input_fifo_data = &((*data._fifo_data)[FRAGMENT][REFINE]);
-     anchor_thread_args[i]._output_fifo_data = &((*data._fifo_data)[REFINE][DEDUPLICATE]);
-     identifier->pthread_create(&threads_anchor[i], nullptr, FragmentRefine, &anchor_thread_args[i]);
+    int queue_id = i / MAX_THREADS_PER_QUEUE;
+
+    anchor_thread_args[i].tid = i;
+    anchor_thread_args[i]._input_fifo = &refine[queue_id];
+    anchor_thread_args[i]._output_fifo = &deduplicate[queue_id];
+    anchor_thread_args[i]._input_fifo_data = &((*data._fifo_data)[FRAGMENT][REFINE]);
+    anchor_thread_args[i]._output_fifo_data = &((*data._fifo_data)[REFINE][DEDUPLICATE]);
+    // identifiers[refine + (i / MAX_THREADS_PER_QUEUE)]->pthread_create(&threads_anchor[i], nullptr, FragmentRefine, &anchor_thread_args[i]);
+    refine_args[i]._start_routine = FragmentRefine;
+    refine_args[i]._arg = &anchor_thread_args[i];
+    refine_args[i]._identifiers.push_back(identifiers[refine + queue_id]);
+    refine_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id]);
+    pthread_create(&threads_anchor[i], nullptr, launch_stage_thread, refine_args + i);
   }
 
   struct thread_args chunk_thread_args[data._nb_threads];
+  launch_stage_args deduplicate_args[data._nb_threads];
   for (i = 0; i < data._nb_threads; i ++) {
+    int queue_id = i / MAX_THREADS_PER_QUEUE;
+
     chunk_thread_args[i].tid = i;
-    chunk_thread_args[i]._input_fifo = &deduplicate[i / MAX_THREADS_PER_QUEUE];
-    chunk_thread_args[i]._output_fifo = &compress[i / MAX_THREADS_PER_QUEUE];
-    chunk_thread_args[i]._extra_output_fifo = &reorder[i / MAX_THREADS_PER_QUEUE];
+    chunk_thread_args[i]._input_fifo = &deduplicate[queue_id];
+    chunk_thread_args[i]._output_fifo = &compress[queue_id];
+    chunk_thread_args[i]._extra_output_fifo = &reorder[queue_id];
     chunk_thread_args[i]._input_fifo_data = &((*data._fifo_data)[REFINE][DEDUPLICATE]);
     chunk_thread_args[i]._output_fifo_data = &((*data._fifo_data)[DEDUPLICATE][COMPRESS]);
     chunk_thread_args[i]._extra_output_fifo_data = &((*data._fifo_data)[DEDUPLICATE][REORDER]);
-    identifier->pthread_create(&threads_chunk[i], NULL, Deduplicate, &chunk_thread_args[i]);
+    // identifiers[deduplicate + (i / MAX_THREADS_PER_QUEUE)]->pthread_create(&threads_chunk[i], NULL, Deduplicate, &chunk_thread_args[i]);
+    deduplicate_args[i]._start_routine = Deduplicate;
+    deduplicate_args[i]._arg = &chunk_thread_args[i];
+    deduplicate_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id]);
+    deduplicate_args[i]._identifiers.push_back(identifiers[compress + queue_id]);
+    deduplicate_args[i]._identifiers.push_back(identifiers[reorder + queue_id]);
+    pthread_create(&threads_chunk[i], nullptr, launch_stage_thread, deduplicate_args + i);
   }
 
   struct thread_args compress_thread_args[data._nb_threads];
+  launch_stage_args compress_args[data._nb_threads];
   for (i = 0; i < data._nb_threads; i ++) {
+    int queue_id = i / MAX_THREADS_PER_QUEUE;
+
     compress_thread_args[i].tid = i;
-    compress_thread_args[i]._input_fifo = &compress[i / MAX_THREADS_PER_QUEUE];
-    compress_thread_args[i]._output_fifo = &reorder[i / MAX_THREADS_PER_QUEUE];
+    compress_thread_args[i]._input_fifo = &compress[queue_id];
+    compress_thread_args[i]._output_fifo = &reorder[queue_id];
     compress_thread_args[i]._input_fifo_data = &((*data._fifo_data)[DEDUPLICATE][COMPRESS]);
     compress_thread_args[i]._output_fifo_data = &((*data._fifo_data)[DEDUPLICATE][REORDER]);
-    identifier->pthread_create(&threads_compress[i], NULL, Compress, &compress_thread_args[i]);
+    // identifiers[compress + i / MAX_THREADS_PER_QUEUE]->pthread_create(&threads_compress[i], NULL, Compress, &compress_thread_args[i]);
+    compress_args[i]._start_routine = Compress;
+    compress_args[i]._arg = &compress_thread_args[i];
+    compress_args[i]._identifiers.push_back(identifiers[compress + queue_id]);
+    compress_args[i]._identifiers.push_back(identifiers[reorder + queue_id]);
+    pthread_create(&threads_compress[i], nullptr, launch_stage_thread, compress_args + i);
   }
 
   //thread for last pipeline stage (output)
@@ -1783,7 +1836,14 @@ void Encode(DedupData& data) {
   send_block_args.nqueues = nqueues;
   send_block_args._input_fifo = reorder;
   send_block_args._input_fifo_data = &((*data._fifo_data)[DEDUPLICATE][REORDER]);
-  identifier->pthread_create(&threads_send, NULL, Reorder, &send_block_args);
+  // identifiers[reorder]->pthread_create(&threads_send, NULL, Reorder, &send_block_args);
+  launch_stage_args reorder_args;
+  reorder_args._start_routine = Reorder;
+  reorder_args._arg = &send_block_args;
+  for (int i = 0; i < nqueues; ++i) {
+    reorder_args._identifiers.push_back(identifiers[reorder + i]);
+  }
+  pthread_create(&threads_send, nullptr, launch_stage_thread, &reorder_args);
 
   /*** parallel phase ***/
 
