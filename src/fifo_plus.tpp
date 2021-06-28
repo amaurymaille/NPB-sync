@@ -21,7 +21,7 @@ void FIFOPlus<T>::push(const T& value, bool reconfigure) {
 
     if (_buffer.size() != 0) {
         if (_buffer.size() < _data->_work_amount_threshold) {
-            _producer_events.push_back(ProducerEvents::PUSH_CRITICAL);
+            _producer_events.push_back(ProducerEvents::PUSH_LOW);
             _transfer();
         } else {
             _producer_events.push_back(ProducerEvents::PUSH_CONTENT);
@@ -306,7 +306,9 @@ typename FIFOPlus<T>::Gradients FIFOPlus<T>::_producer_gradient(ReconfigureReaso
     case ReconfigureReason::WORK: {
         populate_vector(_data->_no_work_threshold);
         // Give a lower weight to critical pushs
-        float diff = counts[ProducerEvents::PUSH_EMPTY] - (counts[ProducerEvents::PUSH_CONTENT] + counts[ProducerEvents::PUSH_CRITICAL] * 0.5f);
+        float diff = counts[ProducerEvents::PUSH_EMPTY] -
+                counts[ProducerEvents::PUSH_CONTENT] -
+                counts[ProducerEvents::PUSH_LOW] * 0.5f;
         const int FLUCTUATING_LIMIT = 3;
 
         if (-FLUCTUATING_LIMIT < diff && diff < FLUCTUATING_LIMIT)
@@ -320,7 +322,7 @@ typename FIFOPlus<T>::Gradients FIFOPlus<T>::_producer_gradient(ReconfigureReaso
     case ReconfigureReason::NO_WORK: {
         populate_vector(_data->_with_work_threshold);
         // Give a lower weight to critical pushs
-        float diff = counts[ProducerEvents::PUSH_EMPTY] - (counts[ProducerEvents::PUSH_CONTENT] + counts[ProducerEvents::PUSH_CRITICAL] * 0.5f);
+        float diff = counts[ProducerEvents::PUSH_EMPTY] - (counts[ProducerEvents::PUSH_CONTENT] + counts[ProducerEvents::PUSH_LOW] * 0.5f);
         const int FLUCTUATING_LIMIT = 3;
 
         if (-FLUCTUATING_LIMIT < diff && diff < FLUCTUATING_LIMIT)
