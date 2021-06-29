@@ -1402,9 +1402,10 @@ void *Reorder(void * targs) {
   int qid = 0;
   FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
   for (int i = 0; i < args->nqueues; ++i) {
-    configure_fifo(input_fifo[i], args->_input_fifo_data, FIFORole::PRODUCER);
+    configure_fifo(input_fifo[i], args->_input_fifo_data, FIFORole::CONSUMER);
   }
   int fd = 0;
+  int count = 0;
 
   /* thread_data_t data;
   data.thread_id = 0;
