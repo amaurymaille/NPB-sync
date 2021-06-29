@@ -29,6 +29,8 @@ public:
         _ids[pthread_self()] = _thread_id++;
     }
 
+    // Not exactly thread safe. You should not call this function until all 
+    // threads have been registered.
     unsigned int thread_id() const override {
         auto iter = _ids.find(pthread_self());
         if (iter == _ids.end()) {
@@ -38,8 +40,6 @@ public:
         } else {
             return iter->second;
         }
-        // Fuck you...
-        // return const_cast<std::remove_const_t<decltype(_ids)>&>(_ids)[pthread_self()];
     }
 
     int pthread_create(pthread_t* thread, 

@@ -27,6 +27,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <set>
+#include <vector>
+
 #include "util.h"
 #include "dedupdef.h"
 #include "encoder.h"
@@ -39,6 +42,7 @@
 #include "script_mgr.h"
 
 #ifdef ENABLE_PTHREADS
+#include <pthread.h>
 #include "queue.h"
 #include "binheap.h"
 #include "tree.h"
@@ -1591,6 +1595,7 @@ struct launch_stage_args {
     void* (*_start_routine)(void*);
     void* _arg;
     std::vector<PThreadThreadIdentifier*> _identifiers;
+    std::set<pthread_barrier_t*> _barriers;
 };
 
 static void* launch_stage_thread(void* arg) {
@@ -1598,6 +1603,10 @@ static void* launch_stage_thread(void* arg) {
     for (PThreadThreadIdentifier* identifier: launch->_identifiers) {
         identifier->register_thread();
     }
+
+    for (pthread_barrier_t* barrier: launch->_barriers)
+        pthread_barrier_wait(barrier);
+
     return launch->_start_routine(launch->_arg);
 }
 
@@ -1719,11 +1728,13 @@ void Encode(DedupData& data) {
   alignas(FIFOPlus<chunk_t*>) unsigned char compress_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
   alignas(FIFOPlus<chunk_t*>) unsigned char reorder_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
   bool extra_queue = (data._nb_threads % MAX_THREADS_PER_QUEUE) != 0;
-  std::map<void*, PThreadThreadIdentifier*> identifiers;
+  std::map<void*, std::pair<PThreadThreadIdentifier*, pthread_barrier_t*>> identifiers;
 
   auto allocate = [&](void* ptr, unsigned int nb_producers, unsigned int nb_consumers, unsigned int history_size) -> void {
     PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier;
-    identifiers[ptr] = identifier;
+    pthread_barrier_t* barrier = new pthread_barrier_t;
+    pthread_barrier_init(barrier, nullptr, nb_producers + nb_consumers);
+    identifiers[ptr] = std::make_pair(identifier, barrier);
     new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, nb_producers, nb_consumers, history_size);
   };
 
@@ -1768,7 +1779,8 @@ void Encode(DedupData& data) {
   fragment_args._start_routine = Fragment;
   fragment_args._arg = &data_process_args;
   for (int i = 0; i < nqueues; ++i) {
-    fragment_args._identifiers.push_back(identifiers[refine + i]);
+    fragment_args._identifiers.push_back(identifiers[refine + i].first);
+    fragment_args._barriers.insert(identifiers[refine + i].second);
   }
   pthread_create(&threads_process, nullptr, launch_stage_thread, &fragment_args);
 
@@ -1786,8 +1798,10 @@ void Encode(DedupData& data) {
     // identifiers[refine + (i / MAX_THREADS_PER_QUEUE)]->pthread_create(&threads_anchor[i], nullptr, FragmentRefine, &anchor_thread_args[i]);
     refine_args[i]._start_routine = FragmentRefine;
     refine_args[i]._arg = &anchor_thread_args[i];
-    refine_args[i]._identifiers.push_back(identifiers[refine + queue_id]);
-    refine_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id]);
+    refine_args[i]._identifiers.push_back(identifiers[refine + queue_id].first);
+    refine_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id].first);
+    refine_args[i]._barriers.insert(identifiers[refine + queue_id].second);
+    refine_args[i]._barriers.insert(identifiers[deduplicate + queue_id].second);
     pthread_create(&threads_anchor[i], nullptr, launch_stage_thread, refine_args + i);
   }
 
@@ -1806,9 +1820,12 @@ void Encode(DedupData& data) {
     // identifiers[deduplicate + (i / MAX_THREADS_PER_QUEUE)]->pthread_create(&threads_chunk[i], NULL, Deduplicate, &chunk_thread_args[i]);
     deduplicate_args[i]._start_routine = Deduplicate;
     deduplicate_args[i]._arg = &chunk_thread_args[i];
-    deduplicate_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id]);
-    deduplicate_args[i]._identifiers.push_back(identifiers[compress + queue_id]);
-    deduplicate_args[i]._identifiers.push_back(identifiers[reorder + queue_id]);
+    deduplicate_args[i]._identifiers.push_back(identifiers[deduplicate + queue_id].first);
+    deduplicate_args[i]._identifiers.push_back(identifiers[compress + queue_id].first);
+    deduplicate_args[i]._identifiers.push_back(identifiers[reorder + queue_id].first);
+    deduplicate_args[i]._barriers.insert(identifiers[deduplicate + queue_id].second);
+    deduplicate_args[i]._barriers.insert(identifiers[compress + queue_id].second);
+    deduplicate_args[i]._barriers.insert(identifiers[reorder + queue_id].second);
     pthread_create(&threads_chunk[i], nullptr, launch_stage_thread, deduplicate_args + i);
   }
 
@@ -1825,8 +1842,10 @@ void Encode(DedupData& data) {
     // identifiers[compress + i / MAX_THREADS_PER_QUEUE]->pthread_create(&threads_compress[i], NULL, Compress, &compress_thread_args[i]);
     compress_args[i]._start_routine = Compress;
     compress_args[i]._arg = &compress_thread_args[i];
-    compress_args[i]._identifiers.push_back(identifiers[compress + queue_id]);
-    compress_args[i]._identifiers.push_back(identifiers[reorder + queue_id]);
+    compress_args[i]._identifiers.push_back(identifiers[compress + queue_id].first);
+    compress_args[i]._identifiers.push_back(identifiers[reorder + queue_id].first);
+    compress_args[i]._barriers.insert(identifiers[compress + queue_id].second);
+    compress_args[i]._barriers.insert(identifiers[reorder + queue_id].second);
     pthread_create(&threads_compress[i], nullptr, launch_stage_thread, compress_args + i);
   }
 
@@ -1841,7 +1860,8 @@ void Encode(DedupData& data) {
   reorder_args._start_routine = Reorder;
   reorder_args._arg = &send_block_args;
   for (int i = 0; i < nqueues; ++i) {
-    reorder_args._identifiers.push_back(identifiers[reorder + i]);
+    reorder_args._identifiers.push_back(identifiers[reorder + i].first);
+    reorder_args._barriers.insert(identifiers[reorder + i].second);
   }
   pthread_create(&threads_send, nullptr, launch_stage_thread, &reorder_args);
 
