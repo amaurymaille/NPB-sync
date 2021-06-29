@@ -189,7 +189,7 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
     switch (reason) {
     case ReconfigureReason::WORK: {
         float diff = _data->_n_with_work / _data->_with_work_threshold;
-        if (diff < 1.f) {
+        if (diff < 1.f && in_gradient == COHERENT) {
             std::ostringstream stream;
             stream << "Cannot call _reconfigure_producer when ratio is lower than 1: " << diff;
             throw std::runtime_error(stream.str());
@@ -232,7 +232,7 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
 
     case ReconfigureReason::NO_WORK: {
         float diff = _data->_n_no_work / _data->_no_work_threshold;
-        if (diff < 1.f) {
+        if (diff < 1.f && in_gradient == COHERENT) {
             std::ostringstream stream;
             stream << "Cannot call _reconfigure_producer when ratio is lower than 1: " << diff;
             throw std::runtime_error(stream.str());
