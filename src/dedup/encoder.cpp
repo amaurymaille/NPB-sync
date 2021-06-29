@@ -1465,7 +1465,7 @@ void *Reorder(void * targs) {
 
     std::optional<chunk_t*> chunk_opt;
     for (i = 0; i < args->nqueues; ++i) {
-        input_fifo[qid].pop(chunk_opt);
+        input_fifo[i].pop(chunk_opt);
 
         if (chunk_opt) {
           break;
