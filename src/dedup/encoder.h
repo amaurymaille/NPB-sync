@@ -3,7 +3,7 @@
 
 struct DedupData;
 
-void Encode(DedupData&);
+unsigned long long Encode(DedupData&);
 void Encode(config_t * conf);
 
 #endif /* !_ENCODER_H_ */

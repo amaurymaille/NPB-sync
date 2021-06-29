@@ -1610,7 +1610,7 @@ static void* launch_stage_thread(void* arg) {
     return launch->_start_routine(launch->_arg);
 }
 
-void Encode(DedupData& data) {
+unsigned long long Encode(DedupData& data) {
   struct stat filestat;
   int32 fd;
 
@@ -1863,7 +1863,7 @@ void Encode(DedupData& data) {
 
   pthread_barrier_wait(&barrier);
   // May have a really small overhead because of how heavy the barrier is.
-  timespec begin; clock_gettime(CLOCK_MONOTONIC, &begin);
+  timespec begin, end; clock_gettime(CLOCK_MONOTONIC, &begin);
 
   /*** parallel phase ***/
 
@@ -1882,7 +1882,9 @@ void Encode(DedupData& data) {
     pthread_join(threads_compress[i], (void **)&threads_compress_rv[i]);
   pthread_join(threads_send, NULL);
 
+  clock_gettime(CLOCK_MONOTONIC, &end);
 #define BILLION 1000000000
+  unsigned long long diff = (end.tv_sec * BILLION + end.tv_nsec) - (begin.tv_sec * BILLION + begin.tv_nsec);
 
   /* clock_gettime(CLOCK_MONOTONIC, &end);
   unsigned long long diff = (end.tv_sec * BILLION + end.tv_nsec) - (begin.tv_sec * BILLION + begin.tv_nsec);
@@ -1967,6 +1969,8 @@ void Encode(DedupData& data) {
   //Analyze and print statistics
   // if(conf->verbose) print_stats(&stats);
 #endif //ENABLE_STATISTICS
+
+  return diff;
 }
 
 /*--------------------------------------------------------------------------*/

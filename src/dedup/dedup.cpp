@@ -200,8 +200,9 @@ static int dedup_data_run(lua_State* L) {
 
     dedup_data_run_check_layers(L, data);
 
-    Encode(*data);
-    return 0;
+    unsigned long long diff = Encode(*data);
+    lua_pushinteger(L, diff);
+    return 1;
 }
 
 static int dedup_data_set_compression_type(lua_State* L) {
