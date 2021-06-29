@@ -246,11 +246,32 @@ static int dedup_data_set_preloading(lua_State* L) {
     return 0;
 }
 
+static int dedup_data_get_input_file(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    lua_pushstring(L, data->_input_filename->c_str());
+    return 1;
+}
+
+static int dedup_data_get_output_file(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    lua_pushstring(L, data->_output_filename->c_str());
+    return 1;
+}
+
+static int dedup_data_get_nb_threads(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    lua_pushinteger(L, data->_nb_threads);
+    return 1;
+}
+
 static luaL_Reg dedup_data_methods[] = {
     { "SetInputFile", &dedup_data_set_input_file },
+    { "GetInputFile", &dedup_data_get_input_file },
     { "SetOutputFile", &dedup_data_set_output_file },
+    { "GetOutputFile", &dedup_data_get_output_file },
     { "SetLayerConfiguration", &dedup_data_set_layer_configuration },
     { "SetNbThreads", &dedup_data_set_nb_threads },
+    { "GetNbThreads", &dedup_data_get_nb_threads },
     { "SetCompressionType", &dedup_data_set_compression_type },
     { "SetPreloading", &dedup_data_set_preloading },
     { "Run", &dedup_data_run },
