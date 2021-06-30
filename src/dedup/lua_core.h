@@ -28,6 +28,7 @@ struct FIFOData {
     float _increase_mult = 1.f;
     float _decrease_mult = 1.f;
     unsigned int _history_size = 10;
+    bool _reconfigure = true;
 };
 
 struct DedupData {
@@ -38,7 +39,6 @@ struct DedupData {
     std::map<Layers, std::map<Layers, FIFOData>>* _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
-    bool _reconfigure = true;
 };
 
 #endif // LUA_CORE_H
