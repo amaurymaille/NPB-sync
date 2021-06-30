@@ -108,10 +108,14 @@ struct thread_args {
     void *buffer;
     size_t size;
   } input_file;
+
+  /// FIFOs
   FIFOPlus<chunk_t*>* _input_fifo;
   FIFOPlus<chunk_t*>* _output_fifo;
   // For deduplicate stage
   FIFOPlus<chunk_t*>* _extra_output_fifo = nullptr;
+
+  /// FIFOs configuration
   FIFOData* _input_fifo_data;
   FIFOData* _output_fifo_data;
   FIFOData* _extra_output_fifo_data;
@@ -485,7 +489,7 @@ void *Compress(void * targs) {
 
 
     std::optional<chunk_t*> chunk_opt;
-    input_fifo->pop(chunk_opt);
+    input_fifo->pop(chunk_opt, args->_input_fifo_data->_reconfigure);
     if (!chunk_opt) {
         break;
     }
@@ -499,7 +503,7 @@ void *Compress(void * targs) {
 #endif //ENABLE_STATISTICS
 
     // r = ringbuffer_insert(&send_buf, chunk);
-    output_fifo->push(chunk);
+    output_fifo->push(chunk, args->_output_fifo_data->_reconfigure);
     /* ++count;
     assert(r==0); */
 
@@ -659,7 +663,7 @@ void * Deduplicate(void * targs) {
     assert(chunk!=NULL); */
 
     std::optional<chunk_t*> chunk_opt;
-    input_fifo->pop(chunk_opt);
+    input_fifo->pop(chunk_opt, args->_input_fifo_data->_reconfigure);
 
     if (!chunk_opt) {
         break;
@@ -689,7 +693,7 @@ void * Deduplicate(void * targs) {
         // log_enqueue("Deduplicate", "Compress", r, args->tid, qid, &compress_que[qid]);
         assert(r>=1);
       } */
-      compress_fifo->push(chunk);
+      compress_fifo->push(chunk, args->_output_fifo_data->_reconfigure);
     } else {
       /* r = ringbuffer_insert(&send_buf_reorder, chunk);
       ++reorder_count;
@@ -701,7 +705,7 @@ void * Deduplicate(void * targs) {
         // log_enqueue("Deduplicate", "Reorder", r, args->tid, qid, &reorder_que[qid]);
         assert(r>=1);
       } */
-      reorder_fifo->push(chunk);
+      reorder_fifo->push(chunk, args->_extra_output_fifo_data->_reconfigure);
     }
   }
 
@@ -816,7 +820,7 @@ void *FragmentRefine(void * targs) {
     /* chunk = (chunk_t *)ringbuffer_remove(&recv_buf);
     assert(chunk!=NULL); */
     std::optional<chunk_t*> chunk_opt;
-    input_fifo->pop(chunk_opt);
+    input_fifo->pop(chunk_opt, args->_input_fifo_data->_reconfigure);
 
     if (!chunk_opt) {
         break;
@@ -864,7 +868,7 @@ void *FragmentRefine(void * targs) {
           // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
           assert(r>=1);
         } */
-        output_fifo->push(chunk);
+        output_fifo->push(chunk, args->_output_fifo_data->_reconfigure);
         //prepare for next iteration
         chunk = temp;
         split = 1;
@@ -891,7 +895,7 @@ void *FragmentRefine(void * targs) {
           // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
           assert(r>=1);
         } */
-        output_fifo->push(chunk);
+        output_fifo->push(chunk, args->_output_fifo_data->_reconfigure);
         //prepare for next iteration
         chunk = NULL;
         split = 0;
@@ -1288,7 +1292,7 @@ void *Fragment(void * targs){
       /* r = ringbuffer_insert(&send_buf, chunk);
       ++count;
       assert(r==0); */
-      output_fifo[qid].push(chunk);
+      output_fifo[qid].push(chunk, args->_output_fifo_data->_reconfigure);
       qid = (qid + 1) % args->nqueues;
       //NOTE: No need to empty a full send_buf, we will break now and pass everything on to the queue
       break;
@@ -1333,7 +1337,7 @@ void *Fragment(void * targs){
             qid = (qid+1) % args->nqueues;
           } */
           //prepare for next iteration
-          output_fifo[qid].push(chunk);
+          output_fifo[qid].push(chunk, args->_output_fifo_data->_reconfigure);
           qid = (qid + 1) % args->nqueues;
           chunk = temp;
           temp = NULL;
@@ -1465,7 +1469,7 @@ void *Reorder(void * targs) {
 
     std::optional<chunk_t*> chunk_opt;
     for (i = 0; i < args->nqueues; ++i) {
-        input_fifo[i].pop(chunk_opt);
+        input_fifo[i].pop(chunk_opt, args->_input_fifo_data->_reconfigure);
 
         if (chunk_opt) {
           break;
