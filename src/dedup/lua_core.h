@@ -38,6 +38,7 @@ struct DedupData {
     std::map<Layers, std::map<Layers, FIFOData>>* _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
+    bool _reconfigure = true;
 };
 
 #endif // LUA_CORE_H

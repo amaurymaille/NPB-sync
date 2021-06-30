@@ -264,6 +264,22 @@ static int dedup_data_get_nb_threads(lua_State* L) {
     return 1;
 }
 
+static int dedup_data_allow_reconfiguration(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    if (lua_gettop(L) == 1) {
+        data->_reconfigure = true;
+    } else {
+        data->_reconfigure = luaL_checkboolean(L, 2);
+    }
+    return 0;
+}
+
+static int dedup_data_is_reconfiguration_allowed(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    lua_pushboolean(L, data->_reconfigure);
+    return 1;
+}
+
 static luaL_Reg dedup_data_methods[] = {
     { "SetInputFile", &dedup_data_set_input_file },
     { "GetInputFile", &dedup_data_get_input_file },
@@ -274,6 +290,8 @@ static luaL_Reg dedup_data_methods[] = {
     { "GetNbThreads", &dedup_data_get_nb_threads },
     { "SetCompressionType", &dedup_data_set_compression_type },
     { "SetPreloading", &dedup_data_set_preloading },
+    { "AllowReconfiguration", &dedup_data_allow_reconfiguration },
+    { "IsReconfigurable", &dedup_data_is_reconfiguration_allowed },
     { "Run", &dedup_data_run },
     { nullptr, nullptr }
 };
