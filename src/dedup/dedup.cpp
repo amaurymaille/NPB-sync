@@ -72,10 +72,15 @@ static int dedup_data_destroy(lua_State* L) {
     return 0;
 }
 
-static int fifo_data_new(lua_State* L) {
+static FIFOData* new_fifo_data(lua_State* L) {
     FIFOData* data = (FIFOData*)lua_newuserdata(L, sizeof(FIFOData));
     luaL_getmetatable(L, "LuaBook.FIFOData");
     lua_setmetatable(L, -2);
+    return data;
+}
+
+static int fifo_data_new(lua_State* L) {
+    new_fifo_data(L);
     return 1;
 }
 
@@ -236,6 +241,7 @@ static bool luaL_checkboolean(lua_State* L, int index) {
         return lua_toboolean(L, index);
     } else {
         luaL_error(L, "bad argument #%d (boolean expected, got %s\n", lua_typename(L, lua_type(L, index)));
+        return false; // Not reached because luaL_error never returns. Shut up GCC.
     }
 }
 
@@ -264,6 +270,42 @@ static int dedup_data_get_nb_threads(lua_State* L) {
     return 1;
 }
 
+static int dedup_data_get_layer_configuration(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    Layers src = (Layers)luaL_checkinteger(L, 2);
+    Layers dst = (Layers)luaL_checkinteger(L, 3);
+
+    if (src < FRAGMENT || src > REORDER) {
+        std::ostringstream stream;
+        stream << (int)src << " is not a valid source layer" << std::endl;
+        luaL_argerror(L, 2, stream.str().c_str());
+    }
+
+    if (dst < FRAGMENT || dst > FRAGMENT) {
+        std::ostringstream stream;
+        stream << (int)src << " is not a valid destination layer" << std::endl;
+        luaL_argerror(L, 3, stream.str().c_str());
+    }
+
+    if (data->_fifo_data->find(src) == data->_fifo_data->end()) {
+        lua_pushnil(L);
+    } else if ((*data->_fifo_data)[src].find(dst) == (*data->_fifo_data)[src].end()) {
+        lua_pushnil(L);
+    } else {
+        FIFOData* result = new_fifo_data(L);
+        *result = (*data->_fifo_data)[src][dst];
+    }
+
+    return 1;
+}
+
+static int dedup_data_run_default(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    unsigned long long diff = EncodeDefault(*data);
+    lua_pushinteger(L, diff);
+    return 1;
+}
+
 static luaL_Reg dedup_data_methods[] = {
     { "SetInputFile", &dedup_data_set_input_file },
     { "GetInputFile", &dedup_data_get_input_file },
@@ -274,7 +316,9 @@ static luaL_Reg dedup_data_methods[] = {
     { "GetNbThreads", &dedup_data_get_nb_threads },
     { "SetCompressionType", &dedup_data_set_compression_type },
     { "SetPreloading", &dedup_data_set_preloading },
+    { "GetLayersConfiguration", &dedup_data_get_layer_configuration },
     { "Run", &dedup_data_run },
+    { "RunDefault", &dedup_data_run_default },
     { nullptr, nullptr }
 };
 

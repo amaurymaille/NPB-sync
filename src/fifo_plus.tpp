@@ -64,20 +64,20 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
     if (_data->_inner_buffer.empty()) {
         std::unique_lock<std::mutex> lck(_m);
         if (_buffer.empty()) {
-            if (_pop_policy == FIFOPlusPopPolicy::POP_NO_WAIT) {
+            /* if (_pop_policy == FIFOPlusPopPolicy::POP_NO_WAIT) {
                 _consumer_events.push_back(ConsumerEvents::POP_EMPTY_NW);
                 return;
             } else {
                 _consumer_events.push_back(ConsumerEvents::POP_EMPTY);
-            }
+            } */
 
             while (_buffer.empty() && !terminated()) {
-                _data->_n_no_work++;
-                _data->_n_with_work = 0;
+                /*_data->_n_no_work++;
+                _data->_n_with_work = 0;*/
 
-                if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
+                /* if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
                     _reconfigure_consumer(ReconfigureReason::NO_WORK);
-                }
+                } */
 
                 /* Maybe we should count how many times in a row the buffer was empty
                  * once we ran out of work. If the buffer is always empty, maybe we
@@ -162,13 +162,16 @@ void FIFOPlus<T>::empty(Container<T>& target) {
 template<typename T>
 void FIFOPlus<T>::_transfer(bool check_empty) {
     std::queue<T>& fifo = _data->_inner_buffer;
+    bool push = false;
 
     while (!fifo.empty()) {
         _buffer.push(std::move(fifo.front()));
         fifo.pop();
+        push = true;
     }
 
-    _cv.notify_all();
+    if (push)
+        _cv.notify_one();
 }
 
 template<typename T>

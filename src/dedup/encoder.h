@@ -4,6 +4,6 @@
 struct DedupData;
 
 unsigned long long Encode(DedupData&);
-void Encode(config_t * conf);
+unsigned long long EncodeDefault(DedupData&);
 
 #endif /* !_ENCODER_H_ */

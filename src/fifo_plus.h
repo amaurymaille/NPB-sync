@@ -66,6 +66,7 @@ public:
 
     // Return the amount of elements in the active buffer.
     inline size_t get_nb_elements() const {
+        std::unique_lock<std::mutex> lck(_m);
         return _buffer.size();
     }
 
@@ -92,9 +93,17 @@ public:
             std::unique_lock<std::mutex> lck(_prod_mutex);
             ++_n_producers_done;
 
+            // std::ostringstream stream;
+            // stream << "FIFO " << this;
+
             if (terminated()) {
+                // stream << " is terminated\n";
                 _cv.notify_all();
+            } else {
+                // stream << " has " << _n_producers_done << " producers done\n";
             }
+
+            // printf(stream.str().c_str());
         }
     }
 
