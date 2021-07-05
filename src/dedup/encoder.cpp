@@ -1908,6 +1908,36 @@ unsigned long long Encode(DedupData& data) {
   __parsec_roi_end();
 #endif
 
+  std::vector<const FIFOPlus<chunk_t*>*> fifos;
+  fifos.push_back(refine);
+  fifos.push_back(deduplicate);
+  fifos.push_back(compress);
+  fifos.push_back(reorder);
+
+  for (const FIFOPlus<chunk_t*>*& fifo: fifos) {
+      for (int i = 0; i < nqueues; ++i) {
+          auto const& tss = fifo->get_tss();
+          auto const& data = tss.get_values();
+
+          int j = 0;
+          for (auto const& element: data) {
+              std::cout << "Queue ";
+
+              if (fifo == refine) {
+                  std::cout << "Refine ";
+              } else if (fifo == deduplicate) {
+                  std::cout << "Deduplicate ";
+              } else if (fifo == compress) {
+                  std::cout << "Compress ";
+              } else {
+                  std::cout << "Reorder ";
+              }
+
+              std::cout << i << ", queue " << j++ << " ended at N = " << element._n << std::endl;
+          }
+      }
+  }
+
   for (int i = 0; i < nqueues; ++i) {
       refine[i].~FIFOPlus<chunk_t*>();
       deduplicate[i].~FIFOPlus<chunk_t*>();

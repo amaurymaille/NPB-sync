@@ -105,6 +105,8 @@ public:
     inline void set(const T& value) { _values[_identifier->thread_id()] = value; }
     inline void set(T&& value) { _values[_identifier->thread_id()] = std::move(value); }
 
+    inline std::vector<T> const& get_values() const { return _values; }
+
 private:
     std::unique_ptr<ThreadIdentifier> _identifier;
     std::vector<T> _values;

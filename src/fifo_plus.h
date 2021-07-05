@@ -23,6 +23,36 @@ enum class FIFORole {
 
 template<typename T>
 class FIFOPlus {
+private:
+    struct ProdConsData {
+        // Work buffer. Merged into the active buffer for producers. Inner buffer
+        // merged into it for consumers.
+        std::queue<T> _inner_buffer;
+
+        // Counters
+        unsigned int _n_no_work = 0;
+        unsigned int _n_with_work = 0;
+
+        // Thresholds
+        unsigned int _no_work_threshold;
+        unsigned int _with_work_threshold;
+        // Amount of work remaining in the active buffer before transfer
+        // Ignored by the consumer
+        unsigned int _work_amount_threshold;
+
+        // Quantity of work to have in the inner buffer before transfer
+        unsigned int _n;
+
+        // Role
+        FIFORole _role = FIFORole::NONE;
+
+        // Multipliers for increase / decrease of _n
+        float _increase_mult;
+        float _decrease_mult;
+
+        void transfer();
+    };
+
 public:
     FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size);
 
@@ -125,6 +155,8 @@ public:
         return _n_producers == _n_producers_done;
     }
 
+    inline const TSS<ProdConsData>& get_tss() const { return _data; }
+
 private:
     enum class ReconfigureReason {
         /* There was work to do, and we went over the threshold */
@@ -163,35 +195,6 @@ private:
 
     boost::circular_buffer<ProducerEvents> _producer_events;
     boost::circular_buffer<ConsumerEvents> _consumer_events;
-
-    struct ProdConsData {
-        // Work buffer. Merged into the active buffer for producers. Inner buffer
-        // merged into it for consumers.
-        std::queue<T> _inner_buffer;
-
-        // Counters
-        unsigned int _n_no_work = 0;
-        unsigned int _n_with_work = 0;
-
-        // Thresholds
-        unsigned int _no_work_threshold;
-        unsigned int _with_work_threshold;
-        // Amount of work remaining in the active buffer before transfer
-        // Ignored by the consumer
-        unsigned int _work_amount_threshold;
-
-        // Quantity of work to have in the inner buffer before transfer
-        unsigned int _n;
-
-        // Role
-        FIFORole _role = FIFORole::NONE; 
-
-        // Multipliers for increase / decrease of _n
-        float _increase_mult;
-        float _decrease_mult;
-
-        void transfer();
-    };
 
     TSS<ProdConsData> _data;
 
