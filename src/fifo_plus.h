@@ -90,7 +90,7 @@ public:
 
     inline void terminate() {
         if (_data->_role == FIFORole::PRODUCER) {
-            std::unique_lock<std::mutex> lck(_prod_mutex);
+            std::unique_lock<std::mutex> lck(_m);
             ++_n_producers_done;
 
             // std::ostringstream stream;
