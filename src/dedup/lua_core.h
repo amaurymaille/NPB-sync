@@ -20,6 +20,8 @@ enum Compressions {
     NONE = COMPRESS_NONE
 };
 
+enum class FIFORole;
+
 struct FIFOData {
     unsigned int _n = 1;
     unsigned int _with_work_threshold = 1;
@@ -36,7 +38,7 @@ struct DedupData {
     std::string* _output_filename;
     unsigned int _nb_threads = 1;
     /// On layer A, contain data for the FIFOs to layers B, C...
-    std::map<Layers, std::map<Layers, FIFOData>>* _fifo_data;
+    std::map<Layers, std::map<Layers, std::map<FIFORole, FIFOData>>>* _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
 };

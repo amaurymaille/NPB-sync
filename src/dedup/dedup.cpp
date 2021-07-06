@@ -58,7 +58,7 @@ static int dedup_data_new(lua_State* L) {
     DedupData* data = (DedupData*)lua_newuserdata(L, sizeof(DedupData));
     luaL_getmetatable(L, "LuaBook.DedupData");
     lua_setmetatable(L, -2);
-    data->_fifo_data = new std::map<Layers, std::map<Layers, FIFOData>>();
+    data->_fifo_data = new std::map<Layers, std::map<Layers, std::map<FIFORole, FIFOData>>>();
     data->_input_filename = new std::string();
     data->_output_filename = new std::string();
     return 1;
@@ -130,7 +130,8 @@ static int dedup_data_set_layer_configuration(lua_State* L) {
     DedupData* data = check_dedup_data(L);
     Layers source = (Layers)luaL_checkinteger(L, 2);
     Layers destination = (Layers)luaL_checkinteger(L, 3);
-    FIFOData* fifo = (FIFOData*)luaL_checkudata(L, 4, "LuaBook.FIFOData");
+    FIFORole role = (FIFORole)luaL_checkinteger(L, 4);
+    FIFOData* fifo = (FIFOData*)luaL_checkudata(L, 5, "LuaBook.FIFOData");
 
     if (source < FRAGMENT || source >= REORDER) {
         std::ostringstream error;
@@ -144,22 +145,32 @@ static int dedup_data_set_layer_configuration(lua_State* L) {
         luaL_argerror(L, 3, error.str().c_str());
     }
 
-    luaL_argcheck(L, fifo != nullptr, 4, "Expected FIFOData");
-
-    if (data->_fifo_data->find(source) != data->_fifo_data->end() && source != DEDUPLICATE) {
+    if (role != FIFORole::PRODUCER && role != FIFORole::CONSUMER) {
         std::ostringstream error;
-        error << source << " has already been specified as a source layer" << std::endl;
-        luaL_argerror(L, 2, error.str().c_str());
+        error << (int)role << " is not a valid role" << std::endl;
+        luaL_argerror(L, 4, error.str().c_str());
     }
 
-    auto source_data = (*data->_fifo_data)[source];
+    luaL_argcheck(L, fifo != nullptr, 5, "Expected FIFOData");
+
+    if (data->_fifo_data->find(source) != data->_fifo_data->end()) {
+        if ((*data->_fifo_data)[source].find(destination) != (*data->_fifo_data)[source].end()) {
+            if ((*data->_fifo_data)[source][destination].find(role) != (*data->_fifo_data)[source][destination].end()) {
+                std::ostringstream error;
+                error << "The combination (" << source << ", " << destination << ", " << (int)role << ") has already been specified" << std::endl;
+                luaL_argerror(L, 2, error.str().c_str());
+            }
+        }
+    }
+
+    /* auto source_data = (*data->_fifo_data)[source];
     if (source_data.find(destination) != source_data.end()) {
         std::ostringstream error;
         error << destination << " has already been specified as a destination layer" << std::endl;
         luaL_argerror(L, 3, error.str().c_str());
-    }
+    } */
 
-    data->_fifo_data->operator [](source)[destination] = *fifo;
+    (*data->_fifo_data)[source][destination][role] = *fifo;
     return 0;
 }
 
@@ -274,6 +285,7 @@ static int dedup_data_get_layer_configuration(lua_State* L) {
     DedupData* data = check_dedup_data(L);
     Layers src = (Layers)luaL_checkinteger(L, 2);
     Layers dst = (Layers)luaL_checkinteger(L, 3);
+    FIFORole role = (FIFORole)luaL_checkinteger(L, 4);
 
     if (src < FRAGMENT || src > REORDER) {
         std::ostringstream stream;
@@ -287,13 +299,42 @@ static int dedup_data_get_layer_configuration(lua_State* L) {
         luaL_argerror(L, 3, stream.str().c_str());
     }
 
+    if (role != FIFORole::CONSUMER && role != FIFORole::PRODUCER) {
+        std::ostringstream stream;
+        stream << (int)role << " is not a valid role" << std::endl;
+        luaL_argerror(L, 4, stream.str().c_str());
+    }
+
     if (data->_fifo_data->find(src) == data->_fifo_data->end()) {
         lua_pushnil(L);
     } else if ((*data->_fifo_data)[src].find(dst) == (*data->_fifo_data)[src].end()) {
         lua_pushnil(L);
     } else {
-        FIFOData* result = new_fifo_data(L);
-        *result = (*data->_fifo_data)[src][dst];
+        lua_newtable(L); // Stack = table
+
+        lua_getglobal(L, "Roles"); // Stack = table, Roles
+        lua_pushstring(L, "PRODUCER"); // Stack = table, Roles, PRODUCER
+        lua_gettable(L, -2); // Stack = table, Roles[PRODUCER]
+
+        if ((*data->_fifo_data)[src][dst].find(FIFORole::PRODUCER) == (*data->_fifo_data)[src][dst].end()) {
+            lua_pushnil(L); // Stack = table, Roles[PRODUCER], nil
+        } else {
+            FIFOData* result = new_fifo_data(L); // Stack = table, Roles[PRODUCER], userdata
+            *result = (*data->_fifo_data)[src][dst][FIFORole::PRODUCER];
+        }
+        lua_settable(L, -3); // Stack = table
+
+        lua_getglobal(L, "Roles"); // Stack = table, Roles
+        lua_pushstring(L, "CONSUMER"); // Stack = table, Roles, CONSUMER
+        lua_gettable(L, -2); // Stack, Roles[CONSUMER]
+
+        if ((*data->_fifo_data)[src][dst].find(FIFORole::CONSUMER) == (*data->_fifo_data)[src][dst].end()) {
+            lua_pushnil(L); // Stack = table, Roles[CONSUMER], nil
+        } else {
+            FIFOData* result = new_fifo_data(L); // Stack = table, Roles[CONSUMER], userdata
+            *result = (*data->_fifo_data)[src][dst][FIFORole::CONSUMER];
+        }
+        lua_settable(L, -3); // Stack = table
     }
 
     return 1;
@@ -486,6 +527,19 @@ static lua_State* init_lua() {
     }
 
     lua_setglobal(L, "Compressions");
+
+    /// Registers roles table
+    lua_newtable(L);
+    lua_pushstring(L, "PRODUCER");
+    lua_pushinteger(L, (int)FIFORole::PRODUCER);
+    lua_pushstring(L, "CONSUMER");
+    lua_pushinteger(L, (int)FIFORole::CONSUMER);
+
+    for (int i = 2; i > 0; --i) {
+        lua_settable(L, -2 * (i + 1) + 1);
+    }
+
+    lua_setglobal(L, "Roles");
 
     return L;
 }
