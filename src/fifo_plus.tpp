@@ -270,7 +270,7 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
                     break;
             }
 
-            if (_data->_n <= 0) {
+            if (_data->_n <= 1) {
                 _data->_n = 1;
             }
         }

@@ -1936,11 +1936,13 @@ unsigned long long Encode(DedupData& data) {
 
   for (const FIFOPlus<chunk_t*>*& fifo: fifos) {
       for (int i = 0; i < nqueues; ++i) {
-          auto const& tss = fifo->get_tss();
+          auto const& tss = fifo[i].get_tss();
           auto const& data = tss.get_values();
 
           int j = 0;
           for (auto const& element: data) {
+              if (element._role != FIFORole::PRODUCER)
+                continue;
               std::cout << "Queue ";
 
               if (fifo == refine) {
@@ -1953,7 +1955,7 @@ unsigned long long Encode(DedupData& data) {
                   std::cout << "Reorder ";
               }
 
-              std::cout << i << ", queue " << j++ << " ended at N = " << element._n << std::endl;
+              std::cout << i << ", thread " << j++ << " ended at N = " << element._n << std::endl;
           }
       }
   }
