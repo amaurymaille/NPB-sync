@@ -206,6 +206,41 @@ static void dedup_data_run_check_layers(lua_State* L, DedupData const* data) {
     } */
 }
 
+static void dedup_data_check_fifos_configurations(lua_State* L, DedupData const* data) {
+    for (auto const& p1: *data->_fifo_data) {
+        for (auto const& p2: p1.second) {
+            for (auto const& p3: p2.second) {
+                FIFORole role = p3.first;
+                FIFOData const& fifo = p3.second;
+                if (fifo._n > fifo._max) {
+                    std::ostringstream err;
+                    err << "FIFO configuration error: maximum value of N for FIFO has been set to " << fifo._max << ", but initial value of N is " << fifo._n << std::endl;
+                    luaL_error(L, err.str().c_str());
+                }
+
+                if (fifo._n < fifo._min) {
+                    std::ostringstream err;
+                    err << "FIFO configuration error: minimum value of N for FIFO has been set to " << fifo._max << ", but initial value of N is " << fifo._n << std::endl;
+                }
+
+                if (role == FIFORole::PRODUCER) {
+                    if (fifo._increase_mult < 1.f) {
+                        std::ostringstream err;
+                        err << "FIFO configuration error: increase multiplier is too low (" << fifo._increase_mult << ")" << std::endl;
+                        luaL_error(L, err.str().c_str());
+                    }
+
+                    if (fifo._decrease_mult > 1.f) {
+                        std::ostringstream err;
+                        err << "FIFO configuration error: decrease multiplier is too low (" << fifo._decrease_mult << ")" << std::endl;
+                        luaL_error(L, err.str().c_str());
+                    }
+                }
+            }
+        }
+    }
+}
+
 static int dedup_data_run(lua_State* L) {
     DedupData* data = check_dedup_data(L);
 
@@ -215,6 +250,7 @@ static int dedup_data_run(lua_State* L) {
     }
 
     dedup_data_run_check_layers(L, data);
+    dedup_data_check_fifos_configurations(L, data);
 
     unsigned long long diff = Encode(*data);
     lua_pushinteger(L, diff);
@@ -340,6 +376,14 @@ static int dedup_data_get_layer_configuration(lua_State* L) {
     return 1;
 }
 
+static int dedup_data_set_reconfigure_algorithm(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    FIFOReconfigure algorithm = (FIFOReconfigure)luaL_checkinteger(L, 2);
+    luaL_argcheck(L, algorithm >= FIFOReconfigure::GRADIENT && algorithm <= FIFOReconfigure::MAX, 2, "Invalid FIFO reconfiguration algorithm");
+    data->_algorithm = algorithm;
+    return 0;
+}
+
 static int dedup_data_run_default(lua_State* L) {
     DedupData* data = check_dedup_data(L);
     unsigned long long diff = EncodeDefault(*data);
@@ -358,6 +402,7 @@ static luaL_Reg dedup_data_methods[] = {
     { "SetCompressionType", &dedup_data_set_compression_type },
     { "SetPreloading", &dedup_data_set_preloading },
     { "GetLayersConfiguration", &dedup_data_get_layer_configuration },
+    { "SetReconfigureAlgorithm", &dedup_data_set_reconfigure_algorithm },
     { "Run", &dedup_data_run },
     { "RunDefault", &dedup_data_run_default },
     { nullptr, nullptr }
@@ -369,6 +414,20 @@ static FIFOData* check_fifo_data(lua_State* L) {
     void* ud = luaL_checkudata(L, 1, "LuaBook.FIFOData");
     luaL_argcheck(L, ud != nullptr, 1, "Expected FIFOData");
     return (FIFOData*)ud;
+}
+
+static int fifo_data_set_min(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    unsigned int min = luaL_checkinteger(L, 2);
+    data->_min = min;
+    return 0;
+}
+
+static int fifo_data_set_max(lua_State* L) {
+    FIFOData* data = check_fifo_data(L);
+    unsigned int max = luaL_checkinteger(L, 2);
+    data->_max = max;
+    return 0;
 }
 
 static int fifo_data_set_n(lua_State* L) {
@@ -452,7 +511,9 @@ static int fifo_data_is_reconfiguration_allowed(lua_State* L) {
 }
 
 static luaL_Reg fifo_data_methods[] = {
+    { "SetMin", &fifo_data_set_min },
     { "SetN", &fifo_data_set_n },
+    { "SetMax", &fifo_data_set_max },
     { "SetWork", &fifo_data_set_work },
     { "SetNoWork", &fifo_data_set_no_work },
     { "SetCritical", &fifo_data_set_critical },

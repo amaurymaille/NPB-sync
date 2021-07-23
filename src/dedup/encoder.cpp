@@ -335,10 +335,11 @@ int rf_win_dataprocess;
 static void configure_fifo(FIFOPlus<chunk_t*>& fifo, FIFOData const& data, FIFORole role) {
     fifo.set_role(role);
     fifo.set_multipliers(data._increase_mult, data._decrease_mult);
-    fifo.set_n(data._n);
+    fifo.set_n(data._min, data._n, data._max);
     fifo.set_thresholds(data._no_work_threshold,
                         data._with_work_threshold,
                         data._critical_threshold);
+    fifo.resize_local_events();
 }
 
 /*

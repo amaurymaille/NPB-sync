@@ -21,9 +21,12 @@ enum Compressions {
 };
 
 enum class FIFORole;
+enum class FIFOReconfigure;
 
 struct FIFOData {
+    unsigned int _min = 1;
     unsigned int _n = 1;
+    unsigned int _max = 1;
     unsigned int _with_work_threshold = 1;
     unsigned int _no_work_threshold = 1;
     unsigned int _critical_threshold = 1;
@@ -41,6 +44,7 @@ struct DedupData {
     std::map<Layers, std::map<Layers, std::map<FIFORole, FIFOData>>>* _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
+    FIFOReconfigure _algorithm;
 };
 
 #endif // LUA_CORE_H

@@ -21,13 +21,40 @@ enum class FIFORole {
     CONSUMER = 2
 };
 
+enum class FIFOReconfigure {
+    GRADIENT,
+    PHASE,
+    MAX
+};
+
+enum class FIFOPhase {
+    HEATING,
+    RUNNING,
+    MAYBE_COOLING, // The observed behaviour will tell us if we are RUNNING or COOLING
+    COOLING,
+    MAX
+};
+
 template<typename T>
 class FIFOPlus {
 private:
+    enum ProducerEvents {
+        /* The work buffer was empty */
+        PUSH_EMPTY,
+        /* The work buffer had content, but it was quite low on content */
+        PUSH_LOW,
+        /* The work buffer had a reasonable amount of work */
+        PUSH_CONTENT,
+        /* Push immediate */
+        PUSH_IMMEDIATE,
+        MAX_PUSH
+    };
+
     struct ProdConsData {
         // Work buffer. Merged into the active buffer for producers. Inner buffer
         // merged into it for consumers.
         std::queue<T> _inner_buffer;
+        boost::circular_buffer<ProducerEvents> _producer_events;
 
         // Counters
         unsigned int _n_no_work = 0;
@@ -40,8 +67,12 @@ private:
         // Ignored by the consumer
         unsigned int _work_amount_threshold;
 
+        // Lower limit to the quqntity of work to have in the buffer before transfer
+        unsigned int _min;
         // Quantity of work to have in the inner buffer before transfer
         unsigned int _n;
+        // Upper limit of the quantity of work to have in the buffer before transfer
+        unsigned int _max;
 
         // Role
         FIFORole _role = FIFORole::NONE;
@@ -49,6 +80,8 @@ private:
         // Multipliers for increase / decrease of _n
         float _increase_mult;
         float _decrease_mult;
+
+        FIFOPhase _phase = FIFOPhase::HEATING;
 
         void transfer();
     };
@@ -104,8 +137,10 @@ public:
         return _data->_n;
     }
 
-    inline void set_n(unsigned int n) {
+    inline void set_n(unsigned int min, unsigned int n, unsigned int max) {
+        _data->_min = min;
         _data->_n = n;
+        _data->_max = max;
     }
 
     inline void set_role(FIFORole role) {
@@ -156,6 +191,11 @@ public:
     }
 
     inline const TSS<ProdConsData>& get_tss() const { return _data; }
+    
+    inline void resize_local_events() {
+        assert (_producer_events.size() != 0);
+        _data->_producer_events.resize(_producer_events.size());
+    }
 
 private:
     enum class ReconfigureReason {
@@ -165,18 +205,7 @@ private:
         NO_WORK = 1
     };
 
-    enum ProducerEvents {
-        /* The work buffer was empty */
-        PUSH_EMPTY,
-        /* The work buffer had content, but it was quite low on content */
-        PUSH_LOW,
-        /* The work buffer had a reasonable amount of work */
-        PUSH_CONTENT,
-        /* Push immediate */
-        PUSH_IMMEDIATE,
-        MAX_PUSH
-    };
-
+    
     enum ConsumerEvents {
         /* The work buffer had no content */
         POP_EMPTY,
@@ -215,6 +244,8 @@ private:
     // Producer count mutex
     std::mutex _prod_mutex;
 
+    FIFOReconfigure _reconfigure_method = FIFOReconfigure::GRADIENT;
+
     /* check_empty parameter could be related to the comment in pop that talks
      * about checking how many times in a row the buffer was empty when a thread
      * tried to pop. I don't see why it would appear in _transfer though.
@@ -224,9 +255,9 @@ private:
     void _transfer(bool empty_check = false); 
 
     // Reconfigure a producer
-    void _reconfigure_producer(ReconfigureReason reason, Gradients gradient = COHERENT);
+    void _reconfigure_producer_gradient(ReconfigureReason reason, Gradients gradient = COHERENT);
     // Reconfigure a consumer
-    void _reconfigure_consumer(ReconfigureReason reason, Gradients gradient = COHERENT);
+    void _reconfigure_consumer_gradient(ReconfigureReason reason, Gradients gradient = COHERENT);
 
     // Send content of _buffer to _inner_buffer
     void _reverse_transfer(bool empty_check = false);
@@ -247,6 +278,10 @@ private:
      */
     Gradients _producer_gradient(ReconfigureReason reason) const;
     Gradients _consumer_gradient(ReconfigureReason reason) const;
+
+    // Perform reconfiguration using phase detection.
+    void _reconfigure_phase();
+    Gradients _phase_gradient() const;
 };
 
 // #include "fifo_plus.tpp"

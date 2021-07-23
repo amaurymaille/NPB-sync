@@ -22,31 +22,51 @@ void FIFOPlus<T>::push(const T& value, bool reconfigure) {
 
     std::unique_lock<std::mutex> lck(_m);
 
-    if (_buffer.size() != 0) {
-        if (_buffer.size() < _data->_work_amount_threshold) {
-            _producer_events.push_back(ProducerEvents::PUSH_LOW);
-            _transfer();
+    if (_reconfigure_method == FIFOReconfigure::GRADIENT) {
+        if (_buffer.size() != 0) {
+            if (_buffer.size() < _data->_work_amount_threshold) {
+                _data->_producer_events.push_back(ProducerEvents::PUSH_LOW);
+                _producer_events.push_back(ProducerEvents::PUSH_LOW);
+            } else {
+                _data->_producer_events.push_back(ProducerEvents::PUSH_CONTENT);
+                _producer_events.push_back(ProducerEvents::PUSH_CONTENT);
+            }
+            
+            _data->_n_no_work = 0;
+            ++_data->_n_with_work;
+
+            if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
+                _reconfigure_producer_gradient(ReconfigureReason::WORK);
+            }
         } else {
-            _producer_events.push_back(ProducerEvents::PUSH_CONTENT);
-        }
+            _data->_n_with_work = 0;
+            ++_data->_n_no_work;
 
-        _data->_n_no_work = 0;
-        ++_data->_n_with_work;
+            _data->_producer_events.push_back(ProducerEvents::PUSH_EMPTY);
+            _producer_events.push_back(ProducerEvents::PUSH_EMPTY);
 
-        if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
-            _reconfigure_producer(ReconfigureReason::WORK);
-        }
-    } else {
-        _data->_n_with_work = 0;
-        ++_data->_n_no_work;
-
-        _producer_events.push_back(ProducerEvents::PUSH_EMPTY);
+            if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
+                _reconfigure_producer_gradient(ReconfigureReason::NO_WORK);
+            }
+        } 
 
         _transfer();
-
-        if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
-            _reconfigure_producer(ReconfigureReason::NO_WORK);
+    } else if (_reconfigure_method == FIFOReconfigure::PHASE) {
+        if (_buffer.size() != 0) {
+            if (_buffer.size() < _data->_work_amount_threshold) {
+                _data->_producer_events.push_back(ProducerEvents::PUSH_LOW);
+                _producer_events.push_back(ProducerEvents::PUSH_LOW);
+            } else {
+                _data->_producer_events.push_back(ProducerEvents::PUSH_CONTENT);
+                _producer_events.push_back(ProducerEvents::PUSH_CONTENT);
+            }
+        } else {
+            _data->_producer_events.push_back(ProducerEvents::PUSH_EMPTY);
+            _producer_events.push_back(ProducerEvents::PUSH_EMPTY);
         }
+
+        _transfer();
+        _reconfigure_phase();
     }
 }
 
@@ -55,6 +75,8 @@ void FIFOPlus<T>::push_immediate(const T& value, bool reconfigure) {
     _data->_inner_buffer.push(value);
 
     std::unique_lock<std::mutex> lck(_m);
+    
+    _data->_producer_events.push_back(ProducerEvents::PUSH_IMMEDIATE);
     _producer_events.push_back(ProducerEvents::PUSH_IMMEDIATE);
     _transfer();
 }
@@ -76,7 +98,7 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
                 _data->_n_with_work = 0;
 
                 if (_data->_n_no_work >= _data->_no_work_threshold && reconfigure) {
-                    _reconfigure_consumer(ReconfigureReason::NO_WORK);
+                    _reconfigure_consumer_gradient(ReconfigureReason::NO_WORK);
                 }
 
                 /* Maybe we should count how many times in a row the buffer was empty
@@ -101,7 +123,7 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
             _data->_n_with_work++;
 
             if (_data->_n_with_work >= _data->_with_work_threshold && reconfigure) {
-                _reconfigure_consumer(ReconfigureReason::WORK);
+                _reconfigure_consumer_gradient(ReconfigureReason::WORK);
             }
         }
 
@@ -186,7 +208,7 @@ void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
 }
 
 template<typename T>
-void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
+void FIFOPlus<T>::_reconfigure_producer_gradient(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
     Gradients gradient = _producer_gradient(reason);
 
     switch (reason) {
@@ -202,7 +224,7 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
             switch (gradient) {
                 case INCOHERENT:
                 case FLUCTUATING:
-                    _reconfigure_producer(ReconfigureReason::NO_WORK, gradient);
+                    _reconfigure_producer_gradient(ReconfigureReason::NO_WORK, gradient);
                     break;
 
                 case COHERENT:
@@ -245,7 +267,7 @@ void FIFOPlus<T>::_reconfigure_producer(ReconfigureReason reason, typename FIFOP
             switch (gradient) {
                 case INCOHERENT:
                 case FLUCTUATING:
-                    _reconfigure_producer(ReconfigureReason::WORK, gradient);
+                    _reconfigure_producer_gradient(ReconfigureReason::WORK, gradient);
                     break;
 
                 case COHERENT:
@@ -352,7 +374,7 @@ typename FIFOPlus<T>::Gradients FIFOPlus<T>::_producer_gradient(ReconfigureReaso
 }
 
 template<typename T>
-void FIFOPlus<T>::_reconfigure_consumer(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
+void FIFOPlus<T>::_reconfigure_consumer_gradient(ReconfigureReason reason, typename FIFOPlus<T>::Gradients in_gradient) {
 
 }
 
