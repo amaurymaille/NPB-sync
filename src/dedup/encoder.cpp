@@ -1469,7 +1469,8 @@ void *Reorder(void * targs) {
 
     std::optional<chunk_t*> chunk_opt;
     for (i = 0; i < args->nqueues; ++i) {
-        input_fifo[i].pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+        input_fifo[qid].pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+        qid = (qid + 1) % args->nqueues;
 
         if (chunk_opt) {
           break;
