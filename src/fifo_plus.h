@@ -1,10 +1,14 @@
 #ifndef FIFO_H
 #define FIFO_H
 
+#include <chrono>
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <string>
+#include <variant>
 
 #include <boost/circular_buffer.hpp>
 
@@ -73,6 +77,9 @@ private:
         unsigned int _n;
         // Upper limit of the quantity of work to have in the buffer before transfer
         unsigned int _max;
+        // Floating point version of n because the integral value of n may not
+        // evolve properly (ceil / floor / all that sutff).
+        double __n;
 
         // Role
         FIFORole _role = FIFORole::NONE;
@@ -87,7 +94,9 @@ private:
     };
 
 public:
-    FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size);
+    FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy,
+             ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size,
+             std::string&& description, std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time);
 
     // Add the content of elements to the FIFO. It may not be available immediately.
     // template<template<typename> typename Container>
@@ -140,6 +149,7 @@ public:
     inline void set_n(unsigned int min, unsigned int n, unsigned int max) {
         _data->_min = min;
         _data->_n = n;
+        _data->__n = n;
         _data->_max = max;
     }
 
@@ -193,8 +203,21 @@ public:
     inline const TSS<ProdConsData>& get_tss() const { return _data; }
     
     inline void resize_local_events() {
-        assert (_producer_events.size() != 0);
-        _data->_producer_events.resize(_producer_events.size());
+        assert (_producer_events.size() == 0 && _producer_events.capacity() != 0);
+        _data->_producer_events.set_capacity(_producer_events.capacity());
+    }
+
+    inline std::string const& get_description() const {
+        return _description;
+    }
+
+    enum class Actions {
+        PUSH,
+        POP
+    };
+
+    std::map<Actions, std::map<unsigned long long, size_t>> const& get_timestamps_data() const {
+        return _timestamps_data;
     }
 
 private:
@@ -221,6 +244,12 @@ private:
         FLUCTUATING,
         COHERENT
     };
+    
+    std::map<Actions, std::map<unsigned long long, size_t>> _timestamps_data;
+
+    void add_timestamp_data(Actions action, size_t data) {
+        _timestamps_data[action][std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - *_start_time).count()] = data;
+    }
 
     boost::circular_buffer<ProducerEvents> _producer_events;
     boost::circular_buffer<ConsumerEvents> _consumer_events;
@@ -245,6 +274,10 @@ private:
     std::mutex _prod_mutex;
 
     FIFOReconfigure _reconfigure_method = FIFOReconfigure::GRADIENT;
+
+    std::string _description;
+
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> _start_time;
 
     /* check_empty parameter could be related to the comment in pop that talks
      * about checking how many times in a row the buffer was empty when a thread
@@ -283,6 +316,7 @@ private:
     void _reconfigure_phase();
     Gradients _phase_gradient() const;
 };
+
 
 // #include "fifo_plus.tpp"
 

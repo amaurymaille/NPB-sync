@@ -5,10 +5,15 @@
 #include <stdint.h>
 #include <assert.h>
 
+#include <chrono>
+#include <vector>
+
+#include "fifo_plus.h"
 #include "config.h"
 #include "mbuffer.h"
 #include "sha.h"
 
+using std::chrono::steady_clock;
 
 #define CHECKBIT 123456
 
@@ -225,6 +230,12 @@ typedef struct {
 
 extern config_t* conf;
 extern struct hashtable* cache;
+
+namespace Globals {
+extern std::chrono::time_point<steady_clock> start_time;
+extern std::vector<FIFOPlus<chunk_t*>*> fifos;
+}
+
 
 #endif //_DEDUPDEF_H_
 

@@ -45,6 +45,7 @@ struct DedupData {
     Compressions _compression = GZIP;
     bool _preloading = false;
     FIFOReconfigure _algorithm;
+    bool _debug_timestamps;
 };
 
 #endif // LUA_CORE_H

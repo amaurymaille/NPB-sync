@@ -2,7 +2,11 @@
 #include <string.h>
 #include <time.h>
 
+#include <iomanip>
+#include <fstream>
 #include <sstream>
+
+#include <nlohmann/json.hpp>
 
 #include "util.h"
 #include "debug.h"
@@ -28,6 +32,7 @@
 #include <hooks.h>
 #endif //ENABLE_PARSEC_HOOKS
 
+using json = nlohmann::json;
 
 config_t * conf;
 
@@ -391,6 +396,19 @@ static int dedup_data_run_default(lua_State* L) {
     return 1;
 }
 
+static int dedup_data_set_debug_timestamps(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    unsigned int enable = luaL_checkboolean(L, 2);
+    data->_debug_timestamps = enable;
+    return 0;
+}
+
+static int dedup_data_get_debug_timestamps(lua_State* L) {
+    DedupData* data = check_dedup_data(L);
+    lua_pushinteger(L, data->_debug_timestamps);
+    return 1;
+}
+
 static luaL_Reg dedup_data_methods[] = {
     { "SetInputFile", &dedup_data_set_input_file },
     { "GetInputFile", &dedup_data_get_input_file },
@@ -402,9 +420,11 @@ static luaL_Reg dedup_data_methods[] = {
     { "SetCompressionType", &dedup_data_set_compression_type },
     { "SetPreloading", &dedup_data_set_preloading },
     { "GetLayersConfiguration", &dedup_data_get_layer_configuration },
-    { "SetReconfigureAlgorithm", &dedup_data_set_reconfigure_algorithm },
+    { "SetReconfiguration", &dedup_data_set_reconfigure_algorithm },
     { "Run", &dedup_data_run },
     { "RunDefault", &dedup_data_run_default },
+    { "GetDebugTimestamps", &dedup_data_get_debug_timestamps },
+    { "SetDebugTimestamps", &dedup_data_set_debug_timestamps },
     { nullptr, nullptr }
 };
 
@@ -524,9 +544,58 @@ static luaL_Reg fifo_data_methods[] = {
     { nullptr, nullptr }
 };
 
+// Other globals
+
+static void debug_timestamps(const char* filename) {
+    json fifos;
+    json fifos_data = json::array();
+
+    for (FIFOPlus<chunk_t*>* fifo: Globals::fifos) {
+        json fifo_data;
+        auto desc = fifo->get_description(); /* ->get_description() */
+        std::ostringstream s;
+        s << fifo << "__" << desc;
+        fifo_data["description"] = s.str();
+        for (auto const& p2: fifo->get_timestamps_data()) {
+            unsigned int count = 0;
+            auto action = p2.first;
+            json timestamps = json::array();
+            for (auto p3: p2.second) {
+                unsigned long long timestamp = p3.first;
+                count += p3.second;
+
+                json j; 
+                j["timestamp"] = timestamp;
+                j["count"] = count;
+                timestamps.push_back(j);
+            }
+            
+            if (action == FIFOPlus<chunk_t*>::Actions::PUSH) {
+                fifo_data["push"] = timestamps;
+            } else {
+                fifo_data["pop"] = timestamps;
+            }
+        }
+
+        fifos_data.push_back(fifo_data);
+    }
+
+    fifos["data"] = fifos_data;
+    std::ofstream stream(filename, std::ios::out);
+    stream << std::setw(4) << fifos;
+}
+
+static int lua_debug_timestamps(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+    debug_timestamps(filename);
+    return 0;
+}
+
 static lua_State* init_lua() {
     lua_State* L = luaL_newstate();
     luaL_openlibs(L);
+
+    lua_register(L, "DebugTimestamps", lua_debug_timestamps);
 
     /// DedupData
     luaL_newmetatable(L, "LuaBook.DedupData");
@@ -602,10 +671,27 @@ static lua_State* init_lua() {
 
     lua_setglobal(L, "Roles");
 
+    /// Register reconfiguration algorithms table
+    lua_newtable(L);
+    lua_pushstring(L, "PHASE");
+    lua_pushinteger(L, (int)FIFOReconfigure::PHASE);
+    lua_pushstring(L, "GRADIENT");
+    lua_pushinteger(L, (int)FIFOReconfigure::GRADIENT);
+
+    for (int i = 2; i > 0; --i) {
+        lua_settable(L, -2 * (i + 1) + 1);
+    }
+
+    lua_setglobal(L, "Reconfigurations");
+
     return L;
 }
+
+std::chrono::time_point<steady_clock> Globals::start_time;
+
 /*--------------------------------------------------------------------------*/
 int main(int argc, char** argv) {
+  Globals::start_time = steady_clock::now();
 #ifdef PARSEC_VERSION
 #define __PARSEC_STRING(x) #x
 #define __PARSEC_XSTRING(x) __PARSEC_STRING(x)

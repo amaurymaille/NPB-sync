@@ -76,6 +76,8 @@
 //Hash table data structure & utility functions
 //struct hashtable *cache;
 
+std::vector<FIFOPlus<chunk_t*>*> Globals::fifos;
+
 static DedupData* _g_data;
 
 static unsigned int hash_from_key_fn( void *k ) {
@@ -494,6 +496,7 @@ void *Compress(void * targs) {
     if (!chunk_opt) {
         break;
     }
+    
     chunk = *chunk_opt; // (chunk_t *)ringbuffer_remove(&recv_buf);
     assert(chunk!=NULL);
 
@@ -1750,13 +1753,14 @@ unsigned long long Encode(DedupData& data) {
   data_process_args.nqueues = nqueues;
   data_process_args.fd = fd;
 
-  alignas(FIFOPlus<chunk_t*>) unsigned char refine_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
-  alignas(FIFOPlus<chunk_t*>) unsigned char deduplicate_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
-  alignas(FIFOPlus<chunk_t*>) unsigned char compress_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
-  alignas(FIFOPlus<chunk_t*>) unsigned char reorder_input[nqueues * sizeof(FIFOPlus<chunk_t*>)];
+  alignas(FIFOPlus<chunk_t*>) unsigned char* refine_input = (unsigned char*)malloc(nqueues * sizeof(FIFOPlus<chunk_t*>));
+  alignas(FIFOPlus<chunk_t*>) unsigned char* deduplicate_input = (unsigned char*)malloc(nqueues * sizeof(FIFOPlus<chunk_t*>));
+  alignas(FIFOPlus<chunk_t*>) unsigned char* compress_input = (unsigned char*)malloc(nqueues * sizeof(FIFOPlus<chunk_t*>));
+  alignas(FIFOPlus<chunk_t*>) unsigned char* reorder_input = (unsigned char*)malloc(nqueues * sizeof(FIFOPlus<chunk_t*>));
   bool extra_queue = (data._nb_threads % MAX_THREADS_PER_QUEUE) != 0;
 
   std::map<void*, PThreadThreadIdentifier*> identifiers;
+  FIFOReconfigure reconfiguration = data._algorithm;
 
   pthread_barrier_t barrier;
   pthread_barrier_init(&barrier, nullptr, 
@@ -1766,23 +1770,28 @@ unsigned long long Encode(DedupData& data) {
     1 /* Reorder */
   );
 
-  auto allocate = [&](void* ptr, unsigned int nb_producers, unsigned int nb_consumers, unsigned int history_size) -> void {
+  auto allocate = [&](void* ptr, FIFOReconfigure reconfiguration_policy, unsigned int nb_producers, unsigned int nb_consumers, unsigned int history_size, std::string&& description) -> void {
     PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier;
     identifiers[ptr] = identifier;
-    new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, identifier, nb_producers, nb_consumers, history_size);
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time;
+    if (data._debug_timestamps) {
+        start_time = Globals::start_time;
+    }
+    new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, reconfiguration_policy, identifier, nb_producers, nb_consumers, history_size, std::move(description), start_time);
+    Globals::fifos.push_back((FIFOPlus<chunk_t*>*)ptr);
   };
 
   for (int i = 0; i < nqueues; ++i) {
     if (i == nqueues - 1 && extra_queue) {
-      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), 1, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size);
-      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size);
-      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size);
-      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, (*data._fifo_data)[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size);
+      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size, "fragment to refine");
+      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size, "refine to deduplicate");
+      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size, "deduplicate to compress");
+      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, (*data._fifo_data)[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size, "dedup / compress to reorder");
     } else {
-      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), 1, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size);
-      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size);
-      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size);
-      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), 2 * MAX_THREADS_PER_QUEUE, 1, (*data._fifo_data)[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size);
+      allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size, "fragment to refine");
+      allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size, "refine to deduplicate");
+      allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, (*data._fifo_data)[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size, "deduplicate to compress");
+      allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * MAX_THREADS_PER_QUEUE, 1, (*data._fifo_data)[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size, "dedup / compress to reorder");
     }
   }
 
@@ -1962,12 +1971,12 @@ unsigned long long Encode(DedupData& data) {
       }
   }
 
-  for (int i = 0; i < nqueues; ++i) {
+  /* for (int i = 0; i < nqueues; ++i) {
       refine[i].~FIFOPlus<chunk_t*>();
       deduplicate[i].~FIFOPlus<chunk_t*>();
       compress[i].~FIFOPlus<chunk_t*>();
       reorder[i].~FIFOPlus<chunk_t*>();
-  }
+  } */
 
 #ifdef ENABLE_STATISTICS
   //Merge everything into global `stats' structure

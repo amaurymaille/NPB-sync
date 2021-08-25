@@ -1,11 +1,12 @@
 #include "fifo_plus.h"
 
+#include <cmath>
 #include <iostream>
 #include <sstream>
 
 template<typename T>
-FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size) :
-    _producer_events(history_size), _consumer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers) {
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size, std::string&& description, std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time) :
+    _producer_events(history_size), _reconfigure_method(reconfiguration_policy), _consumer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers), _description(std::move(description)), _start_time(start_time) {
 
 }
 
@@ -127,6 +128,7 @@ void FIFOPlus<T>::pop(std::optional<T>& opt, bool reconfigure) {
             }
         }
 
+        // printf("[%p, queue %s] has %lu elements available, will take %lu\n", &(_data->_inner_buffer), _description.c_str(), _buffer.size(), _data->_n);
         _reverse_transfer();
         assert (_data->_inner_buffer.size() != 0);
     }
@@ -186,6 +188,10 @@ void FIFOPlus<T>::_transfer(bool check_empty) {
     std::queue<T>& fifo = _data->_inner_buffer;
     bool push = false;
 
+    if (_start_time) {
+        add_timestamp_data(Actions::PUSH, fifo.size());
+    }
+
     while (!fifo.empty()) {
         _buffer.push(std::move(fifo.front()));
         fifo.pop();
@@ -200,6 +206,10 @@ template<typename T>
 void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
     std::queue<T>& fifo = _data->_inner_buffer;
     unsigned int n = _data->_n;
+
+    if (_start_time) {
+        add_timestamp_data(Actions::POP, std::min((size_t)n, _buffer.size()));
+    }
 
     for (int i = 0; i < n && !_buffer.empty(); ++i) {
         fifo.push(_buffer.front());
@@ -381,4 +391,81 @@ void FIFOPlus<T>::_reconfigure_consumer_gradient(ReconfigureReason reason, typen
 template<typename T>
 typename FIFOPlus<T>::Gradients FIFOPlus<T>::_consumer_gradient(ReconfigureReason reason) const {
     return COHERENT;
+}
+
+template<typename T>
+void FIFOPlus<T>::_reconfigure_phase() {
+    switch (_data->_phase) {
+    case FIFOPhase::HEATING:
+        if (_data->__n * _data->_increase_mult > _data->_max) {
+            _data->__n = _data->_max;
+            _data->_n = _data->_max;
+            _data->_phase = FIFOPhase::RUNNING;
+        } else {
+            _data->__n *= _data->_increase_mult;
+            _data->_n = std::floor(_data->__n);
+        }
+        break;
+
+    case FIFOPhase::RUNNING: {
+        Gradients gradient = _phase_gradient();
+        if (gradient == FLUCTUATING) {
+            _data->_phase = FIFOPhase::MAYBE_COOLING;
+        } else if (gradient == INCOHERENT) {
+            _data->_phase = FIFOPhase::COOLING;
+        }
+        break;
+    }
+
+    case FIFOPhase::MAYBE_COOLING: {
+        Gradients gradient = _phase_gradient();
+        switch (gradient) {
+        case COHERENT:
+            _data->_phase = FIFOPhase::COOLING;
+            break;
+
+        case INCOHERENT:
+            _data->_phase = FIFOPhase::RUNNING;
+            break;
+
+        default:
+            break;
+        }
+        break;
+    }
+
+    case FIFOPhase::COOLING:
+        if (_data->__n * _data->_decrease_mult < _data->_min) {
+            _data->__n = _data->_min;
+            _data->_n = _data->_min;
+        } else {
+            _data->__n *= _data->_decrease_mult;
+            _data->_n = std::ceil(_data->__n);
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+template<typename T>
+typename FIFOPlus<T>::Gradients FIFOPlus<T>::_phase_gradient() const {
+    if (_data->_phase == FIFOPhase::HEATING || _data->_phase == FIFOPhase::COOLING)
+        return COHERENT;
+
+    /* Return FLUCTUATING to indicate that the cooling phase may be arriving.
+     * Return INCOHERENT to indicate that cooling phase has arrived.
+     * Return COHERENT to indicate that running phase can continue.
+     */
+    if (_data->_phase == FIFOPhase::RUNNING) {
+        return COHERENT; // Remain in the running phase for now
+    } else {
+        /* Return COHERENT to indicate that the cooling phase has arrived.
+         * Return INCOHERENT to indicate that the running phase is still ongoing.
+         * Return FLUCTUATING to indicate that the cooling phase may be arriving.
+         */
+        assert(_data->_phase == FIFOPhase::MAYBE_COOLING);
+        
+    }
 }
