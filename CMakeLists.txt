@@ -31,6 +31,14 @@ add_definitions ("${CMAKE_ADDITIONAL_DEFINITIONS}")
 
 include_directories ("${SPDLOG_INCLUDE_DIR}" "${Boost_INCLUDE_DIRS}" lib/ lib/json/include src/)
 
+add_subdirectory (lib/sol2)
+
+#get_cmake_property(_variableNames VARIABLES)
+#list (SORT _variableNames)
+#foreach (_variableName ${_variableNames})
+#    message(STATUS "${_variableName}=${${_variableName}}")
+#endforeach()
+
 add_subdirectory (src)
 
 #add_executable (sync src/functions.cpp src/sync.cpp src/utils.cpp src/config.h src/logging.cpp src/defines.cpp src/increase.cpp src/dynamic_defines.h src/active_promise.cpp src/promise_plus.cpp)
