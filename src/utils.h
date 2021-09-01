@@ -95,6 +95,14 @@ bool same_shape(const Matrix& lhs, const Matrix& rhs) {
     return ! memcmp(lhs_shape, rhs_shape, sizeof(typename Matrix::size_type) * dims);
 }
 
+template<typename T1, typename T2, typename Result>
+struct decay_enable_if {
+    typedef typename std::enable_if_t<std::is_same_v<std::decay_t<T1>, std::decay_t<T2>>, Result> type;
+};
+
+template<typename T1, typename T2, typename Result>
+using decay_enable_if_t =  typename decay_enable_if<T1, T2, Result>::type;
+
 std::ofstream open_out_file(const std::string& output_file);
 std::ifstream open_in_file(const std::string& input_file);
 

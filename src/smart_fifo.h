@@ -11,6 +11,8 @@
 #include <mutex>
 #include <utility>
 
+#include "utils.h"
+
 template<typename T>
 class FIFOChunk;
 
@@ -21,13 +23,13 @@ template<typename T>
 class SmartFIFOElements;
 
 template<typename T>
-class SmartFIFO;
+class SmartFIFOImpl;
 
 template<typename T>
 class FIFOChunk {
 public:
     friend SmartFIFOElements<T>;
-    friend SmartFIFO<T>;
+    friend SmartFIFOImpl<T>;
 
     FIFOChunk(size_t size) : _size(size), _elements(new T[size]) {
         _head = _elements;
@@ -53,7 +55,7 @@ public:
     }
 
     template<typename T2>
-    std::enable_if_t<std::is_same_v<std::decay_t<T>, std::decay_t<T2>>, FIFOChunk<T>*> push(T2&& element) {
+    decay_enable_if_t<T, T2, FIFOChunk<T>*> push(T2&& element) {
         if (_size == _nb_elements) {
             FIFOChunk<T>* chunk = new FIFOChunk<T>(_size);
             chunk->push(std::forward<T>(element));
@@ -97,9 +99,37 @@ public:
         return std::make_tuple(this, start, nb_available);
     }
 
+    void reset(size_t new_size) {
+        _size = new_size;
+        _elements = new T[_size];
+        _head = _elements;
+        _nb_elements = 0;
+        _nb_available__has_next.store(0, std::memory_order_relaxed);
+        _next.store(nullptr, std::memory_order_relaxed);
+        _references.store(0, std::memory_order_relaxed);
+    }
+
+    void dump() const {
+        std::cout << "Chunk " << this << std::endl;
+        std::cout << "\tElements: " << std::endl;
+        for (int i = 0; i < _nb_elements; ++i) {
+            std::cout << "\t\t" << _elements[i] << std::endl;
+        }
+        FIFOChunk<T>* next =  _next.load(std::memory_order_acquire);
+        std::cout << "\tNext: " << next << std::endl;
+        if (next) {
+            next->dump();
+        }
+    }
+
+    void set_next(FIFOChunk<T>* next) {
+        _next.store(next, std::memory_order_release);
+        _nb_available__has_next.fetch_add(1, std::memory_order_release);
+    }
+
 private:
     size_t _size;
-    T* const _elements = nullptr;
+    T* _elements = nullptr;
     T* _head;
     // How many elements have been pushed (indicates fullness).
     size_t _nb_elements = 0;
@@ -111,7 +141,8 @@ private:
     std::atomic<FIFOChunk<T>*> _next;
     std::atomic<unsigned int> _references;
 
-    FIFOChunk(FIFOChunk<T>* chunk) : _size(chunk->size), _elements(chunk->_elements) {
+private:
+    FIFOChunk(FIFOChunk<T>* chunk) : _size(chunk->_size), _elements(chunk->_elements) {
         _head = _elements;
         _nb_available__has_next.store(chunk->_nb_available__has_next.load(std::memory_order_relaxed), std::memory_order_relaxed);
         _next.store(chunk->_next.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -142,14 +173,18 @@ public:
         _current_index = 0;
     }
 
+    SmartFIFOElements(SmartFIFOElements<T> const&) = delete;
+    SmartFIFOElements& operator=(SmartFIFOElements<T> const&) = delete;
+
+    SmartFIFOElements(SmartFIFOElements<T>&&) = delete;
+    SmartFIFOElements& operator=(SmartFIFOElements<T>&&) = delete;
+
     ~SmartFIFOElements() {
-        for (FIFOChunkRange<T> const& range: _ranges) {
-            std::get<FIFOChunk<T>*>(range)->destroy();
-        }
+
     }
 
     T* next() const {
-        if (_current_range == _ranges.cend()) {
+        if (!has_next()) {
             return nullptr;
         } else {
             T* retval = std::get<T*>(*_current_range) + _current_index;
@@ -164,8 +199,32 @@ public:
         }
     }
 
+    bool has_next() const {
+        return !empty() && _current_range != _ranges.cend();
+    }
+
     bool empty() const {
         return _ranges.empty();
+    }
+
+    void set(Ranges<T>&& ranges) {
+        _ranges = std::move(ranges);
+        _current_range = _ranges.cbegin();
+        _current_index = 0;
+    }
+
+    void clear() {
+        for (FIFOChunkRange<T> const& range: _ranges) {
+            std::get<FIFOChunk<T>*>(range)->destroy();
+        }
+    }
+
+    size_t size() const {
+        size_t total = 0;
+        for (FIFOChunkRange<T> const& range: _ranges) {
+            total += std::get<size_t>(range);
+        }
+        return total;
     }
 
 private:
@@ -175,17 +234,82 @@ private:
 };
 
 template<typename T>
-class SmartFIFO {
+class SmartFIFOImpl {
 public:
+    template<typename T2>
+    class SmartFIFO {
+    public:
+        SmartFIFO(SmartFIFOImpl<T2>* fifo, size_t step) : _fifo(fifo), _step(step), _elements(Ranges<T2>()), _chunk(step) {
+            
+        }
 
-    SmartFIFO(size_t chunk_size) : _chunk_size(chunk_size) {
+        template<typename T3>
+        decay_enable_if_t<T2, T3, void> push(T3&& value) {
+            FIFOChunk<T2>* next = _chunk.push(std::forward<T3>(value));
+            if (next) {
+                _fifo->push_chunk(&_chunk);
+                _chunk.reset(_step);
+            }
+        }
+
+        decay_enable_if_t<T, T2, void> pop_copy(std::optional<T>& opt) {
+            if (!prepare_elements()) {
+                opt = std::nullopt;
+            } else {
+                opt = *_elements.next();
+            }
+        }
+
+        decay_enable_if_t<T, T2, void> pop(std::optional<T*>& opt) {
+            if (!prepare_elements()) {
+                opt = std::nullopt;
+            } else {
+                opt = _elements.next();
+            }
+        }
+
+        void terminate_producer() {
+            _fifo->terminate_producer();
+        }
+
+    private:
+        bool prepare_elements() {
+            if (_elements.empty()) {
+                _fifo->pop(_elements, _step);
+                
+                if (_elements.empty()) {
+                    return false;
+                }
+            } else if (!_elements.has_next()) {
+                _elements.clear();
+                _fifo->pop(_elements, _step);
+
+                if (_elements.empty()) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        
+        SmartFIFOImpl<T2>* _fifo;
+        size_t _step;
+        size_t _nb_elements = 0;
+        SmartFIFOElements<T2> _elements;
+        FIFOChunk<T2> _chunk;
+    };
+
+    typedef SmartFIFO<T> smart_fifo;
+
+public:
+    SmartFIFOImpl(size_t chunk_size) : _chunk_size(chunk_size) {
         _tail = new FIFOChunk<T>(chunk_size);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
         sem_init(&_sem, 0, 0);
     }
 
-    ~SmartFIFO() {
+    ~SmartFIFOImpl() {
         FIFOChunk<T>* next = _head;
         while (next) {
             FIFOChunk<T>* copy = next;
@@ -194,14 +318,18 @@ public:
         }
     }
 
-    SmartFIFO(SmartFIFO<T> const&) = delete;
-    SmartFIFO(SmartFIFO<T>&&) = delete;
+    SmartFIFOImpl(SmartFIFO<T> const&) = delete;
+    SmartFIFOImpl(SmartFIFO<T>&&) = delete;
 
-    SmartFIFO<T>& operator=(SmartFIFO<T> const&) = delete;
-    SmartFIFO<T>& operator=(SmartFIFO<T>&&) = delete;
+    SmartFIFOImpl<T>& operator=(SmartFIFO<T> const&) = delete;
+    SmartFIFOImpl<T>& operator=(SmartFIFO<T>&&) = delete;
+
+    SmartFIFO<T> get_proxy(size_t step) {
+        return SmartFIFO(this, step);
+    }
 
     template<typename T2>
-    std::enable_if_t<std::is_same_v<std::decay_t<T>, std::decay_t<T2>>, void> push(T2&& element) {
+    decay_enable_if_t<T, T2, void> push(T2&& element) {
         std::unique_lock<std::mutex> lck(_prod_mutex);
         FIFOChunk<T>* next = _tail->push(std::move(element));
         if (next) {
@@ -214,8 +342,8 @@ public:
             sem_post(&_sem);
         }
     }
-
-    void push(FIFOChunk<T>* chunk) {
+    
+    void push_chunk(FIFOChunk<T>* chunk) {
         std::unique_lock<std::mutex> lck(_prod_mutex);
         if (_tail->_next) {
             throw std::runtime_error("Inconsistency detected: _tail isn't the tail");
@@ -223,7 +351,12 @@ public:
 
         FIFOChunk<T>* next = new FIFOChunk<T>(chunk);
         _tail->freeze();
-        _tail->_next = next;
+        _tail->set_next(next);
+
+        while (FIFOChunk<T>* n = next->_next.load(std::memory_order_acquire)) {
+            next = n;
+        }
+        _tail = next;
 
         int waiting;
         sem_getvalue(&_sem, &waiting);
@@ -232,7 +365,7 @@ public:
         }
     }
 
-    SmartFIFOElements<T> pop(size_t nb_elements) {
+    void pop(SmartFIFOElements<T>& elements, size_t nb_elements) {
         std::unique_lock<std::mutex> lck(_cons_mutex);
         
         bool has_next;
@@ -249,7 +382,8 @@ public:
 
         if (terminated() && _head->empty(has_next)) {
             if (!has_next) {
-                return SmartFIFOElements<T>(Ranges<T>());
+                elements.set(Ranges<T>());
+                return;
             } else {
                 FIFOChunk<T>* next = _head->_next.load(std::memory_order_acquire);
                 _head->destroy();
@@ -268,7 +402,8 @@ public:
              */
             if (!done) {
                 if (_head == _tail) {
-                    return std::move(pairs);
+                    elements.set(std::move(pairs));
+                    return;
                 }
                 FIFOChunk<T>* next = _head->_next.load(std::memory_order_acquire);
                 _head->destroy();
@@ -276,7 +411,7 @@ public:
             }
         }
 
-        return SmartFIFOElements(std::move(pairs));
+        elements.set(std::move(pairs));
     }
 
     void add_producer() {
@@ -303,6 +438,10 @@ public:
         return nb_producers == nb_done;
     }
 
+    void dump() const {
+        _head->dump();
+    }
+
 private:
     // 32 high bits are producers done, 32 low bits are producers.
     std::atomic<size_t> _nb_producers__done;
@@ -313,3 +452,6 @@ private:
     size_t _chunk_size;
     sem_t _sem;
 };
+
+template<typename T>
+using SmartFIFO = typename SmartFIFOImpl<T>::smart_fifo;
