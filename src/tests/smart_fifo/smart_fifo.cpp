@@ -35,14 +35,15 @@ int main() {
     std::vector<std::thread> threads;
     std::vector<SmartFIFO<int>*> prods;
     std::vector<SmartFIFO<int>*> cons;
-    for (int i = 0; i < 14; ++i) {
+    int nb_threads = 1;
+    for (int i = 0; i < nb_threads; ++i) {
         fifo.add_producer();
         prods.push_back(new SmartFIFO<int>(&fifo, 20));
         cons.push_back(new SmartFIFO<int>(&fifo, 12));
     }
 
-    for (int i = 0; i < 14; ++i) {
-        threads.push_back(std::thread(producer, std::ref(*(prods[i])), i * (100000 / 14), (i + 1) * (100000 / 14)));
+    for (int i = 0; i < nb_threads; ++i) {
+        threads.push_back(std::thread(producer, std::ref(*(prods[i])), i * (100000 / nb_threads), (i + 1) * (100000 / nb_threads)));
         threads.push_back(std::thread(consumer, std::ref(*(cons[i])), i));
     }
 
