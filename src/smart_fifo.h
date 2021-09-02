@@ -245,6 +245,10 @@ public:
 
         template<typename T3>
         decay_enable_if_t<T2, T3, void> push(T3&& value) {
+            if (_over) {
+                throw std::runtime_error("Trying to push in terminated FIFO !");
+            }
+
             FIFOChunk<T2>* next = _chunk.push(std::forward<T3>(value));
             if (next) {
                 _fifo->push_chunk(&_chunk);
@@ -269,7 +273,14 @@ public:
         }
 
         void terminate_producer() {
+            _chunk.freeze();
+            _fifo->push_chunk(&_chunk);
             _fifo->terminate_producer();
+            _over = true;
+        }
+
+        size_t get_step() const {
+            return _step;
         }
 
     private:
@@ -297,6 +308,7 @@ public:
         size_t _nb_elements = 0;
         SmartFIFOElements<T2> _elements;
         FIFOChunk<T2> _chunk;
+        bool _over = false;
     };
 
     typedef SmartFIFO<T> smart_fifo;
@@ -416,6 +428,10 @@ public:
 
     void add_producer() {
         _nb_producers__done.fetch_add(1, std::memory_order_release);
+    }
+
+    void add_producers(unsigned long long n) {
+        _nb_producers__done.fetch_add(n, std::memory_order_release);
     }
 
     void terminate_producer() {
