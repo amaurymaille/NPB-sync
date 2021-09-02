@@ -23,6 +23,9 @@ template<typename T>
 class SmartFIFOElements;
 
 template<typename T>
+class SmartFIFO;
+
+template<typename T>
 class SmartFIFOImpl;
 
 template<typename T>
@@ -30,6 +33,7 @@ class FIFOChunk {
 public:
     friend SmartFIFOElements<T>;
     friend SmartFIFOImpl<T>;
+    friend SmartFIFO<T>;
 
     FIFOChunk(size_t size) : _size(size), _elements(new T[size]) {
         _head = _elements;
@@ -233,84 +237,90 @@ private:
     mutable size_t _current_index;
 };
 
+template<typename T2>
+class SmartFIFO {
+public:
+    SmartFIFO(SmartFIFOImpl<T2>* fifo, size_t step) : _fifo(fifo), _step(step), _elements(Ranges<T2>()), _chunk(step) {
+        
+    }
+
+    ~SmartFIFO() { gdb(); }
+
+    void gdb() { }
+
+    template<typename T3>
+    decay_enable_if_t<T2, T3, void> push(T3&& value) {
+        if (_over) {
+            throw std::runtime_error("Trying to push in terminated FIFO !");
+        }
+
+        FIFOChunk<T2>* next = _chunk.push(std::forward<T3>(value));
+        if (next) {
+            _fifo->push_chunk(&_chunk);
+            _chunk.reset(_step);
+        }
+    }
+
+    void pop_copy(std::optional<T2>& opt) {
+        if (!prepare_elements()) {
+            opt = std::nullopt;
+        } else {
+            opt = *_elements.next();
+        }
+    }
+
+    void pop(std::optional<T2*>& opt) {
+        if (!prepare_elements()) {
+            opt = std::nullopt;
+        } else {
+            opt = _elements.next();
+        }
+    }
+
+    void terminate_producer() {
+        _chunk.freeze();
+        _fifo->push_chunk(&_chunk);
+        _fifo->terminate_producer();
+        _chunk.reset(_step);
+        _over = true;
+    }
+
+    size_t get_step() const {
+        return _step;
+    }
+
+private:
+    bool prepare_elements() {
+        if (_elements.empty()) {
+            _fifo->pop(_elements, _step);
+            
+            if (_elements.empty()) {
+                return false;
+            }
+        } else if (!_elements.has_next()) {
+            _elements.clear();
+            _fifo->pop(_elements, _step);
+
+            if (_elements.empty()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+    
+    SmartFIFOImpl<T2>* _fifo;
+    size_t _step;
+    size_t _nb_elements = 0;
+    SmartFIFOElements<T2> _elements;
+    FIFOChunk<T2> _chunk;
+    bool _over = false;
+};
+
 template<typename T>
 class SmartFIFOImpl {
 public:
-    template<typename T2>
-    class SmartFIFO {
-    public:
-        SmartFIFO(SmartFIFOImpl<T2>* fifo, size_t step) : _fifo(fifo), _step(step), _elements(Ranges<T2>()), _chunk(step) {
-            
-        }
-
-        template<typename T3>
-        decay_enable_if_t<T2, T3, void> push(T3&& value) {
-            if (_over) {
-                throw std::runtime_error("Trying to push in terminated FIFO !");
-            }
-
-            FIFOChunk<T2>* next = _chunk.push(std::forward<T3>(value));
-            if (next) {
-                _fifo->push_chunk(&_chunk);
-                _chunk.reset(_step);
-            }
-        }
-
-        decay_enable_if_t<T, T2, void> pop_copy(std::optional<T>& opt) {
-            if (!prepare_elements()) {
-                opt = std::nullopt;
-            } else {
-                opt = *_elements.next();
-            }
-        }
-
-        decay_enable_if_t<T, T2, void> pop(std::optional<T*>& opt) {
-            if (!prepare_elements()) {
-                opt = std::nullopt;
-            } else {
-                opt = _elements.next();
-            }
-        }
-
-        void terminate_producer() {
-            _chunk.freeze();
-            _fifo->push_chunk(&_chunk);
-            _fifo->terminate_producer();
-            _over = true;
-        }
-
-        size_t get_step() const {
-            return _step;
-        }
-
-    private:
-        bool prepare_elements() {
-            if (_elements.empty()) {
-                _fifo->pop(_elements, _step);
-                
-                if (_elements.empty()) {
-                    return false;
-                }
-            } else if (!_elements.has_next()) {
-                _elements.clear();
-                _fifo->pop(_elements, _step);
-
-                if (_elements.empty()) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        
-        SmartFIFOImpl<T2>* _fifo;
-        size_t _step;
-        size_t _nb_elements = 0;
-        SmartFIFOElements<T2> _elements;
-        FIFOChunk<T2> _chunk;
-        bool _over = false;
-    };
-
+    
     typedef SmartFIFO<T> smart_fifo;
 
 public:
@@ -325,7 +335,7 @@ public:
         FIFOChunk<T>* next = _head;
         while (next) {
             FIFOChunk<T>* copy = next;
-            next = copy->_next;
+            next = copy->_next.load(std::memory_order_acquire);
             copy->destroy();
         }
     }
@@ -403,7 +413,7 @@ public:
             }
         }
 
-        Ranges<T> pairs(nb_elements / _head->_size);
+        Ranges<T> pairs; // (nb_elements / _head->_size);
         bool done = false;
 
         while (nb_elements != 0 && !done) {
@@ -469,5 +479,5 @@ private:
     sem_t _sem;
 };
 
-template<typename T>
-using SmartFIFO = typename SmartFIFOImpl<T>::smart_fifo;
+/* template<typename T>
+using SmartFIFO = typename SmartFIFOImpl<T>::smart_fifo; */
