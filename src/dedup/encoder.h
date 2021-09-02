@@ -3,7 +3,8 @@
 
 struct DedupData;
 
-unsigned long long Encode(DedupData&);
+unsigned long long EncodeMutex(DedupData&);
+unsigned long long EncodeSmart(DedupData&);
 unsigned long long EncodeDefault(DedupData&);
 
 #endif /* !_ENCODER_H_ */

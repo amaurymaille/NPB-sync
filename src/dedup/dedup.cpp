@@ -87,8 +87,8 @@ void start_sol(const char* file) {
     lua["Reconfigurations"] = reconfigurations;    
 
     sol::usertype<DedupData> dedup_data_type = lua.new_usertype<DedupData>("DedupData");
-    dedup_data_type["input_filename"] = sol::property(&DedupData::get_input_filename, &DedupData::set_input_filename);
-    dedup_data_type["output_filename"] = sol::property(&DedupData::get_output_filename, &DedupData::set_output_filename);
+    dedup_data_type["input_filename"] = &DedupData::_input_filename;
+    dedup_data_type["output_filename"] = &DedupData::_output_filename; 
     dedup_data_type["nb_threads"] = &DedupData::_nb_threads;
     dedup_data_type["preloading"] = &DedupData::_preloading;
     dedup_data_type["add_data"] = &DedupData::push_fifo_data;
@@ -96,6 +96,9 @@ void start_sol(const char* file) {
     dedup_data_type["algorithm"] = &DedupData::_algorithm;
     dedup_data_type["compression"] = &DedupData::_compression;
     dedup_data_type["dump"] = &DedupData::dump;
+    dedup_data_type["run_orig"] = &DedupData::run_orig;
+    dedup_data_type["run_mutex"] = &DedupData::run_mutex;
+    dedup_data_type["run_smart"] = &DedupData::run_smart;
 
     sol::usertype<FIFOData> fifo_data_type = lua.new_usertype<FIFOData>("FIFOData");
     fifo_data_type["min"] = &FIFOData::_min; 
