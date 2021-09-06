@@ -6,6 +6,8 @@
 #include <fstream>
 #include <sstream>
 
+#include <boost/program_options.hpp>
+
 #include <nlohmann/json.hpp>
 
 #include <sol/sol.hpp>
@@ -34,6 +36,7 @@
 #include <hooks.h>
 #endif //ENABLE_PARSEC_HOOKS
 
+namespace po = boost::program_options;
 using json = nlohmann::json;
 
 config_t * conf;
@@ -58,9 +61,86 @@ usage(char* prog)
 
 std::chrono::time_point<steady_clock> Globals::start_time;
 
-void start_sol(const char* file) {
+struct CLIArgs {
+    std::string _lua_file;
+    std::string _lua_output_file;
+    char _lua_output_file_mode;
+    bool _orig;
+    bool _mutex;
+    bool _smart;
+};
+
+void parse_args(int argc, char** argv, CLIArgs& args) {
+    po::options_description options("All options");
+    options.add_options()
+        ("help,h", "Display this help and exit")
+        ("file,f", po::value<std::string>(), "Name of the Lua file to run")
+        ("orig,o",  "Run the original algorithm")
+        ("mutex,m", "Run the mutex FIFO algorithm")
+        ("smart,s", "Run the smart FIFO algorithm")
+        ("lua-output-file", po::value<std::string>(), "Output file in which the Lua script can write its information")
+        ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')");
+
+    po::variables_map vm;
+    po::command_line_parser parser(argc, argv);
+    parser.options(options);
+    po::store(parser.run(), vm);
+    po::notify(vm);
+
+    if (vm.count("help")) {
+        std::cout << options << std::endl;
+        exit(0);
+    }
+
+    if (!vm.count("file")) {
+        std::cout << "-f or --file required" << std::endl;
+        exit(1);
+    }
+
+    args._lua_file = vm["file"].as<std::string>();
+    
+    if (vm.count("orig")) {
+        args._orig = true;
+    } else {
+        args._orig = false;
+    }
+
+    if (vm.count("mutex")) {
+        args._mutex = true;
+    } else {
+        args._mutex = false;
+    }
+
+    if (vm.count("smart")) {
+        args._smart = true;
+    } else {
+        args._smart = false;
+    }
+
+    if (vm.count("lua-output-file")) {
+        args._lua_output_file = vm["lua-output-file"].as<std::string>();
+        if (!vm.count("lua-output-file-mode")) {
+            std::cerr << "[WARN] No mode specified for output file, will use 'a' by security" << std::endl;
+            args._lua_output_file_mode = 'a';
+        } else {
+            char mode = vm["lua-output-file-mode"].as<char>();
+            if (mode != 'a' && mode != 'w') {
+                std::cerr << "[WARN] Unrecognized mode '" << mode << " 'for output filen will use 'a' by security" << std::endl;
+                args._lua_output_file_mode = 'a';
+            } else {
+                args._lua_output_file_mode = mode;
+            }
+        }
+    } else {
+        std::cerr << "[WARN] No output file specified, will use /dev/null" << std::endl;
+        args._lua_output_file = "/dev/null";
+        args._lua_output_file_mode = 'w';
+    }
+}
+
+void start_sol(CLIArgs const& args) {
     sol::state lua;
-    lua.open_libraries(sol::lib::base);
+    lua.open_libraries(sol::lib::base, sol::lib::io);
 
     sol::table layers = lua.create_table_with();
     layers["FRAGMENT"] = Layers::FRAGMENT;
@@ -84,7 +164,18 @@ void start_sol(const char* file) {
     sol::table reconfigurations = lua.create_table_with();
     reconfigurations["PHASE"] = FIFOReconfigure::PHASE;
     reconfigurations["GRADIENT"] = FIFOReconfigure::GRADIENT;
-    lua["Reconfigurations"] = reconfigurations;    
+    lua["Reconfigurations"] = reconfigurations; 
+
+    sol::table modes = lua.create_table_with();
+    modes["orig"] = args._orig;
+    modes["mutex"] = args._mutex;
+    modes["smart"] = args._smart;
+    lua["Modes"] = modes;
+
+    sol::table debug_output = lua.create_table_with();
+    debug_output["file"] = args._lua_output_file;
+    debug_output["mode"] = args._lua_output_file_mode;
+    lua["Output"] = debug_output;
 
     sol::usertype<DedupData> dedup_data_type = lua.new_usertype<DedupData>("DedupData");
     dedup_data_type["input_filename"] = &DedupData::_input_filename;
@@ -113,7 +204,7 @@ void start_sol(const char* file) {
     fifo_data_type["reconfigure"] = &FIFOData::_reconfigure;
     fifo_data_type["dump"] = &FIFOData::dump;
 
-    lua.script_file(file);
+    lua.script_file(args._lua_file);
 }
 
 /*--------------------------------------------------------------------------*/
@@ -135,10 +226,9 @@ int main(int argc, char** argv) {
   //We force the sha1 sum to be integer-aligned, check that the length of a sha1 sum is a multiple of unsigned int
   assert(SHA1_LEN % sizeof(unsigned int) == 0);
 
-  if (argc != 2) {
-    printf("Usage: ./dedup <input_lua_file>\n");
-    exit(-1);
-  }
+
+  CLIArgs args;
+  parse_args(argc, argv, args);
 
   /* lua_State* L = init_lua();
   bool result = luaL_dofile(L, argv[1]);
@@ -148,7 +238,7 @@ int main(int argc, char** argv) {
     exit(-1);
   } */
 
-  start_sol(argv[1]);
+  start_sol(args);
 
   /*conf = (config_t *) malloc(sizeof(config_t));
   if (conf == NULL) {

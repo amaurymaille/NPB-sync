@@ -112,7 +112,7 @@ void DedupData::validate() {
     require_prod_cons(Layers::FRAGMENT, Layers::REFINE);
     require_prod_cons(Layers::REFINE, Layers::DEDUPLICATE);
     require_prod_cons(Layers::DEDUPLICATE, Layers::COMPRESS);
-    require_prod_cons(Layers::COMPRESS, Layers::REORDER);
+    require_prod(Layers::COMPRESS, Layers::REORDER);
     require_prod_cons(Layers::DEDUPLICATE, Layers::REORDER);
 
     for (auto& p1: _fifo_data) {
