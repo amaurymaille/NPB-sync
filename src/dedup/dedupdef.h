@@ -5,8 +5,13 @@
 #include <stdint.h>
 #include <assert.h>
 
+#include <cstring>
+
 #include <chrono>
 #include <vector>
+
+#include <map>
+#include <mutex>
 
 #include "fifo_plus.h"
 #include "config.h"
@@ -186,7 +191,36 @@ typedef struct _chunk_t {
   int isLastL2Chunk;
 #endif //ENABLE_PTHREADS
 } chunk_t;
+ 
+static std::mutex _hashmutex;
+static std::map<chunk_t*, void*> _chunks_dumps;
 
+static inline void dump_chunk(chunk_t* chunk) {
+    return;
+    void* buffer = malloc(sizeof(chunk_t));
+    memcpy(buffer, chunk, sizeof(chunk_t));
+    std::unique_lock<std::mutex> lck(_hashmutex);
+    _chunks_dumps[chunk] = buffer;
+}
+
+static inline void check_chunk(chunk_t* chunk) {
+    return;
+    _hashmutex.lock();
+    void* buffer = _chunks_dumps[chunk];
+    _hashmutex.unlock();
+
+    for (char* i = (char*)buffer, *j = (char*)chunk; i != (char*)(buffer) + sizeof(chunk_t); ++i, ++j) {
+        if (*i != *j) {
+            if (j == (char*)&(chunk->header.state)) { 
+                printf("State discrepancy: expected %d, got %d\n", ((chunk_t*)buffer)->header.state, chunk->header.state);
+            } else if (j == (char*)&(chunk->compressed_data.mcb)) {
+                printf("MCB discrepancy: expected %p, got %p\n", ((chunk_t*)buffer)->compressed_data.mcb, chunk->compressed_data.mcb);
+            } else {
+                throw std::runtime_error("Representation of chunk has changed.");
+            }
+        }
+    }
+}
 
 #define LEN_FILENAME 256
 

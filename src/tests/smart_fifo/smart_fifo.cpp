@@ -18,14 +18,14 @@ void consumer(SmartFIFO<int>& fifo, int id) {
     printf("Consumer %d start\n", id);
     std::vector<int> values;
     while (true) {
-        std::optional<int*> value;
-        fifo.pop(value);
+        std::optional<int> value;
+        fifo.pop_copy(value);
         if (!value) {
             break;
         }
 
-        printf("Consumer %d read %d\n", id, **value);
-        values.push_back(**value);
+        printf("Consumer %d read %d\n", id, *value);
+        values.push_back(*value);
     }
     printf("Consumer %d done\n", id);
 }
@@ -38,8 +38,8 @@ int main() {
     int nb_threads = 1;
     for (int i = 0; i < nb_threads; ++i) {
         fifo.add_producer();
-        prods.push_back(new SmartFIFO<int>(&fifo, 20));
-        cons.push_back(new SmartFIFO<int>(&fifo, 12));
+        prods.push_back(new SmartFIFO<int>(&fifo, 1));
+        cons.push_back(new SmartFIFO<int>(&fifo, 25));
     }
 
     for (int i = 0; i < nb_threads; ++i) {

@@ -3033,6 +3033,7 @@ unsigned long long EncodeDefault(DedupData& data) {
 // ============================================================================
 
 void FragmentSmart(thread_args_smart const& args) {
+    pthread_barrier_wait(args._barrier);
     size_t preloading_buffer_seek = 0;
     int qid = 0;
     int fd = args.fd;
@@ -3145,6 +3146,8 @@ void FragmentSmart(thread_args_smart const& args) {
         //Check whether any new data was read in, enqueue last chunk if not
         if(bytes_read == 0) {
             //put it into send buffer
+            //printf ("FragmentSmart: pushing chunk %p\n", chunk);
+            dump_chunk(chunk);
             args._output_fifos[qid]->push(chunk);
             ++count;
             //NOTE: No need to empty a full send_buf, we will break now and pass everything on to the queue
@@ -3176,6 +3179,8 @@ void FragmentSmart(thread_args_smart const& args) {
                     anchorcount++;
 
                     //put it into send buffer
+                    //printf("FragmentSmart: pushing chunk %p\n", chunk);
+                    dump_chunk(chunk);
                     args._output_fifos[qid]->push(chunk);
                     ++count;
 
@@ -3211,10 +3216,11 @@ void FragmentSmart(thread_args_smart const& args) {
     free(rabintab);
     free(rabinwintab);
 
-    printf("Fragment finished. Inserted %d values\n", count);
+    // printf("Fragment finished. Inserted %d values\n", count);
 }
 
 void RefineSmart(thread_args_smart const& args) {
+    pthread_barrier_wait(args._barrier);
     int r;
     int count = 0;
 
@@ -3238,6 +3244,8 @@ void RefineSmart(thread_args_smart const& args) {
         }
 
         chunk = *value;
+        //printf("RefineSmart: poped chunk %p\n", chunk);
+        check_chunk(chunk);
 
         //get one item
         rabininit(rf_win, rabintab, rabinwintab);
@@ -3265,6 +3273,8 @@ void RefineSmart(thread_args_smart const& args) {
                 chcount++;
 
                 //put it into send buffer
+                //printf("RefineSmart: pushing chunk %p\n", chunk);
+                dump_chunk(chunk);
                 args._output_fifos[0]->push(chunk);
                 ++count;
 
@@ -3279,6 +3289,8 @@ void RefineSmart(thread_args_smart const& args) {
                 chcount++;
 
                 //put it into send buffer
+                //printf("RefineSmart: pushing chunk %p\n", chunk);
+                dump_chunk(chunk);
                 args._output_fifos[0]->push(chunk);
                 ++count;
 
@@ -3294,10 +3306,11 @@ void RefineSmart(thread_args_smart const& args) {
 
     //shutdown
     args._output_fifos[0]->terminate_producer();
-    printf("FragmentRefine finished, inserted %d values\n", count);
+    // printf("FragmentRefine finished, inserted %d values\n", count);
 }
 
 void DeduplicateSmart(thread_args_smart const& args) {
+    pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
     int compress_count = 0, reorder_count = 0;
 
@@ -3312,15 +3325,21 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
         //get one chunk
         chunk = *value;
+        //printf("DeduplicateSmart: poped chunk %p\n", chunk);
+        check_chunk(chunk);
 
         //Do the processing
         int isDuplicate = sub_Deduplicate(chunk);
 
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
+            //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
+            dump_chunk(chunk);
             args._output_fifos[0]->push(chunk);
             ++compress_count;
         } else {
+            //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
+            dump_chunk(chunk);
             args._extra_output_fifo->push(chunk);
             ++reorder_count;
         }
@@ -3328,10 +3347,11 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
     args._output_fifos[0]->terminate_producer();
     args._extra_output_fifo->terminate_producer();
-    printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
+    // printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
 }
 
 void CompressSmart(thread_args_smart const& args) {
+    pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
     int count = 0;
 
@@ -3345,9 +3365,13 @@ void CompressSmart(thread_args_smart const& args) {
 
         //fetch one item
         chunk = *value;
+        //printf("CompressSmart: poped chunk %p\n", chunk);
+        check_chunk(chunk);
 
         sub_Compress(chunk);
 
+        //printf("CompressSmart: pushed chunk %p\n", chunk);
+        dump_chunk(chunk);
         args._output_fifos[0]->push(chunk);
         ++count;
 
@@ -3355,10 +3379,11 @@ void CompressSmart(thread_args_smart const& args) {
     }
 
     args._output_fifos[0]->terminate_producer();
-    printf("Compress finished, produced %d values\n", count);
+    // printf("Compress finished, produced %d values\n", count);
 }
 
 void ReorderSmart(thread_args_smart const& args) {
+    pthread_barrier_wait(args._barrier);
     int fd = 0;
 
     chunk_t *chunk;
@@ -3396,6 +3421,8 @@ void ReorderSmart(thread_args_smart const& args) {
         }
 
         chunk = *value;
+        //printf("ReorderSmart: poped chunk %p\n", chunk);
+        check_chunk(chunk);
         if (chunk == NULL) break;
 
         //Double size of sequence number array if necessary
@@ -3460,6 +3487,10 @@ void ReorderSmart(thread_args_smart const& args) {
         } while(chunk != NULL);
     }
 
+    for (SmartFIFO<chunk_t*>* fifo: args._input_fifos) {
+        fifo->dump();
+    }
+
     //flush the blocks left in the cache to file
     pos = TreeFindMin(T);
     while(pos !=NULL) {
@@ -3475,10 +3506,12 @@ void ReorderSmart(thread_args_smart const& args) {
                 }
             } else {
                 //level 2 sequence number does not match
+                throw std::runtime_error("L2 sequencen number mismatch");
                 EXIT_TRACE("L2 sequence number mismatch.\n");
             }
         } else {
             //level 1 sequence number does not match
+            throw std::runtime_error("L1 sequence number mismatch");
             EXIT_TRACE("L1 sequence number mismatch.\n");
         }
         write_chunk_to_file(fd, chunk);
