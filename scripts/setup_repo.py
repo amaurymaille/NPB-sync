@@ -28,7 +28,7 @@ def download_libs():
 
     os.chdir(here)
 
-    """lua_base = "lua-5.4.3"
+    lua_base = "lua-5.4.3"
     if not os.path.isdir(lua_base):
         subprocess.Popen(["wget", "http://www.lua.org/ftp/" + lua_base + ".tar.gz"]).wait()
         subprocess.Popen(["tar", "xvzf", lua_base + ".tar.gz"]).wait()
@@ -39,7 +39,7 @@ def download_libs():
         os.mkdir("build")
         subprocess.Popen(["make"]).wait()
         subprocess.Popen(["make", "install"]).wait()
-        subprocess.Popen(["sed", "-i.orig", "-e", "s/-- LUA_INCLUDE_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/src\"/", "-e", "s/-- LUA_LIB_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/build\/lib\"/", here + "/../cmake/FindLua.cmake"]).wait()"""
+        subprocess.Popen(["sed", "-i.orig", "-e", "s/-- LUA_INCLUDE_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/src\"/", "-e", "s/-- LUA_LIB_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/build\/lib\"/", here + "/../cmake/FindLua.cmake"]).wait()
 
     if not os.path.isdir("sol2"):
         subprocess.Popen(["git", "clone", "git@github.com:ThePhD/sol2.git"].wait())
