@@ -3409,11 +3409,13 @@ void ReorderSmart(thread_args_smart const& args) {
     memset(chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
 
     fd = create_output_file(_g_data->_output_filename.c_str());
+    int qid = 0;
 
     while(1) {
         std::optional<chunk_t*> value;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
-            args._input_fifos[i]->pop_copy(value);
+            args._input_fifos[qid]->pop_copy(value);
+            qid = (qid + 1) % args._input_fifos.size();
             if (value) {
                 break;
             }
