@@ -53,7 +53,7 @@ public:
     FIFOChunk<T>& operator=(FIFOChunk<T>&&) = delete;
 
     bool empty(bool& has_next) const {
-        std::unique_lock<std::mutex> lck(_m);
+        // std::unique_lock<std::mutex> lck(_m);
         size_t data = _nb_available__has_next.load(std::memory_order_acquire);
         has_next = (data & 1) != 0;
         return data >> 1 == 0;
@@ -61,11 +61,6 @@ public:
 
     template<typename T2>
     decay_enable_if_t<T, T2, FIFOChunk<T>*> push(T2&& element) {
-        if constexpr (std::is_pointer_v<std::decay_t<T2>>) {
-            if (element == nullptr) {
-                throw std::runtime_error("Pushing nullptr in FIFO");
-            }
-        }
         std::unique_lock<std::mutex> lck(_m);
         if (_size == _nb_elements) {
             FIFOChunk<T>* chunk = new FIFOChunk<T>(_size);
@@ -87,15 +82,16 @@ public:
      * request.
      */
     FIFOChunkRange<T> pop(size_t& nb_elements, bool& over) {
-        std::unique_lock<std::mutex> lck(_m);
-        _references.fetch_add(1, std::memory_order_relaxed);
+        // std::unique_lock<std::mutex> lck(_m);
+        _references.fetch_add(1, std::memory_order_release);
         size_t data = _nb_available__has_next.load(std::memory_order_acquire);
         size_t nb_available = data >> 1;
 
         bool has_next = (data & 1) != 0;
         if (nb_available == 0) {
             if (!has_next) {
-                throw std::runtime_error("Halp 2");
+                over = true;
+                // throw std::runtime_error("Halp 2");
             }
             return std::make_tuple(this, nullptr, 0);
         }
@@ -107,14 +103,13 @@ public:
         }
 
         _head += nb_available;
-
-        nb_elements -= nb_available;
-
         _nb_available__has_next.fetch_sub(nb_available << 1, std::memory_order_release);
 
-        if (nb_elements == 0 || (nb_available < nb_elements && has_next)) {
+        if (nb_elements == nb_available || (nb_available < nb_elements && !has_next)) {
             over = true;
         }
+
+        nb_elements -= nb_available;
 
         return std::make_tuple(this, start, nb_available);
     }
@@ -126,7 +121,7 @@ public:
         _nb_elements = 0;
         _nb_available__has_next.store(0, std::memory_order_relaxed);
         _next.store(nullptr, std::memory_order_relaxed);
-        _references.store(0, std::memory_order_relaxed);
+        _references.store(1, std::memory_order_relaxed);
     }
 
     void dump() const {
@@ -161,7 +156,7 @@ private:
     // The maximum amount of elements that can be inserted.
     std::atomic<FIFOChunk<T>*> _next;
     std::atomic<unsigned int> _references;
-    mutable std::mutex _m;
+    std::mutex _m;
 
 private:
     FIFOChunk(FIFOChunk<T>* chunk) : _size(chunk->_size), _elements(chunk->_elements) {
@@ -173,15 +168,15 @@ private:
 
     void destroy() {
         std::unique_lock<std::mutex> lck(_m);
-        _references.fetch_sub(1, std::memory_order_relaxed);
+        _references.fetch_sub(1, std::memory_order_release);
 
-        if (_references.load(std::memory_order_relaxed) == 0 && _nb_available__has_next.load(std::memory_order_acquire) >> 1 == 0) {
-            delete this;
+        if (_references.load(std::memory_order_acquire) == 0 && _nb_available__has_next.load(std::memory_order_acquire) >> 1 == 0) {
+            // delete this;
         }
     }
 
     void freeze() {
-        std::unique_lock<std::mutex> lck(_m);
+        // std::unique_lock<std::mutex> lck(_m);
         _size = _nb_elements;
     }
 };
@@ -218,7 +213,7 @@ public:
                 ++_current_range;
                 _current_index = 0;
 
-                while (std::get<size_t>(*_current_range) == 0 && _current_range != _ranges.cend()) {
+                while (_current_range != _ranges.cend() && std::get<size_t>(*_current_range) == 0) {
                     ++_current_range;
                 }
             }
@@ -287,11 +282,11 @@ public:
         } else {
             T2* next = _elements.next();
             opt = *next;
-            if constexpr (std::is_pointer_v<std::decay_t<T2>>) {
+            /* if constexpr (std::is_pointer_v<std::decay_t<T2>>) {
                 if (*opt == nullptr) {
                     throw std::runtime_error("Halp");
                 }
-            }
+            } */
         }
     }
 
@@ -355,7 +350,7 @@ public:
 
 public:
     SmartFIFOImpl(size_t chunk_size) : _chunk_size(chunk_size) {
-        _tail = new FIFOChunk<T>(chunk_size);
+        _tail.store(new FIFOChunk<T>(chunk_size), std::memory_order_relaxed);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
         sem_init(&_sem, 0, 0);
@@ -382,11 +377,11 @@ public:
 
     template<typename T2>
     decay_enable_if_t<T, T2, void> push(T2&& element) {
-        throw std::runtime_error("");
         std::unique_lock<std::mutex> lck(_prod_mutex);
-        FIFOChunk<T>* next = _tail->push(std::move(element));
+        FIFOChunk<T>* tail = _tail.load(std::memory_order_relaxed);
+        FIFOChunk<T>* next = tail->push(std::move(element));
         if (next) {
-            _tail = next;
+            _tail.store(next, std::memory_order_release);
         }
 
         int waiting;
@@ -397,32 +392,33 @@ public:
     }
     
     void push_chunk(FIFOChunk<T>* chunk) {
-        // std::unique_lock<std::mutex> lck(_prod_mutex);
-        std::unique_lock<std::mutex> lck(_m);
-        if (_tail->_next) {
+        std::unique_lock<std::mutex> lck(_prod_mutex);
+        FIFOChunk<T>* tail = _tail.load(std::memory_order_relaxed);
+        // std::unique_lock<std::mutex> lck(_m);
+        if (tail->_next) {
             throw std::runtime_error("Inconsistency detected: _tail isn't the tail");
         }
 
         FIFOChunk<T>* next = new FIFOChunk<T>(chunk);
-        _tail->freeze();
-        _tail->set_next(next);
+        tail->freeze();
+        tail->set_next(next);
 
         while (FIFOChunk<T>* n = next->_next.load(std::memory_order_acquire)) {
             next = n;
         }
-        _tail = next;
+        _tail.store(next, std::memory_order_release);
 
-        /* int waiting;
+        int waiting;
         sem_getvalue(&_sem, &waiting);
         if (waiting <= 0) {
             sem_post(&_sem);
-        } */
-        _cv.notify_all();
+        }
+        // _cv.notify_all();
     }
 
     void pop(SmartFIFOElements<T>& elements, size_t nb_elements) {
-        // std::unique_lock<std::mutex> lck(_cons_mutex);
-        std::unique_lock<std::mutex> lck(_m);
+        std::unique_lock<std::mutex> lck(_cons_mutex);
+        // std::unique_lock<std::mutex> lck(_m);
         
         bool has_next;
         while (_head->empty(has_next) && !terminated()) {
@@ -431,8 +427,8 @@ public:
                 _head->destroy();
                 _head = next;
             } else {
-                // sem_wait(&_sem);
-                _cv.wait(lck);
+                sem_wait(&_sem);
+                // _cv.wait(lck);
             }
         }
 
@@ -457,13 +453,18 @@ public:
              * completely empty, the next push will take care of everything.
              */
             if (!done) {
-                if (_head == _tail) {
+                if (_head == _tail.load(std::memory_order_acquire)) {
                     elements.set(std::move(pairs));
                     return;
                 }
                 FIFOChunk<T>* next = _head->_next.load(std::memory_order_acquire);
+                if (next == nullptr) {
+                    throw std::runtime_error("Oups ?");
+                }
                 _head->destroy();
                 _head = next;
+
+                
             }
         }
 
@@ -479,7 +480,7 @@ public:
     }
 
     void terminate_producer() {
-        std::unique_lock<std::mutex> lck(_m);
+        // std::unique_lock<std::mutex> lck(_m);
         _nb_producers__done.fetch_add(1ULL << 32, std::memory_order_release);
 
         if (terminated()) {
@@ -488,8 +489,8 @@ public:
              * later will see the FIFO as terminated and won't wait on the 
              * semaphore.
              */
-            // sem_post(&_sem);
-            _cv.notify_all();
+             sem_post(&_sem);
+            // _cv.notify_all();
         }
     }
 
@@ -508,12 +509,12 @@ private:
     // 32 high bits are producers done, 32 low bits are producers.
     std::atomic<size_t> _nb_producers__done;
     FIFOChunk<T>* _head = nullptr;
-    FIFOChunk<T>* _tail;
+    std::atomic<FIFOChunk<T>*> _tail;
     std::mutex _prod_mutex;
     std::mutex _cons_mutex;
     size_t _chunk_size;
-    std::mutex _m;
-    std::condition_variable _cv;
+    // std::mutex _m;
+    // std::condition_variable _cv;
     sem_t _sem;
 };
 
