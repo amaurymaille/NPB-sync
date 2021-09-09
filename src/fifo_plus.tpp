@@ -4,11 +4,19 @@
 #include <iostream>
 #include <sstream>
 
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
 template<typename T>
-FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size, std::string&& description, std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time) :
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size, std::string&& description, std::chrono::time_point<std::chrono::steady_clock> const& start_time) :
     _producer_events(history_size), _reconfigure_method(reconfiguration_policy), _consumer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers), _description(std::move(description)), _start_time(start_time) {
 
 }
+#else
+template<typename T>
+FIFOPlus<T>::FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy, ThreadIdentifier* identifier, size_t n_producers, size_t n_consumers, size_t history_size, std::string&& description) :
+    _producer_events(history_size), _reconfigure_method(reconfiguration_policy), _consumer_events(history_size), _data(identifier, n_producers + n_consumers), _pop_policy(policy), _n_producers(n_producers), _description(std::move(description)) {
+
+}
+#endif
 
 template<typename T>
 // template<template<typename> typename Container>
@@ -188,9 +196,9 @@ void FIFOPlus<T>::_transfer(bool check_empty) {
     std::queue<T>& fifo = _data->_inner_buffer;
     bool push = false;
 
-    if (_start_time) {
-        add_timestamp_data(Actions::PUSH, fifo.size());
-    }
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
+    add_timestamp_data(Actions::PUSH, fifo.size());
+#endif
 
     while (!fifo.empty()) {
         _buffer.push(std::move(fifo.front()));
@@ -207,9 +215,9 @@ void FIFOPlus<T>::_reverse_transfer(bool check_empty) {
     std::queue<T>& fifo = _data->_inner_buffer;
     unsigned int n = _data->_n;
 
-    if (_start_time) {
-        add_timestamp_data(Actions::POP, std::min((size_t)n, _buffer.size()));
-    }
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
+    add_timestamp_data(Actions::POP, std::min((size_t)n, _buffer.size()));
+#endif
 
     for (int i = 0; i < n && !_buffer.empty(); ++i) {
         fifo.push(_buffer.front());

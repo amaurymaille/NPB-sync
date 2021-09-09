@@ -265,10 +265,12 @@ typedef struct {
 extern config_t* conf;
 extern struct hashtable* cache;
 
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
 namespace Globals {
 extern std::chrono::time_point<steady_clock> start_time;
 extern std::vector<FIFOPlus<chunk_t*>*> fifos;
 }
+#endif
 
 
 #endif //_DEDUPDEF_H_

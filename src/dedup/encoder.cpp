@@ -77,7 +77,9 @@
 //Hash table data structure & utility functions
 //struct hashtable *cache;
 
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
 std::vector<FIFOPlus<chunk_t*>*> Globals::fifos;
+#endif
 
 static DedupData* _g_data;
 
@@ -1777,12 +1779,13 @@ unsigned long long EncodeMutex(DedupData& data) {
     auto allocate = [&](void* ptr, FIFOReconfigure reconfiguration_policy, unsigned int nb_producers, unsigned int nb_consumers, unsigned int history_size, std::string&& description) -> void {
         PThreadThreadIdentifier* identifier = new PThreadThreadIdentifier;
         identifiers[ptr] = identifier;
-        std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time;
-        if (data._debug_timestamps) {
-            start_time = Globals::start_time;
-        }
-        new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, reconfiguration_policy, identifier, nb_producers, nb_consumers, history_size, std::move(description), start_time);
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
+        new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, reconfiguration_policy, identifier, nb_producers, nb_consumers, history_size, std::move(description), Globals::start_time);
         Globals::fifos.push_back((FIFOPlus<chunk_t*>*)ptr);
+#else
+
+        new(ptr) FIFOPlus<chunk_t*>(FIFOPlusPopPolicy::POP_WAIT, reconfiguration_policy, identifier, nb_producers, nb_consumers, history_size, std::move(description));
+#endif
     };
 
     for (int i = 0; i < nqueues; ++i) {

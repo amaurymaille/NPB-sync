@@ -94,9 +94,15 @@ private:
     };
 
 public:
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
     FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy,
              ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size,
-             std::string&& description, std::optional<std::chrono::time_point<std::chrono::steady_clock>> start_time);
+             std::string&& description, std::chrono::time_point<std::chrono::steady_clock> const& start_time);
+#else
+    FIFOPlus(FIFOPlusPopPolicy policy, FIFOReconfigure reconfiguration_policy,
+             ThreadIdentifier*, size_t n_producers, size_t n_consumers, size_t history_size,
+             std::string&& description);
+#endif
 
     // Add the content of elements to the FIFO. It may not be available immediately.
     // template<template<typename> typename Container>
@@ -247,9 +253,11 @@ private:
     
     std::map<Actions, std::map<unsigned long long, size_t>> _timestamps_data;
 
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
     void add_timestamp_data(Actions action, size_t data) {
         _timestamps_data[action][std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - *_start_time).count()] = data;
     }
+#endif
 
     boost::circular_buffer<ProducerEvents> _producer_events;
     boost::circular_buffer<ConsumerEvents> _consumer_events;
@@ -277,7 +285,9 @@ private:
 
     std::string _description;
 
-    std::optional<std::chrono::time_point<std::chrono::steady_clock>> _start_time;
+#ifdef FIFO_PLUS_TIMESTAMP_DATA
+    std::chrono::time_point<std::chrono::steady_clock> _start_time;
+#endif
 
     /* check_empty parameter could be related to the comment in pop that talks
      * about checking how many times in a row the buffer was empty when a thread
