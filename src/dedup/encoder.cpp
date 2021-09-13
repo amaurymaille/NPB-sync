@@ -27,6 +27,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -3534,6 +3535,40 @@ void ReorderSmart(thread_args_smart const& args) {
     free(chunks_per_anchor);
 }
 
+std::vector<std::unique_ptr<thread_args_smart>> _thread_args_smart_vector;
+
+thread_args_smart* thread_args_smart_copy_because_pthread(thread_args_smart const& src) {
+    thread_args_smart* ptr = new thread_args_smart;
+    *ptr = src;
+    _thread_args_smart_vector.push_back(std::unique_ptr<thread_args_smart>(ptr));
+    return ptr;
+}
+
+void* _FragmentSmart(void* args) {
+    FragmentSmart(*static_cast<thread_args_smart*>(args));
+    return nullptr;
+}
+
+void* _RefineSmart(void* args) {
+    RefineSmart(*static_cast<thread_args_smart*>(args));
+    return nullptr;
+}
+
+void* _DeduplicateSmart(void* args) {
+    DeduplicateSmart(*static_cast<thread_args_smart*>(args));
+    return nullptr;
+}
+
+void* _CompressSmart(void* args) {
+    CompressSmart(*static_cast<thread_args_smart*>(args));
+    return nullptr;
+}
+
+void* _ReorderSmart(void* args) {
+    ReorderSmart(*static_cast<thread_args_smart*>(args));
+    return nullptr;
+}
+
 unsigned long long EncodeSmart(DedupData& data) {
     struct stat filestat;
     int32 fd;
@@ -3613,7 +3648,7 @@ unsigned long long EncodeSmart(DedupData& data) {
     std::vector<SmartFIFOImpl<chunk_t*>*> fragment_to_refine, refine_to_deduplicate,
                 deduplicate_to_compress, dedup_compress_to_reorder;
 
-    std::vector<std::thread> threads;
+    std::vector<pthread_t> threads(1 + 3 * data._nb_threads + 1);
     pthread_barrier_t barrier;
     pthread_barrier_init(&barrier, nullptr, 1 + 1 + 3 * data._nb_threads + 1);
 
@@ -3648,7 +3683,7 @@ unsigned long long EncodeSmart(DedupData& data) {
 
     fragment_args.tid = 0;
     fragment_args._barrier = &barrier;
-    threads.push_back(std::thread(FragmentSmart, fragment_args));
+    pthread_create(threads.data(), nullptr, _FragmentSmart, thread_args_smart_copy_because_pthread(fragment_args));
 
     for (int i = 0; i < data._nb_threads; ++i) {
         int queue_id = i / MAX_THREADS_PER_QUEUE;
@@ -3658,7 +3693,7 @@ unsigned long long EncodeSmart(DedupData& data) {
         refine_args._barrier = &barrier;
         refine_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[queue_id], data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::CONSUMER]._n));
         refine_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER]._n));
-        threads.push_back(std::thread(RefineSmart, refine_args));
+        pthread_create(threads.data() + 1 + i, nullptr, _RefineSmart, thread_args_smart_copy_because_pthread(refine_args));
 
         thread_args_smart deduplicate_args;
         deduplicate_args.tid = i;
@@ -3666,14 +3701,14 @@ unsigned long long EncodeSmart(DedupData& data) {
         deduplicate_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER]._n));
         deduplicate_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::PRODUCER]._n));
         deduplicate_args._extra_output_fifo = new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::PRODUCER]._n);
-        threads.push_back(std::thread(DeduplicateSmart, deduplicate_args));
+        pthread_create(threads.data() + 1 + data._nb_threads + i, nullptr, _DeduplicateSmart, thread_args_smart_copy_because_pthread(deduplicate_args));
 
         thread_args_smart compress_args;
         compress_args.tid = i;
         compress_args._barrier = &barrier;
         compress_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::CONSUMER]._n));
         compress_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::COMPRESS][Layers::REORDER][FIFORole::PRODUCER]._n));
-        threads.push_back(std::thread(CompressSmart, compress_args));
+        pthread_create(threads.data() + 1 + 2 * data._nb_threads + i, nullptr, _CompressSmart, thread_args_smart_copy_because_pthread(compress_args));
     }
 
     thread_args_smart reorder_args;
@@ -3683,13 +3718,13 @@ unsigned long long EncodeSmart(DedupData& data) {
 
     reorder_args.tid = 0;
     reorder_args._barrier = &barrier;
-    threads.push_back(std::thread(ReorderSmart, reorder_args));
+    pthread_create(threads.data() + 1 + 3 * data._nb_threads, nullptr, _ReorderSmart, thread_args_smart_copy_because_pthread(reorder_args));
 
     pthread_barrier_wait(&barrier);
     std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
 
-    for (std::thread& t: threads) {
-        t.join();
+    for (pthread_t& t: threads) {
+        pthread_join(t, nullptr);
     }
     
     std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
