@@ -3037,6 +3037,8 @@ unsigned long long EncodeDefault(DedupData& data) {
 // ============================================================================
 
 void FragmentSmart(thread_args_smart const& args) {
+    Globals::SmartFIFOTSV data;
+
     pthread_barrier_wait(args._barrier);
     size_t preloading_buffer_seek = 0;
     int qid = 0;
@@ -3152,7 +3154,10 @@ void FragmentSmart(thread_args_smart const& args) {
             //put it into send buffer
             //printf ("FragmentSmart: pushing chunk %p\n", chunk);
             // dump_chunk(chunk);
-            args._output_fifos[qid]->push(chunk);
+            size_t push_res = args._output_fifos[qid]->push(chunk);
+            if (push_res) {
+                data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
+            }
             ++count;
             //NOTE: No need to empty a full send_buf, we will break now and pass everything on to the queue
             break;
@@ -3185,7 +3190,10 @@ void FragmentSmart(thread_args_smart const& args) {
                     //put it into send buffer
                     //printf("FragmentSmart: pushing chunk %p\n", chunk);
                     // dump_chunk(chunk);
-                    args._output_fifos[qid]->push(chunk);
+                    size_t push_res = args._output_fifos[qid]->push(chunk);
+                    if (push_res) {
+                        data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
+                    }
                     ++count;
 
                     //send a group of items into the next queue in round-robin fashion
@@ -3224,6 +3232,7 @@ void FragmentSmart(thread_args_smart const& args) {
 }
 
 void RefineSmart(thread_args_smart const& args) {
+    Globals::SmartFIFOTSV data;
     pthread_barrier_wait(args._barrier);
     int r;
     int count = 0;
@@ -3241,13 +3250,17 @@ void RefineSmart(thread_args_smart const& args) {
     while (TRUE) {
         //if no item for process, get a group of items from the pipeline
         std::optional<chunk_t*> value;
-        args._input_fifos[0]->pop_copy(value);
+        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
 
         if (!value) {
             break;
         }
 
         chunk = *value;
+
+        if (valid) {
+            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+        }
         //printf("RefineSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
 
@@ -3279,7 +3292,10 @@ void RefineSmart(thread_args_smart const& args) {
                 //put it into send buffer
                 //printf("RefineSmart: pushing chunk %p\n", chunk);
                 // dump_chunk(chunk);
-                args._output_fifos[0]->push(chunk);
+                size_t push_res = args._output_fifos[0]->push(chunk);
+                if (push_res) {
+                    data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+                }
                 ++count;
 
                 //prepare for next iteration
@@ -3295,7 +3311,10 @@ void RefineSmart(thread_args_smart const& args) {
                 //put it into send buffer
                 //printf("RefineSmart: pushing chunk %p\n", chunk);
                 // dump_chunk(chunk);
-                args._output_fifos[0]->push(chunk);
+                size_t push_res = args._output_fifos[0]->push(chunk);
+                if (push_res) {
+                    data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+                }
                 ++count;
 
                 //prepare for next iteration
@@ -3314,6 +3333,7 @@ void RefineSmart(thread_args_smart const& args) {
 }
 
 void DeduplicateSmart(thread_args_smart const& args) {
+    Globals::SmartFIFOTSV data;
     pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
     int compress_count = 0, reorder_count = 0;
@@ -3321,7 +3341,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
     while (1) {
         //if no items available, fetch a group of items from the queue
         std::optional<chunk_t*> value;
-        args._input_fifos[0]->pop_copy(value);
+        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
 
         if (!value) {
             break;
@@ -3329,6 +3349,10 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
         //get one chunk
         chunk = *value;
+
+        if (valid) {
+            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+        }
         //printf("DeduplicateSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
 
@@ -3339,12 +3363,18 @@ void DeduplicateSmart(thread_args_smart const& args) {
         if(!isDuplicate) {
             //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
-            args._output_fifos[0]->push(chunk);
+            size_t push_res = args._output_fifos[0]->push(chunk);
+            if (push_res) {
+                data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+            }
             ++compress_count;
         } else {
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
-            args._extra_output_fifo->push(chunk);
+            size_t push_res = args._extra_output_fifo->push(chunk);
+            if (push_res) {
+                data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
+            }
             ++reorder_count;
         }
     }
@@ -3355,13 +3385,14 @@ void DeduplicateSmart(thread_args_smart const& args) {
 }
 
 void CompressSmart(thread_args_smart const& args) {
+    Globals::SmartFIFOTSV data;
     pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
     int count = 0;
 
     while(1) {
         std::optional<chunk_t*> value;
-        args._input_fifos[0]->pop_copy(value);
+        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
 
         if (!value) {
             break;
@@ -3369,6 +3400,10 @@ void CompressSmart(thread_args_smart const& args) {
 
         //fetch one item
         chunk = *value;
+
+        if (valid) {
+            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+        }
         //printf("CompressSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
 
@@ -3376,7 +3411,10 @@ void CompressSmart(thread_args_smart const& args) {
 
         //printf("CompressSmart: pushed chunk %p\n", chunk);
         // dump_chunk(chunk);
-        args._output_fifos[0]->push(chunk);
+        size_t push_res = args._output_fifos[0]->push(chunk);
+        if (push_res) {
+            data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+        }
         ++count;
 
         //put the item in the next queue for the write thread
@@ -3387,6 +3425,7 @@ void CompressSmart(thread_args_smart const& args) {
 }
 
 void ReorderSmart(thread_args_smart const& args) {
+    Globals::SmartFIFOTSV data;
     pthread_barrier_wait(args._barrier);
     int fd = 0;
 
@@ -3414,8 +3453,12 @@ void ReorderSmart(thread_args_smart const& args) {
 
     while(1) {
         std::optional<chunk_t*> value;
+        SmartFIFOImpl<chunk_t*>* fifo = nullptr;
+        bool valid = false;
+        size_t nb_elements = 0;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
-            args._input_fifos[qid]->pop_copy(value);
+            fifo = args._input_fifos[qid]->impl();
+            std::tie(valid, nb_elements) = args._input_fifos[qid]->pop_copy(value);
             qid = (qid + 1) % args._input_fifos.size();
             if (value) {
                 break;
@@ -3424,6 +3467,10 @@ void ReorderSmart(thread_args_smart const& args) {
 
         if (!value) {
             break;
+        }
+
+        if (valid) {
+            data.push_back(std::make_tuple(Globals::now(), fifo, Globals::Action::POP, nb_elements));
         }
 
         chunk = *value;

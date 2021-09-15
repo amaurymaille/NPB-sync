@@ -17,6 +17,7 @@
 #include "config.h"
 #include "mbuffer.h"
 #include "sha.h"
+#include "smart_fifo.h"
 
 using std::chrono::steady_clock;
 
@@ -271,6 +272,25 @@ extern std::chrono::time_point<steady_clock> start_time;
 extern std::vector<FIFOPlus<chunk_t*>*> fifos;
 }
 #endif
+
+namespace Globals {
+    enum class Action {
+        POP,
+        PUSH
+    };
+
+    typedef std::chrono::time_point<std::chrono::steady_clock> SteadyTP;
+    typedef std::tuple<SteadyTP, SmartFIFOImpl<chunk_t*>*, Action, size_t> SmartFIFOTS;
+    typedef std::vector<SmartFIFOTS> SmartFIFOTSV;
+
+    extern std::vector<std::vector<SmartFIFOTS>> _smart_fifo_ts_data;
+    extern std::mutex _smart_fifo_ts_m;
+    extern SteadyTP _start_time;
+
+    inline SteadyTP now() {
+        return std::chrono::steady_clock::now();
+    }
+}
 
 
 #endif //_DEDUPDEF_H_

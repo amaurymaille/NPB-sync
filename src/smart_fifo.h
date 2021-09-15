@@ -264,7 +264,7 @@ public:
     }
 
     template<typename T3>
-    decay_enable_if_t<T2, T3, void> push(T3&& value) {
+    decay_enable_if_t<T2, T3, size_t> push(T3&& value) {
         if (_over) {
             throw std::runtime_error("Trying to push in terminated FIFO !");
         }
@@ -273,11 +273,15 @@ public:
         if (next) {
             _fifo->push_chunk(&_chunk);
             _chunk.reset(_step);
+            return _step;
+        } else {
+            return 0;
         }
     }
 
-    void pop_copy(std::optional<T2>& opt) {
-        if (!prepare_elements()) {
+    std::tuple<bool, size_t> pop_copy(std::optional<T2>& opt) {
+        auto [valid, nb_elements, prepared] = prepare_elements();
+        if (!prepared) {
             opt = std::nullopt;
         } else {
             T2* next = _elements.next();
@@ -288,14 +292,19 @@ public:
                 }
             } */
         }
+
+        return std::make_tuple(valid && nb_elements != 0, nb_elements);
     }
 
-    void pop(std::optional<T2*>& opt) {
-        if (!prepare_elements()) {
+    std::tuple<bool, size_t> pop(std::optional<T2*>& opt) {
+        auto [valid, nb_elements, prepared] = prepare_elements();
+        if (!prepared) {
             opt = std::nullopt;
         } else {
             opt = _elements.next();
         }
+
+        return std::make_tuple(valid && nb_elements != 0, nb_elements);
     }
 
     void terminate_producer() {
@@ -314,24 +323,32 @@ public:
         _fifo->dump();
     }
 
+    SmartFIFOImpl<T2>* impl() {
+        return _fifo;
+    }
+
 private:
-    bool prepare_elements() {
+    std::tuple<bool, size_t, bool> prepare_elements() {
         if (_elements.empty()) {
             _fifo->pop(_elements, _step);
             
             if (_elements.empty()) {
-                return false;
+                return std::make_tuple(true, 0, false);
+            } else {
+                return std::make_tuple(true, _elements.size(), true);
             }
         } else if (!_elements.has_next()) {
             _elements.clear();
             _fifo->pop(_elements, _step);
 
             if (_elements.empty()) {
-                return false;
+                return std::make_tuple(true, 0, false);
+            } else {
+                return std::make_tuple(true, _elements.size(), true);
             }
-        }
+        } 
 
-        return true;
+        return std::make_tuple(false, _elements.size(), true);
     }
     
     SmartFIFOImpl<T2>* _fifo;
