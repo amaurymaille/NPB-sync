@@ -28,6 +28,60 @@ class SmartFIFO;
 template<typename T>
 class SmartFIFOImpl;
 
+/* Special semaphore used for SmartFIFO. Allows increment and decrement of the
+ * held value with arbitrary values instead of systematically 1.
+ */
+class SmartFIFOSemaphore {
+public:
+    SmartFIFOSemaphore(unsigned int start) {
+        _value.store(start, std::memory_order_relaxed);
+    }
+
+    void post(unsigned int i) {
+        _value.fetch_add(i, std::memory_order_release);
+    }
+
+    /* Attempt to decrease the value by at most i. The value held by the semaphore
+     * must be at least 1 for the operation to succeed. Otherwise, continually 
+     * attempt to decrease the value by at most i until the value was at least 1
+     * when the attempt was made.
+     */
+    unsigned int wait(unsigned int i) {
+        int old_value = always_wait(i);
+        /* If there was nothing in the semaphore (which should not happen in a 
+         * single consumer context), post back what was taken and then always_wait.
+         */
+        if (old_value <= 0) {
+            post(i);
+            /* Check for zero too, because we can only exit once the previous 
+             * value was at least 1.
+             */
+            while ((old_value = always_wait(i)) <= 0) {
+                post(i);
+            }
+
+            /* Taken more than what was there. Go back to zero. */
+            if (old_value < i) {
+                post(i - old_value);
+            }
+        } else if (old_value < i) {
+            /* Corner case: we took more than what was there. So only take what was 
+             * there and give back the excess.
+             */
+            post(i - old_value);
+        }
+
+        return std::abs<long>((long)old_value - (long)i);
+    }
+
+private:
+    int always_wait(unsigned int i) {
+        return _value.fetch_sub(i, std::memory_order_release);
+    }
+
+    std::atomic<int> _value;
+};
+
 template<typename T>
 class FIFOChunk {
 public:
@@ -71,6 +125,21 @@ public:
         } else {
             _elements[_nb_elements++] = std::forward<T>(element);
             _nb_available__has_next.fetch_add(2, std::memory_order_release);
+            return nullptr;
+        }
+    }
+
+    template<typename T2>
+    decay_enable_if_t<T, T2, FIFOChunk<T>*> unsafe_push(T2&& element) {
+        if (_size == _nb_elements) {
+            FIFOChunk<T>* chunk = new FIFOChunk<T>(_size);
+            chunk->unsafe_push(std::forward<T>(element));
+            _next.store(chunk, std::memory_order_relaxed);
+            _nb_available__has_next.fetch_add(1, std::memory_order_relaxed);
+            return chunk;
+        } else {
+            _elements[_nb_elements++] = std::forward<T>(element);
+            _nb_available__has_next.fetch_add(2, std::memory_order_relaxed);
             return nullptr;
         }
     }
@@ -141,6 +210,15 @@ public:
         std::unique_lock<std::mutex> lck(_m);
         _next.store(next, std::memory_order_release);
         _nb_available__has_next.fetch_add(1, std::memory_order_release);
+    }
+
+    void unsafe_set_next(FIFOChunk<T>* next) {
+        _next.store(next, std::memory_order_relaxed);
+        _nb_available__has_next.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    size_t nb_elements() const {
+        return _nb_elements;
     }
 
 private:
@@ -309,7 +387,7 @@ public:
 
     void terminate_producer() {
         _chunk.freeze();
-        _fifo->push_chunk(&_chunk);
+        _fifo->push_chunk(&_chunk, _chunk.nb_elements());
         _fifo->terminate_producer();
         _chunk.reset(_step);
         _over = true;
@@ -366,11 +444,11 @@ public:
     typedef SmartFIFO<T> smart_fifo;
 
 public:
-    SmartFIFOImpl(size_t chunk_size) : _chunk_size(chunk_size) {
+    SmartFIFOImpl(size_t chunk_size, std::string&& description) : _chunk_size(chunk_size), _description(std::move(description)), _sem(0) {
         _tail.store(new FIFOChunk<T>(chunk_size), std::memory_order_relaxed);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
-        sem_init(&_sem, 0, 0);
+        // sem_init(&_sem, 0, 0);
     }
 
     ~SmartFIFOImpl() {
@@ -401,15 +479,21 @@ public:
             _tail.store(next, std::memory_order_release);
         }
 
-        int waiting;
+        /* int waiting;
         sem_getvalue(&_sem, &waiting);
         if (waiting <= 0) {
             sem_post(&_sem);
-        }
+        } */
+        _sem.post(1);
     }
     
-    void push_chunk(FIFOChunk<T>* chunk) {
+    void push_chunk(FIFOChunk<T>* chunk, size_t nb_elements) {
         std::unique_lock<std::mutex> lck(_prod_mutex);
+        // We can use memory_order_relaxed, because the potential write happens
+        // inside a mutex protected zone. Therefore, if another thread attempts
+        // to load _tail in this very function, the effects of the next write 
+        // are visible by virtue of the mutex performing an automatic release
+        // when it unlocks.
         FIFOChunk<T>* tail = _tail.load(std::memory_order_relaxed);
         // std::unique_lock<std::mutex> lck(_m);
         if (tail->_next) {
@@ -420,16 +504,68 @@ public:
         tail->freeze();
         tail->set_next(next);
 
+        // Load next->_next with memory_order_acquire because I'm honestly not sure
+        // whether I can use memory_order_relaxed or not.
+        // In theory, there is no way at all to change the value of next->_next without
+        // going through a producer thread, so it would make sense to use a relaxed 
+        // ordering by applying the same principle as above for _tail, however there 
+        // are way more references to next->_next through the code, and making sure
+        // every single one of them properly ties to a producer thread is complicated.
         while (FIFOChunk<T>* n = next->_next.load(std::memory_order_acquire)) {
             next = n;
         }
+        // Mandatory release here, because the consumer threads need to read the value of 
+        // _tail up-to-date in order to determine if they can continue extracting data.
+        // Theoretically it doesn't matter because it may just lead to early stop.
         _tail.store(next, std::memory_order_release);
 
-        int waiting;
+        /* Here comes the nightmare. Post only if a consumer is waiting. A consumer is 
+         * waiting only if the head is empty AND the head has no next element AND the 
+         * FIFO is not terminated.
+         * Consumers are mutually excluded and a consumer inside pop() will never release
+         * the mutex unless it leaves the function. Therefore, there can be AT MOST one
+         * consumer waiting on the semaphore.
+         * Assume the FIFO is not empty. A consumer locks the mutex, sees the FIFO is not
+         * empty, therefore it doesn't wait on the semaphore. We skip this.
+         * Assume the FIFO is empty. A consumer locks the mutex, sees the FIFO is empty.
+         * Branch:
+         *  - The consumer reaches the semaphore before we post. Free the consumer immediately.
+         *  - The consumer doesn't reach the semaphore before we check the semaphore. It means
+         * that there is no invariant "Waiting on semaphore => FIFO is empty". Proof that this
+         * does not deadlock:
+         *
+         * Assume program is well-formed, i.e. every single producer calls terminate_producer() 
+         * once it is done, every consumer exhausts its SmartFIFO and a producer thread that has
+         * called terminate_producer() doesn't call push() nor push_chunk() afterwards. 
+         * Recall that the potential deadlock scenario is the case where a consumer thread is 
+         * waiting on the semaphore while there is data inside the FIFO. This scenario can only
+         * occur if a consumer thread checked for emptiness while a non-terminated producer thread
+         * was writing data. The order of execution must be the following:
+         * 1.a) Producer thread starts pushing
+         * 1.b) Consumer thread starts poping 
+         * 2) Consumer thread checks for emptiness. Emptiness checks returns true.
+         * 3) Consumer thread checks for termination. Check returns false.
+         * 4) Consumer thread checks for chaining of chunks. Check returns false.
+         * 5) Consumer DOES NOT IMMEDIATELY WAIT
+         * 2, 3, 4 //) Producer thread performs its own operations and checks semaphore. Semaphore
+         * checks return zero. Do not post in semaphore.
+         * 6) Consumer waits on semaphore. Wait for post.
+         * At this point, the consumer mutex is held by the waiting consumer thread and won't unlock
+         * until a producer performs a post.
+         * WCS: there is no more data to push. Answer: producer needs to call terminate_producer().
+         * Assume terminate_producer() is called before the consumer reaches the semaphore. It doesn't
+         * matter: the last producer will unblock the semaphore in all cases. It doesn't matter which
+         * value the semaphore holds because a consumer NEVER waits on the semaphore if the FIFO
+         * is terminated. This doesn't deadlock.
+         * If terminate_producer() is called but is not the last, the consumer thread will hold onto
+         * the semaphore until either a producer pushes data, or all producers are done.
+         */
+        /* int waiting;
         sem_getvalue(&_sem, &waiting);
         if (waiting <= 0) {
             sem_post(&_sem);
-        }
+        } */
+        _sem.post(nb_elements);
         // _cv.notify_all();
     }
 
@@ -444,7 +580,8 @@ public:
                 _head->destroy();
                 _head = next;
             } else {
-                sem_wait(&_sem);
+                _sem.wait(nb_elements);
+                // sem_wait(&_sem);
                 // _cv.wait(lck);
             }
         }
@@ -500,15 +637,15 @@ public:
         // std::unique_lock<std::mutex> lck(_m);
         _nb_producers__done.fetch_add(1ULL << 32, std::memory_order_release);
 
-        if (terminated()) {
+        // if (terminated()) {
             /* There is no need to post multiple times,because there can be at
              * most one consumer waiting on the semaphore. Consumers that arrive
              * later will see the FIFO as terminated and won't wait on the 
              * semaphore.
              */
-             sem_post(&_sem);
+             // sem_post(&_sem);
             // _cv.notify_all();
-        }
+        // }
     }
 
     bool terminated() const {
@@ -522,6 +659,10 @@ public:
         _head->dump();
     }
 
+    std::string const& description() const {
+        return _description;
+    }
+
 private:
     // 32 high bits are producers done, 32 low bits are producers.
     std::atomic<size_t> _nb_producers__done;
@@ -532,7 +673,9 @@ private:
     size_t _chunk_size;
     // std::mutex _m;
     // std::condition_variable _cv;
-    sem_t _sem;
+    // sem_t _sem;
+    SmartFIFOSemaphore _sem;
+    std::string _description;
 };
 
 /* template<typename T>
