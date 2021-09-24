@@ -280,7 +280,7 @@ namespace Globals {
     };
 
     typedef std::chrono::time_point<std::chrono::steady_clock> SteadyTP;
-    typedef std::tuple<SteadyTP, SmartFIFOImpl<chunk_t*>*, Action, size_t> SmartFIFOTS;
+    typedef std::tuple<SteadyTP, SmartFIFO<chunk_t*>*, SmartFIFOImpl<chunk_t*>*, Action, size_t> SmartFIFOTS;
     typedef std::vector<SmartFIFOTS> SmartFIFOTSV;
 
     extern std::vector<std::vector<SmartFIFOTS>> _smart_fifo_ts_data;

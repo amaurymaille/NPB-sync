@@ -269,11 +269,11 @@ public:
             throw std::runtime_error("Trying to push in terminated FIFO !");
         }
 
-        FIFOChunk<T2>* next = _chunk.push(std::forward<T3>(value));
+        FIFOChunk<T2>* next = _chunk.unsafe_push(std::forward<T3>(value));
         if (next) {
-            _fifo->push_chunk(&_chunk);
+            _fifo->push_chunk(&_chunk, _step + 1);
             _chunk.reset(_step);
-            return _step;
+            return _step + 1;
         } else {
             return 0;
         }
@@ -293,7 +293,7 @@ public:
             } */
         }
 
-        return std::make_tuple(valid && nb_elements != 0, nb_elements);
+        return std::make_tuple(valid && prepared, nb_elements);
     }
 
     std::tuple<bool, size_t> pop(std::optional<T2*>& opt) {

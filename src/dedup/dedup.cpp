@@ -63,6 +63,8 @@ usage(char* prog)
 std::chrono::time_point<steady_clock> Globals::start_time;
 #endif
 
+Globals::SteadyTP Globals::_start_time;
+
 struct CLIArgs {
     std::string _lua_file;
     std::string _lua_output_file;
@@ -214,6 +216,9 @@ int main(int argc, char** argv) {
 #ifdef FIFO_PLUS_TIMESTAMP_DATA
   Globals::start_time = steady_clock::now();
 #endif
+
+  Globals::_start_time = steady_clock::now();
+
 #ifdef PARSEC_VERSION
 #define __PARSEC_STRING(x) #x
 #define __PARSEC_XSTRING(x) __PARSEC_STRING(x)

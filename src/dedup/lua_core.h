@@ -56,6 +56,9 @@ struct DedupData {
     void push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data);
     void dump(); 
     void validate();
+
+private:
+    void process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data);
 };
 
 #endif // LUA_CORE_H

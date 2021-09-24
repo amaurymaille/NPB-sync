@@ -140,6 +140,7 @@ struct thread_args_smart {
     std::vector<SmartFIFO<chunk_t*>*> _output_fifos;
     SmartFIFO<chunk_t*>* _extra_output_fifo;
     pthread_barrier_t* _barrier;
+    Globals::SmartFIFOTSV* _timestamp_data;
 };
 
 
@@ -3037,7 +3038,7 @@ unsigned long long EncodeDefault(DedupData& data) {
 // ============================================================================
 
 void FragmentSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV data;
+    Globals::SmartFIFOTSV& data = *args._timestamp_data;
 
     pthread_barrier_wait(args._barrier);
     size_t preloading_buffer_seek = 0;
@@ -3156,7 +3157,7 @@ void FragmentSmart(thread_args_smart const& args) {
             // dump_chunk(chunk);
             size_t push_res = args._output_fifos[qid]->push(chunk);
             if (push_res) {
-                data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
+                // data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid], args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
             }
             ++count;
             //NOTE: No need to empty a full send_buf, we will break now and pass everything on to the queue
@@ -3192,7 +3193,7 @@ void FragmentSmart(thread_args_smart const& args) {
                     // dump_chunk(chunk);
                     size_t push_res = args._output_fifos[qid]->push(chunk);
                     if (push_res) {
-                        data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
+                        // data.push_back(std::make_tuple(Globals::now(), args._output_fifos[qid], args._output_fifos[qid]->impl(), Globals::Action::PUSH, push_res));
                     }
                     ++count;
 
@@ -3232,10 +3233,11 @@ void FragmentSmart(thread_args_smart const& args) {
 }
 
 void RefineSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV data;
+    Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     int r;
     int count = 0;
+    int pop = 0;
 
     chunk_t *temp;
     chunk_t *chunk;
@@ -3257,9 +3259,10 @@ void RefineSmart(thread_args_smart const& args) {
         }
 
         chunk = *value;
+        // printf("Refine %p: %d, %p\n", args._input_fifos[0], ++pop, chunk);
 
         if (valid) {
-            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+            // data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0], args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
         }
         //printf("RefineSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
@@ -3294,7 +3297,7 @@ void RefineSmart(thread_args_smart const& args) {
                 // dump_chunk(chunk);
                 size_t push_res = args._output_fifos[0]->push(chunk);
                 if (push_res) {
-                    data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+                    // data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
                 }
                 ++count;
 
@@ -3313,7 +3316,7 @@ void RefineSmart(thread_args_smart const& args) {
                 // dump_chunk(chunk);
                 size_t push_res = args._output_fifos[0]->push(chunk);
                 if (push_res) {
-                    data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+                    // data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
                 }
                 ++count;
 
@@ -3333,7 +3336,7 @@ void RefineSmart(thread_args_smart const& args) {
 }
 
 void DeduplicateSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV data;
+    Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
     int compress_count = 0, reorder_count = 0;
@@ -3350,8 +3353,8 @@ void DeduplicateSmart(thread_args_smart const& args) {
         //get one chunk
         chunk = *value;
 
-        if (valid) {
-            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+        if (valid && args.tid % args.nqueues == 1) {
+            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0], args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
         }
         //printf("DeduplicateSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
@@ -3364,16 +3367,16 @@ void DeduplicateSmart(thread_args_smart const& args) {
             //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._output_fifos[0]->push(chunk);
-            if (push_res) {
-                data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+            if (push_res && args.tid % args.nqueues == 1) {
+                data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
             }
             ++compress_count;
         } else {
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._extra_output_fifo->push(chunk);
-            if (push_res) {
-                data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
+            if (push_res && args.tid % args.nqueues == 1) {
+                data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo, args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
             }
             ++reorder_count;
         }
@@ -3385,7 +3388,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
 }
 
 void CompressSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV data;
+    Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
     int count = 0;
@@ -3401,8 +3404,8 @@ void CompressSmart(thread_args_smart const& args) {
         //fetch one item
         chunk = *value;
 
-        if (valid) {
-            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
+        if (valid && args.tid % args.nqueues == 1) {
+            data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0], args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
         }
         //printf("CompressSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
@@ -3412,8 +3415,8 @@ void CompressSmart(thread_args_smart const& args) {
         //printf("CompressSmart: pushed chunk %p\n", chunk);
         // dump_chunk(chunk);
         size_t push_res = args._output_fifos[0]->push(chunk);
-        if (push_res) {
-            data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
+        if (push_res && args.tid % args.nqueues == 1) {
+            data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
         }
         ++count;
 
@@ -3425,7 +3428,7 @@ void CompressSmart(thread_args_smart const& args) {
 }
 
 void ReorderSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV data;
+    Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     int fd = 0;
 
@@ -3453,10 +3456,12 @@ void ReorderSmart(thread_args_smart const& args) {
 
     while(1) {
         std::optional<chunk_t*> value;
+        SmartFIFO<chunk_t*>* lfifo = nullptr;
         SmartFIFOImpl<chunk_t*>* fifo = nullptr;
         bool valid = false;
         size_t nb_elements = 0;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
+            lfifo = args._input_fifos[qid];
             fifo = args._input_fifos[qid]->impl();
             std::tie(valid, nb_elements) = args._input_fifos[qid]->pop_copy(value);
             qid = (qid + 1) % args._input_fifos.size();
@@ -3470,7 +3475,7 @@ void ReorderSmart(thread_args_smart const& args) {
         }
 
         if (valid) {
-            data.push_back(std::make_tuple(Globals::now(), fifo, Globals::Action::POP, nb_elements));
+            // data.push_back(std::make_tuple(Globals::now(), lfifo, fifo, Globals::Action::POP, nb_elements));
         }
 
         chunk = *value;
@@ -3540,9 +3545,9 @@ void ReorderSmart(thread_args_smart const& args) {
         } while(chunk != NULL);
     }
 
-    for (SmartFIFO<chunk_t*>* fifo: args._input_fifos) {
+    /* for (SmartFIFO<chunk_t*>* fifo: args._input_fifos) {
         fifo->dump();
-    }
+    } */
 
     //flush the blocks left in the cache to file
     pos = TreeFindMin(T);
@@ -3616,7 +3621,7 @@ void* _ReorderSmart(void* args) {
     return nullptr;
 }
 
-unsigned long long EncodeSmart(DedupData& data) {
+std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {
     struct stat filestat;
     int32 fd;
 
@@ -3629,6 +3634,7 @@ unsigned long long EncodeSmart(DedupData& data) {
         exit(1);
     }
 
+    std::vector<Globals::SmartFIFOTSV> timestamp_datas(1 + 3 * data._nb_threads + 1);
     struct thread_args_smart fragment_args;
 
     //queue allocation & initialization
@@ -3691,7 +3697,7 @@ unsigned long long EncodeSmart(DedupData& data) {
     fragment_args.tid = 0;
     fragment_args.nqueues = nqueues;
     fragment_args.fd = fd;
-
+    
     std::vector<SmartFIFOImpl<chunk_t*>*> fragment_to_refine, refine_to_deduplicate,
                 deduplicate_to_compress, dedup_compress_to_reorder;
 
@@ -3730,6 +3736,7 @@ unsigned long long EncodeSmart(DedupData& data) {
 
     fragment_args.tid = 0;
     fragment_args._barrier = &barrier;
+    fragment_args._timestamp_data = timestamp_datas.data();
     pthread_create(threads.data(), nullptr, _FragmentSmart, thread_args_smart_copy_because_pthread(fragment_args));
 
     for (int i = 0; i < data._nb_threads; ++i) {
@@ -3737,34 +3744,42 @@ unsigned long long EncodeSmart(DedupData& data) {
 
         thread_args_smart refine_args;
         refine_args.tid = i;
+        refine_args.nqueues = nqueues;
         refine_args._barrier = &barrier;
-        refine_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[queue_id], data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::CONSUMER]._n));
-        refine_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER]._n));
+        refine_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[queue_id], data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::CONSUMER][i]._n));
+        refine_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER][i]._n));
+        refine_args._timestamp_data = timestamp_datas.data() + 1 + i;
         pthread_create(threads.data() + 1 + i, nullptr, _RefineSmart, thread_args_smart_copy_because_pthread(refine_args));
 
         thread_args_smart deduplicate_args;
         deduplicate_args.tid = i;
+        deduplicate_args.nqueues = nqueues;
         deduplicate_args._barrier = &barrier;
-        deduplicate_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER]._n));
-        deduplicate_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::PRODUCER]._n));
-        deduplicate_args._extra_output_fifo = new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::PRODUCER]._n);
+        deduplicate_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER][i]._n));
+        deduplicate_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::PRODUCER][i]._n));
+        deduplicate_args._extra_output_fifo = new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::PRODUCER][i]._n);
+        deduplicate_args._timestamp_data = timestamp_datas.data() + 1 + data._nb_threads + i;
         pthread_create(threads.data() + 1 + data._nb_threads + i, nullptr, _DeduplicateSmart, thread_args_smart_copy_because_pthread(deduplicate_args));
 
         thread_args_smart compress_args;
         compress_args.tid = i;
+        compress_args.nqueues = nqueues;
         compress_args._barrier = &barrier;
-        compress_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::CONSUMER]._n));
-        compress_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::COMPRESS][Layers::REORDER][FIFORole::PRODUCER]._n));
+        compress_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::CONSUMER][i]._n));
+        compress_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], data._fifo_data[Layers::COMPRESS][Layers::REORDER][FIFORole::PRODUCER][i]._n));
+        compress_args._timestamp_data = timestamp_datas.data() + 1 + 2 * data._nb_threads + i;
         pthread_create(threads.data() + 1 + 2 * data._nb_threads + i, nullptr, _CompressSmart, thread_args_smart_copy_because_pthread(compress_args));
     }
 
     thread_args_smart reorder_args;
     for (int i = 0; i < nqueues; ++i) {
-        reorder_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[i], data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::CONSUMER]._n));
+        reorder_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[i], data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::CONSUMER][0]._n));
     }
 
     reorder_args.tid = 0;
+    reorder_args.nqueues = nqueues;
     reorder_args._barrier = &barrier;
+    reorder_args._timestamp_data = timestamp_datas.data() + 1 + 3 * data._nb_threads;
     pthread_create(threads.data() + 1 + 3 * data._nb_threads, nullptr, _ReorderSmart, thread_args_smart_copy_because_pthread(reorder_args));
 
     pthread_barrier_wait(&barrier);
@@ -3791,7 +3806,7 @@ unsigned long long EncodeSmart(DedupData& data) {
 
     hashtable_destroy(cache, TRUE);
 
-    return diff;
+    return { diff, timestamp_datas };
 }
 
 
