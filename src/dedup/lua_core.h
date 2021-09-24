@@ -39,12 +39,13 @@ struct FIFOData {
     void validate();
 };
 
-struct DedupData {
+class DedupData {
+public:
     std::string _input_filename;
     std::string _output_filename;
     unsigned int _nb_threads = 1;
     /// On layer A, contain data for the FIFOs to layers B, C...
-    std::map<Layers, std::map<Layers, std::map<FIFORole, FIFOData>>> _fifo_data;
+    std::map<Layers, std::map<Layers, std::map<FIFORole, std::vector<FIFOData>>>> _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
     FIFOReconfigure _algorithm;
@@ -53,7 +54,7 @@ struct DedupData {
     unsigned long long run_orig();
     unsigned long long run_mutex();
     unsigned long long run_smart();
-    void push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data);
+    void push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data, unsigned int n);
     void dump(); 
     void validate();
 

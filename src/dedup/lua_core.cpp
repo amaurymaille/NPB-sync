@@ -42,8 +42,10 @@ void FIFOData::validate() {
     }
 }
 
-void DedupData::push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data) {
-    _fifo_data[source][destination][role] = data;
+void DedupData::push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data, unsigned int n) {
+    for (unsigned int i = 0; i < n; ++i) {
+        _fifo_data[source][destination][role].push_back(data);
+    }
 }
 
 void DedupData::dump() {
@@ -60,8 +62,10 @@ void DedupData::dump() {
     for (auto& p1: _fifo_data) {
         for (auto& p2: p1.second) {
             for (auto& p3: p2.second) {
-                std::cout << "\t\t" << (int)p1.first << " => " << (int)p2.first << " [" << (int)p3.first << "]: " << std::endl;
-                p3.second.dump();
+                for (auto& value: p3.second) {
+                    std::cout << "\t\t" << (int)p1.first << " => " << (int)p2.first << " [" << (int)p3.first << "]: " << std::endl;
+                    value.dump();
+                }
             }
         }
     }
@@ -70,6 +74,84 @@ void DedupData::dump() {
 void DedupData::validate() {
     if (_nb_threads < 1) {
         std::cerr << "[WARN] Number of threads lower than 1, setting to 1." << std::endl;
+    }
+
+    auto throw_fn = [](std::string const& context, std::string const& role, unsigned int expected, unsigned int received) -> void {
+        std::ostringstream stream;
+        stream << "[" << role << " - " << context << "] Expected " << expected << " configurations, got " << received << std::endl;
+        throw std::runtime_error(stream.str());
+    };
+
+    for (auto const& [src, map1]: _fifo_data) {
+        for (auto const& [dst, map2]: map1) {
+            std::map<FIFORole, unsigned int> counts;
+            counts[FIFORole::PRODUCER] = 0;
+            counts[FIFORole::CONSUMER] = 0;
+
+            for (auto const& [role, vect]: map2) {
+                counts[role] += vect.size();
+            }
+
+            switch (src) {
+            case Layers::FRAGMENT:
+                if (counts[FIFORole::PRODUCER] != 1) {
+                    throw_fn("Fragment", "Producer", 1, counts[FIFORole::PRODUCER]);
+                }
+
+                if (counts[FIFORole::CONSUMER] != _nb_threads) {
+                    throw_fn("Refine", "Consumer", _nb_threads, counts[FIFORole::CONSUMER]);
+                }
+                break;
+
+            case Layers::REFINE:
+            case Layers::DEDUPLICATE:
+            case Layers::COMPRESS:
+                if (counts[FIFORole::PRODUCER] != _nb_threads) {
+                    std::string context;
+                    switch (src) {
+                    case Layers::REFINE:
+                        context = "Refine";
+                        break;
+
+                    case Layers::DEDUPLICATE:
+                        context = "Deduplicate";
+                        break;
+
+                    case Layers::COMPRESS:
+                        context = "Compress";
+                        break;
+                    }
+
+                    throw_fn(context, "Producer", _nb_threads, counts[FIFORole::PRODUCER]);
+                }
+
+                if (dst == Layers::REORDER) {
+                    if (counts[FIFORole::CONSUMER] != 1) {
+                        throw_fn("Reorder", "Consumer", 1, counts[FIFORole::CONSUMER]);
+                    }
+                } else {
+                    if (counts[FIFORole::CONSUMER] != _nb_threads) {
+                        std::string context;
+                        switch (src) {
+                        case Layers::REFINE:
+                            context = "Deduplicate";
+                            break;
+
+                        case Layers::DEDUPLICATE:
+                            context = "Compress";
+                            break;
+                        }
+
+                        throw_fn(context, "Consumer", _nb_threads, counts[FIFORole::CONSUMER]);
+                    }
+                }
+                break;
+
+            default:
+                break;
+            }
+        }
+
     }
 
     auto find_layer_pair = [&](Layers src, Layers dst) {
@@ -124,7 +206,9 @@ void DedupData::validate() {
     for (auto& p1: _fifo_data) {
         for (auto& p2: p1.second) {
             for (auto& p3: p2.second) {
-                p3.second.validate();
+                for (auto value: p3.second) {
+                    value.validate();
+                }
             }
         }
     }

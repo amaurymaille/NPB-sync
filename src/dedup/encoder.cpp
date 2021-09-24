@@ -122,9 +122,9 @@ struct thread_args {
     FIFOPlus<chunk_t*>* _extra_output_fifo = nullptr;
 
     /// FIFOs configuration
-    std::map<FIFORole, FIFOData>* _input_fifo_data;
-    std::map<FIFORole, FIFOData>* _output_fifo_data;
-    std::map<FIFORole, FIFOData>* _extra_output_fifo_data;
+    std::map<FIFORole, std::vector<FIFOData>>* _input_fifo_data;
+    std::map<FIFORole, std::vector<FIFOData>>* _output_fifo_data;
+    std::map<FIFORole, std::vector<FIFOData>>* _extra_output_fifo_data;
 };
 
 struct thread_args_smart {
@@ -463,10 +463,10 @@ void *Compress(void * targs) {
     struct thread_args *args = (struct thread_args *)targs;
     // const int qid = args->tid / MAX_THREADS_PER_QUEUE;
     FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
-    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER], FIFORole::CONSUMER);
+    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid], FIFORole::CONSUMER);
 
     FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
-    configure_fifo(*output_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER], FIFORole::PRODUCER);
+    configure_fifo(*output_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid], FIFORole::PRODUCER);
     chunk_t* chunk;
     // int r;
     // int count = 0;
@@ -512,7 +512,7 @@ void *Compress(void * targs) {
 
 
         std::optional<chunk_t*> chunk_opt;
-        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid]._reconfigure);
         if (!chunk_opt) {
             break;
         }
@@ -527,7 +527,7 @@ void *Compress(void * targs) {
 #endif //ENABLE_STATISTICS
 
         // r = ringbuffer_insert(&send_buf, chunk);
-        output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+        output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
         /* ++count;
            assert(r==0); */
 
@@ -627,13 +627,13 @@ int sub_Deduplicate(chunk_t *chunk) {
 void * Deduplicate(void * targs) {
     struct thread_args *args = (struct thread_args *)targs;
     FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
-    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER], FIFORole::CONSUMER);
+    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid], FIFORole::CONSUMER);
 
     FIFOPlus<chunk_t*>* compress_fifo = args->_output_fifo;
-    configure_fifo(*compress_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER], FIFORole::PRODUCER);
+    configure_fifo(*compress_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid], FIFORole::PRODUCER);
 
     FIFOPlus<chunk_t*>* reorder_fifo = args->_extra_output_fifo;
-    configure_fifo(*reorder_fifo, (*args->_extra_output_fifo_data)[FIFORole::PRODUCER], FIFORole::PRODUCER);
+    configure_fifo(*reorder_fifo, (*args->_extra_output_fifo_data)[FIFORole::PRODUCER][args->tid], FIFORole::PRODUCER);
 
     // const int qid = args->tid / MAX_THREADS_PER_QUEUE;
     chunk_t *chunk;
@@ -687,7 +687,7 @@ void * Deduplicate(void * targs) {
           assert(chunk!=NULL); */
 
         std::optional<chunk_t*> chunk_opt;
-        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid]._reconfigure);
 
         if (!chunk_opt) {
             break;
@@ -717,7 +717,7 @@ void * Deduplicate(void * targs) {
             // log_enqueue("Deduplicate", "Compress", r, args->tid, qid, &compress_que[qid]);
             assert(r>=1);
             } */
-            compress_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+            compress_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
         } else {
             /* r = ringbuffer_insert(&send_buf_reorder, chunk);
                ++reorder_count;
@@ -729,7 +729,7 @@ void * Deduplicate(void * targs) {
             // log_enqueue("Deduplicate", "Reorder", r, args->tid, qid, &reorder_que[qid]);
             assert(r>=1);
             } */
-            reorder_fifo->push(chunk, (*args->_extra_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+            reorder_fifo->push(chunk, (*args->_extra_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
         }
     }
 
@@ -791,10 +791,10 @@ void *FragmentRefine(void * targs) {
        pthread_setspecific(thread_data_key, &data); */
 
     FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
-    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER], FIFORole::CONSUMER);
+    configure_fifo(*input_fifo, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid], FIFORole::CONSUMER);
 
     FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
-    configure_fifo(*output_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER], FIFORole::PRODUCER);
+    configure_fifo(*output_fifo, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid], FIFORole::PRODUCER);
 
     chunk_t *temp;
     chunk_t *chunk;
@@ -844,7 +844,7 @@ void *FragmentRefine(void * targs) {
         /* chunk = (chunk_t *)ringbuffer_remove(&recv_buf);
            assert(chunk!=NULL); */
         std::optional<chunk_t*> chunk_opt;
-        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+        input_fifo->pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid]._reconfigure);
 
         if (!chunk_opt) {
             break;
@@ -892,7 +892,7 @@ void *FragmentRefine(void * targs) {
                 // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
                 assert(r>=1);
                 } */
-                output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+                output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
                 //prepare for next iteration
                 chunk = temp;
                 split = 1;
@@ -919,7 +919,7 @@ void *FragmentRefine(void * targs) {
                 // log_enqueue("Refine", "Deduplicate", r, args->tid, qid, &deduplicate_que[qid]);
                 assert(r>=1);
                 } */
-                output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+                output_fifo->push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
                 //prepare for next iteration
                 chunk = NULL;
                 split = 0;
@@ -1188,7 +1188,7 @@ void *Fragment(void * targs){
     size_t preloading_buffer_seek = 0;
     FIFOPlus<chunk_t*>* output_fifo = args->_output_fifo;
     for (int i = 0; i < args->nqueues; ++i) {
-        configure_fifo(output_fifo[i], (*args->_output_fifo_data)[FIFORole::PRODUCER], FIFORole::PRODUCER);
+        configure_fifo(output_fifo[i], (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid], FIFORole::PRODUCER);
     }
 
     int qid = 0;
@@ -1316,7 +1316,7 @@ void *Fragment(void * targs){
             /* r = ringbuffer_insert(&send_buf, chunk);
                ++count;
                assert(r==0); */
-            output_fifo[qid].push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+            output_fifo[qid].push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
             qid = (qid + 1) % args->nqueues;
             //NOTE: No need to empty a full send_buf, we will break now and pass everything on to the queue
             break;
@@ -1361,7 +1361,7 @@ void *Fragment(void * targs){
                     qid = (qid+1) % args->nqueues;
                     } */
                     //prepare for next iteration
-                    output_fifo[qid].push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER]._reconfigure);
+                    output_fifo[qid].push(chunk, (*args->_output_fifo_data)[FIFORole::PRODUCER][args->tid]._reconfigure);
                     qid = (qid + 1) % args->nqueues;
                     chunk = temp;
                     temp = NULL;
@@ -1430,7 +1430,7 @@ void *Reorder(void * targs) {
     int qid = 0;
     FIFOPlus<chunk_t*>* input_fifo = args->_input_fifo;
     for (int i = 0; i < args->nqueues; ++i) {
-        configure_fifo(input_fifo[i], (*args->_input_fifo_data)[FIFORole::CONSUMER], FIFORole::CONSUMER);
+        configure_fifo(input_fifo[i], (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid], FIFORole::CONSUMER);
     }
     int fd = 0;
 
@@ -1492,7 +1492,7 @@ void *Reorder(void * targs) {
 
         std::optional<chunk_t*> chunk_opt;
         for (i = 0; i < args->nqueues; ++i) {
-            input_fifo[qid].pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER]._reconfigure);
+            input_fifo[qid].pop(chunk_opt, (*args->_input_fifo_data)[FIFORole::CONSUMER][args->tid]._reconfigure);
             qid = (qid + 1) % args->nqueues;
 
             if (chunk_opt) {
@@ -1792,15 +1792,15 @@ unsigned long long EncodeMutex(DedupData& data) {
 
     for (int i = 0; i < nqueues; ++i) {
         if (i == nqueues - 1 && extra_queue) {
-            allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size, "fragment to refine");
-            allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size, "refine to deduplicate");
-            allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size, "deduplicate to compress");
-            allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, data._fifo_data[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size, "dedup / compress to reorder");
+            allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[FRAGMENT][REFINE][FIFORole::PRODUCER][0]._history_size, "fragment to refine");
+            allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[REFINE][DEDUPLICATE][FIFORole::PRODUCER][0]._history_size, "refine to deduplicate");
+            allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, data._nb_threads % MAX_THREADS_PER_QUEUE, data._nb_threads % MAX_THREADS_PER_QUEUE, data._fifo_data[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER][0]._history_size, "deduplicate to compress");
+            allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * (data._nb_threads % MAX_THREADS_PER_QUEUE), 1, data._fifo_data[DEDUPLICATE][REORDER][FIFORole::PRODUCER][0]._history_size, "dedup / compress to reorder");
         } else {
-            allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, MAX_THREADS_PER_QUEUE, data._fifo_data[FRAGMENT][REFINE][FIFORole::PRODUCER]._history_size, "fragment to refine");
-            allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, data._fifo_data[REFINE][DEDUPLICATE][FIFORole::PRODUCER]._history_size, "refine to deduplicate");
-            allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, data._fifo_data[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER]._history_size, "deduplicate to compress");
-            allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * MAX_THREADS_PER_QUEUE, 1, data._fifo_data[DEDUPLICATE][REORDER][FIFORole::PRODUCER]._history_size, "dedup / compress to reorder");
+            allocate((refine_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 1, MAX_THREADS_PER_QUEUE, data._fifo_data[FRAGMENT][REFINE][FIFORole::PRODUCER][0]._history_size, "fragment to refine");
+            allocate((deduplicate_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, data._fifo_data[REFINE][DEDUPLICATE][FIFORole::PRODUCER][0]._history_size, "refine to deduplicate");
+            allocate((compress_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, MAX_THREADS_PER_QUEUE, MAX_THREADS_PER_QUEUE, data._fifo_data[DEDUPLICATE][COMPRESS][FIFORole::PRODUCER][0]._history_size, "deduplicate to compress");
+            allocate((reorder_input + i * sizeof(FIFOPlus<chunk_t*>)), reconfiguration, 2 * MAX_THREADS_PER_QUEUE, 1, data._fifo_data[DEDUPLICATE][REORDER][FIFORole::PRODUCER][0]._history_size, "dedup / compress to reorder");
         }
     }
 
@@ -3713,25 +3713,25 @@ std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(D
             amount = MAX_THREADS_PER_QUEUE;
         }
 
-        SmartFIFOImpl<chunk_t*>* f_to_r = new SmartFIFOImpl<chunk_t*>(1);
+        SmartFIFOImpl<chunk_t*>* f_to_r = new SmartFIFOImpl<chunk_t*>(1, "fragment_to_refine_" + std::to_string(i));
         f_to_r->add_producer();
         fragment_to_refine.push_back(f_to_r);
 
-        SmartFIFOImpl<chunk_t*>* r_to_d = new SmartFIFOImpl<chunk_t*>(1);
+        SmartFIFOImpl<chunk_t*>* r_to_d = new SmartFIFOImpl<chunk_t*>(1, "refine_to_deduplicate_" + std::to_string(i));
         r_to_d->add_producers(amount);
         refine_to_deduplicate.push_back(r_to_d);
 
-        SmartFIFOImpl<chunk_t*>* d_to_c = new SmartFIFOImpl<chunk_t*>(1);
+        SmartFIFOImpl<chunk_t*>* d_to_c = new SmartFIFOImpl<chunk_t*>(1, "deduplicate_to_compress_" + std::to_string(i));
         d_to_c->add_producers(amount);
         deduplicate_to_compress.push_back(d_to_c);
 
-        SmartFIFOImpl<chunk_t*>* dc_to_r = new SmartFIFOImpl<chunk_t*>(1);
+        SmartFIFOImpl<chunk_t*>* dc_to_r = new SmartFIFOImpl<chunk_t*>(1, "dedupcompress_to_reorder_" + std::to_string(i));
         dc_to_r->add_producers(2 * amount);
         dedup_compress_to_reorder.push_back(dc_to_r);
     }
 
     for (int i = 0; i < nqueues; ++i) {
-        fragment_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[i], data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::PRODUCER]._n));
+        fragment_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[i], data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::PRODUCER][0]._n));
     }
 
     fragment_args.tid = 0;
