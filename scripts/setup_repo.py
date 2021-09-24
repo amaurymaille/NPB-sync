@@ -42,7 +42,7 @@ def download_libs():
         subprocess.Popen(["sed", "-i.orig", "-e", "s/-- LUA_INCLUDE_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/src\"/", "-e", "s/-- LUA_LIB_PATH --/\"" + os.getcwd().replace("/", "\/") + "\/build\/lib\"/", here + "/../cmake/FindLua.cmake"]).wait()
 
     if not os.path.isdir("sol2"):
-        subprocess.Popen(["git", "clone", "git@github.com:ThePhD/sol2.git"].wait())
+        subprocess.Popen(["git", "clone", "git@github.com:ThePhD/sol2.git"]).wait()
 
 def main():
     dirname = os.path.dirname(os.path.abspath(sys.argv[0]))
