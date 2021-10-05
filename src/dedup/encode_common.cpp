@@ -5,6 +5,11 @@ class DedupDta;
 
 extern DedupData* _g_data;
 
+#include "encode_common.h"
+
+int rf_win;
+int rf_win_dataprocess;
+
 unsigned int hash_from_key_fn( void *k ) {
     //NOTE: sha1 sum is integer-aligned
     return ((unsigned int *)k)[0];
