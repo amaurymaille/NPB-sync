@@ -1,3 +1,5 @@
+#include "encode_common.h"
+#include "fifo_plus.tpp"
 
 #ifdef FIFO_PLUS_TIMESTAMP_DATA
 std::vector<FIFOPlus<chunk_t*>*> Globals::fifos;

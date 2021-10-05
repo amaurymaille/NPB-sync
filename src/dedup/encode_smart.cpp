@@ -1,3 +1,6 @@
+#include "encode_common.h"
+#include "smart_fifo.h"
+
 struct thread_args_smart {
     int tid;
     int nqueues;
