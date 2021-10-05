@@ -1,11 +1,11 @@
 #ifndef ENCODE_COMMON_H
 #define ENCODE_COMMON_H
 
+#include "encode_common.h"
+
 class DedupDta;
 
 extern DedupData* _g_data;
-
-#include "encode_common.h"
 
 int rf_win;
 int rf_win_dataprocess;
@@ -19,30 +19,8 @@ int keys_equal_fn ( void *key1, void *key2 ) {
     return (memcmp(key1, key2, SHA1_LEN) == 0);
 }
 
-#ifdef ENABLE_STATISTICS
-//Keep track of block granularity with 2^CHUNK_GRANULARITY_POW resolution (for statistics)
-#define CHUNK_GRANULARITY_POW (7)
-//Number of blocks to distinguish, CHUNK_MAX_NUM * 2^CHUNK_GRANULARITY_POW is biggest block being recognized (for statistics)
-#define CHUNK_MAX_NUM (8*32)
-//Map a chunk size to a statistics array slot
-#define CHUNK_SIZE_TO_SLOT(s) ( ((s)>>(CHUNK_GRANULARITY_POW)) >= (CHUNK_MAX_NUM) ? (CHUNK_MAX_NUM)-1 : ((s)>>(CHUNK_GRANULARITY_POW)) )
-//Get the average size of a chunk from a statistics array slot
-#define SLOT_TO_CHUNK_SIZE(s) ( (s)*(1<<(CHUNK_GRANULARITY_POW)) + (1<<((CHUNK_GRANULARITY_POW)-1)) )
-//Deduplication statistics (only used if ENABLE_STATISTICS is defined)
-typedef struct {
-    /* Cumulative sizes */
-    size_t total_input; //Total size of input in bytes
-    size_t total_dedup; //Total size of input without duplicate blocks (after global compression) in bytes
-    size_t total_compressed; //Total size of input stream after local compression in bytes
-    size_t total_output; //Total size of output in bytes (with overhead) in bytes
-
-    /* Size distribution & other properties */
-    unsigned int nChunks[CHUNK_MAX_NUM]; //Coarse-granular size distribution of data chunks
-    unsigned int nDuplicates; //Total number of duplicate blocks
-} stats_t;
-
 //Initialize a statistics record
-static void init_stats(stats_t *s) {
+void init_stats(stats_t *s) {
     int i;
 
     assert(s!=NULL);
