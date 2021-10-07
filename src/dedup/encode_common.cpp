@@ -330,7 +330,7 @@ int sub_Deduplicate(chunk_t *chunk) {
 }
 
 
-unsigned long long EncodeBase(DedupData& data, std::function<void(size_t, void*, tp&, tp&)>&& fn) {
+unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, size_t, int, void*, tp&, tp&)>&& fn) {
     _g_data = &data;
 
     struct stat filestat;
@@ -400,7 +400,7 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(size_t, void*,
 
     /// Algorithm specific part
     tp begin, end;
-    fn(filestat.st_size, preloading_buffer, begin, end);
+    fn(data, fd, filestat.st_size, preloading_buffer, begin, end);
 
     //clean up after preloading
     if(data._preloading) {
@@ -417,4 +417,50 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(size_t, void*,
     hashtable_destroy(cache, TRUE);
 
     return diff;
+}
+
+void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data) {
+    for (ThreadData const& thread_data: data._thread_data) {
+        for (int fifo_id: thread_data._outputs) {
+            fifo_ids.insert(fifo_id);
+        }
+    }
+}
+
+void compute_fifo_ids_for_reorder(std::set<int>& fifo_ids, LayerData const& deduplicate, LayerData const& compress) {
+    for (ThreadData const& thread_data: deduplicate._thread_data) {
+        for (int fifo_id: thread_data._extras) {
+            fifo_ids.insert(fifo_id);
+        }
+    }
+
+    for (ThreadData const& thread_data: compress._thread_data) {
+        for (int fifo_id: thread_data._outputs) {
+            fifo_ids.insert(fifo_id);
+        }
+    }
+}
+
+unsigned int nb_producers_for_fifo(int fifo_id, LayerData const& layer_data) {
+    unsigned int nb_producers = 0;
+    for (ThreadData const& thread_data: layer_data._thread_data) {
+        if (thread_data._outputs.find(fifo_id) != thread_data._outputs.end()) {
+            nb_producers++;
+        }
+    }
+
+    return nb_producers;
+
+}
+
+unsigned int nb_producers_for_reorder_fifo(int fifo_id, LayerData const& deduplicate, LayerData const& compress) {
+    unsigned int nb_producers = 0;
+
+    for (ThreadData const& thread_data: deduplicate._thread_data) {
+        if (thread_data._extras.find(fifo_id) != thread_data._extras.end()) {
+            nb_producers++;
+        }
+    }
+
+    return nb_producers + nb_producers_for_fifo(fifo_id, compress);
 }

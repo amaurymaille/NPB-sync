@@ -96,7 +96,13 @@ int sub_Deduplicate(chunk_t *chunk);
 using sc = std::chrono::steady_clock
 using tp = std::chrono::time_point<sc>;
 
-unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, size_t, void*, tp&, tp1)&& fn);
+unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, int, size_t, void*, tp&, tp1)&& fn);
+
+void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data);
+void compute_fifo_ids_for_reorder(std::set<int>& fifo_ids, LayerData const& deduplicate, LayerData const& compress);
+
+unsigned int nb_producers_for_fifo(int fifo_id, LayerData const& layer_data);
+unsigned int nb_producers_for_reorder_fifo(int fifo_id, LayerData const& deduplicate, LayerData const& compress);
 
 extern int rf_win;
 extern int rf_win_dataprocess;
