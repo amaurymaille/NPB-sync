@@ -18,7 +18,6 @@ void FIFOData::dump() {
         "\t\t\t\tdecrease = " << _decrease_mult << std::endl <<
         "\t\t\t\thistory_size = " << _history_size << std::endl <<
         "\t\t\t\treconfigure = " << _reconfigure << std::endl;
-
 }
 
 void FIFOData::validate() {
@@ -26,7 +25,7 @@ void FIFOData::validate() {
         std::cerr << "[WARN] min set to less than 1 in FIFOData " << this << ". Setting to 1." << std::endl;
         _min = 1;
     }
-
+    
     if (_n < _min || _n > _max) {
         std::ostringstream error;
         error << "[FATAL] Start value of _n (" << _n << ") is lower than _min (" << _min << "), or greater than max (" << _max << ") in FIFOData " << this << std::endl;
@@ -42,10 +41,33 @@ void FIFOData::validate() {
     }
 }
 
-void DedupData::push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data, unsigned int n) {
-    for (unsigned int i = 0; i < n; ++i) {
-        _fifo_data[source][destination][role].push_back(data);
-    }
+FIFOData FIFOData::duplicate() {
+    return *this;
+}
+
+void ThreadData::push_input(int data) {
+    _inputs.push_back(data);
+}
+
+void ThreadData::push_output(int data) {
+    _outputs.push_back(data);
+}
+
+void ThreadData::push_extra(int data) {
+    _extras.push_back(data);
+}
+
+void LayerData::push(ThreadData const& data) {
+    _thread_data.push_back(data);
+}
+
+unsigned int LayerData::push(FIFOData const& data) {
+    _fifo_data[_fifo_id] = data;
+    return _fifo_id++;
+}
+
+void DedupData::push_layer_data(Layers layer, LayerData const& data) {
+    _layers_data[layer] = data;
 }
 
 void DedupData::dump() {
@@ -72,146 +94,6 @@ void DedupData::dump() {
 }
 
 void DedupData::validate() {
-    if (_nb_threads < 1) {
-        std::cerr << "[WARN] Number of threads lower than 1, setting to 1." << std::endl;
-    }
-
-    auto throw_fn = [](std::string const& context, std::string const& role, unsigned int expected, unsigned int received) -> void {
-        std::ostringstream stream;
-        stream << "[" << role << " - " << context << "] Expected " << expected << " configurations, got " << received << std::endl;
-        throw std::runtime_error(stream.str());
-    };
-
-    for (auto const& [src, map1]: _fifo_data) {
-        for (auto const& [dst, map2]: map1) {
-            std::map<FIFORole, unsigned int> counts;
-            counts[FIFORole::PRODUCER] = 0;
-            counts[FIFORole::CONSUMER] = 0;
-
-            for (auto const& [role, vect]: map2) {
-                counts[role] += vect.size();
-            }
-
-            switch (src) {
-            case Layers::FRAGMENT:
-                if (counts[FIFORole::PRODUCER] != 1) {
-                    throw_fn("Fragment", "Producer", 1, counts[FIFORole::PRODUCER]);
-                }
-
-                if (counts[FIFORole::CONSUMER] != _nb_threads) {
-                    throw_fn("Refine", "Consumer", _nb_threads, counts[FIFORole::CONSUMER]);
-                }
-                break;
-
-            case Layers::REFINE:
-            case Layers::DEDUPLICATE:
-            case Layers::COMPRESS:
-                if (counts[FIFORole::PRODUCER] != _nb_threads) {
-                    std::string context;
-                    switch (src) {
-                    case Layers::REFINE:
-                        context = "Refine";
-                        break;
-
-                    case Layers::DEDUPLICATE:
-                        context = "Deduplicate";
-                        break;
-
-                    case Layers::COMPRESS:
-                        context = "Compress";
-                        break;
-                    }
-
-                    throw_fn(context, "Producer", _nb_threads, counts[FIFORole::PRODUCER]);
-                }
-
-                if (dst == Layers::REORDER) {
-                    if (counts[FIFORole::CONSUMER] != 1) {
-                        throw_fn("Reorder", "Consumer", 1, counts[FIFORole::CONSUMER]);
-                    }
-                } else {
-                    if (counts[FIFORole::CONSUMER] != _nb_threads) {
-                        std::string context;
-                        switch (src) {
-                        case Layers::REFINE:
-                            context = "Deduplicate";
-                            break;
-
-                        case Layers::DEDUPLICATE:
-                            context = "Compress";
-                            break;
-                        }
-
-                        throw_fn(context, "Consumer", _nb_threads, counts[FIFORole::CONSUMER]);
-                    }
-                }
-                break;
-
-            default:
-                break;
-            }
-        }
-
-    }
-
-    auto find_layer_pair = [&](Layers src, Layers dst) {
-        if (auto src_it = _fifo_data.find(src); src_it != _fifo_data.end()) {
-            if (auto dst_it = src_it->second.find(dst); dst_it != src_it->second.end()) {
-                return dst_it;
-            } else {
-                std::ostringstream stream;
-                stream << "Missing layer " << (int)dst << " as destination from layer " << (int)src << std::endl;
-                throw std::runtime_error(stream.str());
-            }
-        } else {
-            std::ostringstream stream;
-            stream << "Missing source layer " << (int)src << std::endl;
-            throw std::runtime_error(stream.str());
-        }
-    };
-
-    auto require_prod = [&](Layers src, Layers dst) {
-        auto p = find_layer_pair(src, dst);
-
-        if (p->second.find(FIFORole::PRODUCER) == p->second.end()) {
-            std::ostringstream stream;
-            stream << "Missing producer role from layer " << (int)src << " to layer " << (int)dst << std::endl;
-            throw std::runtime_error(stream.str());
-        }
-    };
-
-    auto require_cons = [&](Layers src, Layers dst) {
-        auto p = find_layer_pair(src, dst);
-
-        if (p->second.find(FIFORole::CONSUMER) == p->second.end()) {
-            std::ostringstream stream;
-            stream << "Missing consumer role from layer " << (int)src << " to layer " << (int)dst << std::endl;
-            throw std::runtime_error(stream.str());
-        }
-
-    };
-
-    auto require_prod_cons = [&](Layers src, Layers dst) {
-        // Not optimal, but I don't care.
-        require_prod(src, dst);
-        require_cons(src, dst);
-    }; 
-
-    require_prod_cons(Layers::FRAGMENT, Layers::REFINE);
-    require_prod_cons(Layers::REFINE, Layers::DEDUPLICATE);
-    require_prod_cons(Layers::DEDUPLICATE, Layers::COMPRESS);
-    require_prod(Layers::COMPRESS, Layers::REORDER);
-    require_prod_cons(Layers::DEDUPLICATE, Layers::REORDER);
-
-    for (auto& p1: _fifo_data) {
-        for (auto& p2: p1.second) {
-            for (auto& p3: p2.second) {
-                for (auto value: p3.second) {
-                    value.validate();
-                }
-            }
-        }
-    }
 }
 
 unsigned long long DedupData::run_orig() {
@@ -270,4 +152,17 @@ void DedupData::process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const&
 
         timestamp_stream << json_data;
     }
+}
+
+unsigned int LayerData::get_total_threads() const {
+    return _thread_data.size();
+}
+
+unsigned int DedupData::get_total_threads() const {
+    unsigned int total = 0;
+    for (auto const& [std::ignore, data]: _layers_data) {
+        total += data.get_total_threads();
+    }
+
+    return total;
 }

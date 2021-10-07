@@ -34,18 +34,38 @@ struct FIFOData {
     float _decrease_mult = 1.f;
     unsigned int _history_size = 10;
     bool _reconfigure = true;
+    // How many insertions we accept before changing the step.
+    unsigned int _change_step_after = 0;
+    // New step after `_change_step_after` insertions
+    unsigned _new_step = 0;
 
     void dump();
     void validate();
+    FIFOData duplicate();
+};
+
+struct ThreadData {
+    std::set<int> _inputs;
+    std::set<int> _outputs;
+    // For Deduplicate layer, because there are outputs to Compress and to 
+    // Reorder.
+    std::set<int> _extras;
+
+    void push_input(int fifo_id);
+    void push_output(int fifo_id);
+    void push_extra(int fifo_id);
+};
+
+struct LayerData {
+    std::vector<ThreadData> _thread_data;
+    void push(ThreadData const& data);
+    unsigned int get_total_threads() const;
 };
 
 class DedupData {
 public:
     std::string _input_filename;
     std::string _output_filename;
-    unsigned int _nb_threads = 1;
-    /// On layer A, contain data for the FIFOs to layers B, C...
-    std::map<Layers, std::map<Layers, std::map<FIFORole, std::vector<FIFOData>>>> _fifo_data;
     Compressions _compression = GZIP;
     bool _preloading = false;
     FIFOReconfigure _algorithm;
@@ -54,12 +74,19 @@ public:
     unsigned long long run_orig();
     unsigned long long run_mutex();
     unsigned long long run_smart();
-    void push_fifo_data(Layers source, Layers destination, FIFORole role, FIFOData const& data, unsigned int n);
+    void push_layer_data(Layers layer, LayerData const& data);
     void dump(); 
     void validate();
 
+    unsigned int get_total_threads() const;
+
+    unsigned int push_fifo(FIFOData const& data);
+
 private:
+    std::map<Layers, LayerData> _layers_data;
+    std::map<unsigned int, FIFOData> _fifo_data;
     void process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data);
+    unsigned int _fifo_id;
 };
 
 #endif // LUA_CORE_H
