@@ -12,6 +12,8 @@
 
 #include <sol/sol.hpp>
 
+#include "smart_fifo.h"
+
 #include "util.h"
 #include "debug.h"
 #include "dedupdef.h"
@@ -43,6 +45,8 @@ config_t * conf;
 
 struct hashtable* cache;
 
+std::map<void*, std::tuple<std::string, std::array<size_t, 2>>> _semaphore_data;
+
 /*--------------------------------------------------------------------------*/
 static void
 usage(char* prog)
@@ -72,6 +76,7 @@ struct CLIArgs {
     bool _orig;
     bool _mutex;
     bool _smart;
+    std::optional<std::string> _output;
 };
 
 void parse_args(int argc, char** argv, CLIArgs& args) {
@@ -83,7 +88,8 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         ("mutex,m", "Run the mutex FIFO algorithm")
         ("smart,s", "Run the smart FIFO algorithm")
         ("lua-output-file", po::value<std::string>(), "Output file in which the Lua script can write its information")
-        ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')");
+        ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')")
+        ("output", po::value<std::string>(), "Output file in which the program will write the compressed output");
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
@@ -140,6 +146,10 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         args._lua_output_file = "/dev/null";
         args._lua_output_file_mode = 'w';
     }
+    
+    if (vm.count("output")) {
+        args._output = std::make_optional(vm["output"].as<std::string>());
+    }
 }
 
 void start_sol(CLIArgs const& args) {
@@ -184,7 +194,6 @@ void start_sol(CLIArgs const& args) {
     sol::usertype<DedupData> dedup_data_type = lua.new_usertype<DedupData>("DedupData");
     dedup_data_type["input_filename"] = &DedupData::_input_filename;
     dedup_data_type["output_filename"] = &DedupData::_output_filename; 
-    dedup_data_type["nb_threads"] = &DedupData::_nb_threads;
     dedup_data_type["preloading"] = &DedupData::_preloading;
     dedup_data_type["add_data"] = &DedupData::push_fifo_data;
     dedup_data_type["debug_timestamps"] = &DedupData::_debug_timestamps;
@@ -194,8 +203,18 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["run_orig"] = &DedupData::run_orig;
     dedup_data_type["run_mutex"] = &DedupData::run_mutex;
     dedup_data_type["run_smart"] = &DedupData::run_smart;
+    dedup_data_type["push_layer"] = &DedupData::push_layer_data;
+
+    sol::usertype<LayerData> layer_datatype = lua.new_usertype<LayerData>("LayerData");
+    layer_datatype["push"] = &LayerData::push;
+
+    sol::usertype<ThreadData> thread_datatype = lua.new_usertype<ThreadData>("ThreadData");
+    thread_datatype["push_input"] = &ThreadData::push_input;
+    thread_datatype["push_output"] = &ThreadData::push_output;
+    thread_datatype["push_extra"] = &TheadData::push_extra;
 
     sol::usertype<FIFOData> fifo_data_type = lua.new_usertype<FIFOData>("FIFOData");
+    fifo_data_type["id"] = &FIFOData::_id;
     fifo_data_type["min"] = &FIFOData::_min; 
     fifo_data_type["n"] = &FIFOData::_n;
     fifo_data_type["max"] = &FIFOData::_max;
@@ -207,6 +226,13 @@ void start_sol(CLIArgs const& args) {
     fifo_data_type["history_size"] = &FIFOData::_history_size;
     fifo_data_type["reconfigure"] = &FIFOData::_reconfigure;
     fifo_data_type["dump"] = &FIFOData::dump;
+    fifo_data_type["duplicate"] = &FIFOData::duplicate;
+    fifo_data_type["change_step_after"] = &FIFOData::_change_step_after;
+    fifo_data_type["new_step"] = &FIFOData::_new_step;
+
+    if (args._output) {
+        lua["output"] = *args._output;
+    }
 
     lua.script_file(args._lua_file);
 }
@@ -248,6 +274,11 @@ int main(int argc, char** argv) {
   } */
 
   start_sol(args);
+
+  for (auto const& [addr, data]: _semaphore_data) {
+    const auto& [name, arr] = data;
+    std::cout << "[End] FIFO " << name << " => " << arr[0] << ", " << arr[1] << std::endl;
+  } 
 
   /*conf = (config_t *) malloc(sizeof(config_t));
   if (conf == NULL) {
