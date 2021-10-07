@@ -728,7 +728,7 @@ static void* _dreorder(void* arg) {
     return default_launch_thread(arg);
 }
 
-static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, tp& end) {
+static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
     LayerData& fragment = data._layers_data[Layers::FRAGMENT];
     LayerData& refine = data._layers_data[Layers::REFINE];
     LayerData& deduplicate = data._layers_data[Layers::DEDUPLICATE];
@@ -738,11 +738,7 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     // Allocate N queues at *q and store the ids of the FIFOData associated.
     // N is the amount of different queues for a particular stage.
     auto alloc_queues = [](queue_t** q, std::set<int>& fifo_ids, LayerData const& data) {
-        for (ThreadData const& thread_data: data._thread_data) {
-            for (int fifo_id: thread_data._outputs) {
-                fifo_ids.insert(fifo_id);
-            }
-        }
+        compute_fifo_ids_for_layer(fifo_ids, data);
         *q = (queue_t*)malloc(sizeof(queue_t) * fifo_ids.size());
     };
 
@@ -753,18 +749,7 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     alloc_queues(&compress_que, scompress, deduplicate);
 
     {
-        for (ThreadData const& thread_data: deduplicate._thread_data) {
-            for (int fifo_id: thread_data._extras) {
-                sreorders.insert(fifo_id);
-            }
-        }
-
-        for (ThreadData const& thread_data: compress._thread_data) {
-            for (int fifo_id: thread_data._outputs) {
-                sreorders.insert(fifo_id);
-            }
-        }
-
+        compute_fifo_ids_for_reorder(sreorder, deduplicate, compress);
         reorder_que = (queue_t*)malloc(sizeof(queue_t) * sreorder.size());
     }
 
@@ -775,20 +760,9 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     // layer_data are the threading data associated with a stage.
     auto init_fifos = [&fifo_id_to_position](queue_t* queues, std::set<int> const& fifo_ids, LayerData const& layer_data) {
         auto iter = fifo_ids.begin();
-        auto nb_producers = [&layer_data](int target_fifo_id) {
-            unsigned int nb_producers = 0;
-            for (ThreadData const& thread_data: layer_data._thread_data) {
-                if (thread_data._outputs.find(target_fifo_id) != thread_data._outputs.end()) {
-                    nb_producers++;
-                }
-            }
-
-            return nb_producers;
-        };
-
         for (int i = 0; i < fifo_ids.size(); ++i, ++iter) {
             fifo_id_to_position[*iter] = i;
-            queue_init(queues + i, QUEUE_SIZE, nb_producers(*iter);
+            queue_init(queues + i, QUEUE_SIZE, nb_producers_for_fifo(*iter, layer_data);
         }
     };
 
@@ -797,27 +771,10 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     init_fifos(compress_que, scompress, compress);
     
     {
-        auto nb_producers = [&deduplicate, &compress](int target_fifo_id) {
-            unsigned int nb_producers = 0;
-            for (ThreadData const& thread_data: deduplicate._thread_data) {
-                if (thread_data._extras.find(target_fifo_id) != thread_data._extras.end()) {
-                    nb_producers++;
-                }
-            }
-
-            for (ThreadData const& thread_data: compress._thread_data) {
-                if (thread_data._outputs.find(target_fifo_id) != thread_data._outputs.end()) {
-                    nb_producers++;
-                }
-            }
-
-            return nb_producers;
-        };
-
         auto iter = sreorders.begin();
         for (int i = 0; i < sreorders.size(); ++i, ++iter) {
             fifo_id_to_position[*iter] = i;
-            queue_init(reorder + i, QUEUE_SIZE, nb_producers(*iter));
+            queue_init(reorder + i, QUEUE_SIZE, nb_producers_for_reorder_fifo(*iter, deduplicate, compress));
         }
     }
 
@@ -832,6 +789,7 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     for (int i = 0; i < fragment.get_total_threads(); ++i) {
         fragment_args[i].input_file.size = filesize;
         fragment_args[i].input_file.buffer = buffer;
+        fragment_args[i].fd = fd;
     }
     thread_args* refine_args = alloc_thread_args(refine);
     thread_args* deduplicate_args = alloc_thread_args(deduplicate);
