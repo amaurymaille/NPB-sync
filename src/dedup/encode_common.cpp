@@ -328,3 +328,93 @@ int sub_Deduplicate(chunk_t *chunk) {
 
     return isDuplicate;
 }
+
+
+unsigned long long EncodeBase(DedupData& data, std::function<void(size_t, void*, tp&, tp&)>&& fn) {
+    _g_data = &data;
+
+    struct stat filestat;
+    int32 fd;
+
+    //Create chunk cache
+    cache = hashtable_create(65536, hash_from_key_fn, keys_equal_fn, FALSE);
+    if(cache == NULL) {
+        printf("ERROR: Out of memory\n");
+        exit(1);
+    }
+    
+    int init_res = mbuffer_system_init();
+    assert(!init_res);
+
+    /* src file stat */
+    if (stat(data._input_filename.c_str(), &filestat) < 0)
+        EXIT_TRACE("stat() %s failed: %s\n", data._input_filename.c_str(), strerror(errno));
+
+    if (!S_ISREG(filestat.st_mode))
+        EXIT_TRACE("not a normal file: %s\n", data._input_filename.c_str());
+
+    /* src file open */
+    if((fd = open(data._input_filename.c_str(), O_RDONLY | O_LARGEFILE)) < 0)
+        EXIT_TRACE("%s file open error %s\n", data._input_filename.c_str(), strerror(errno));
+
+    //Load entire file into memory if requested by user
+    void *preloading_buffer = NULL;
+    if(data._preloading) {
+        size_t bytes_read=0;
+        int r;
+
+        preloading_buffer = malloc(filestat.st_size);
+        if(preloading_buffer == NULL)
+            EXIT_TRACE("Error allocating memory for input buffer.\n");
+
+        //Read data until buffer full
+        while(bytes_read < filestat.st_size) {
+            r = read(fd, (char*)(preloading_buffer)+bytes_read, filestat.st_size-bytes_read);
+            if(r<0) switch(errno) {
+                case EAGAIN:
+                    EXIT_TRACE("I/O error: No data available\n");break;
+                case EBADF:
+                    EXIT_TRACE("I/O error: Invalid file descriptor\n");break;
+                case EFAULT:
+                    EXIT_TRACE("I/O error: Buffer out of range\n");break;
+                case EINTR:
+                    EXIT_TRACE("I/O error: Interruption\n");break;
+                case EINVAL:
+                    EXIT_TRACE("I/O error: Unable to read from file descriptor\n");break;
+                case EIO:
+                    EXIT_TRACE("I/O error: Generic I/O error\n");break;
+                case EISDIR:
+                    EXIT_TRACE("I/O error: Cannot read from a directory\n");break;
+                default:
+                    EXIT_TRACE("I/O error: Unrecognized error\n");break;
+            }
+            if(r==0) break;
+            bytes_read += r;
+        }
+        // Goes into Fragment args
+#ifdef ENABLE_PTHREADS
+        data_process_args.input_file.size = filestat.st_size;
+        data_process_args.input_file.buffer = preloading_buffer;
+#endif //ENABLE_PTHREADS
+    }
+
+    /// Algorithm specific part
+    tp begin, end;
+    fn(filestat.st_size, preloading_buffer, begin, end);
+
+    //clean up after preloading
+    if(data._preloading) {
+        free(preloading_buffer);
+    }
+
+    /* clean up with the src file */
+    if (!data._input_filename.empty())
+        close(fd);
+
+    int des_res = mbuffer_system_destroy();
+    assert(!des_res);
+
+    hashtable_destroy(cache, TRUE);
+
+    return diff;
+}

@@ -93,6 +93,11 @@ void write_chunk_to_file(int fd, chunk_t *chunk);
 void sub_Compress(chunk_t *chunk);
 int sub_Deduplicate(chunk_t *chunk);
 
+using sc = std::chrono::steady_clock
+using tp = std::chrono::time_point<sc>;
+
+unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, size_t, void*, tp&, tp1)&& fn);
+
 extern int rf_win;
 extern int rf_win_dataprocess;
 
