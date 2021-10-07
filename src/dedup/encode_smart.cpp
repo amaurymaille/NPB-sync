@@ -645,8 +645,8 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     }
 
     auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_datas, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
-        thread_args_smart* args = new thread_args_smart[data.get_total_threads()];
-        pthread_t* threads = new pthread_t*[data.get_total_threads()];
+        thread_args_smart* args = new thread_args_smart[layer_data.get_total_threads()];
+        pthread_t* threads = new pthread_t[layer_data.get_total_threads()];
 
         auto generate_views = [&data, &ids_to_fifos](std::vector<SmartFIFO<chunk_t*>>& target, bool producer, std::set<int> const& fifo_ids) {
             for (int fifo: fifo_ids) {
@@ -672,14 +672,40 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
             ++i;
             ++timestamp_pos;
+
+            pthread_create(threads[i], nullptr, routine, args + i);
         }
+
+        return threads, args;
     };
 
-    launch_stage(_FragmentSmart, fragment);
-    launch_stage(_RefineSmart, refine);
-    launch_stage(_DeduplicateSmart, deduplicate, true);
-    launch_stage(_CompressSmart, compress);
-    launch_stage(
+    auto fragment_stage = launch_stage(_FragmentSmart, fragment);
+    auto refine_stage = launch_stage(_RefineSmart, refine);
+    auto deduplicate_stage = launch_stage(_DeduplicateSmart, deduplicate, true);
+    auto compress_stage = launch_stage(_CompressSmart, compress);
+    auto reorder_stage = launch_stage(_ReorderSmart, reorder);
+
+    auto terminate = [](auto stage, LayerData const& layer_data) {
+        auto [threads, args] stage;
+        for (int i = 0; i < layer_data.get_total_threads(); ++i) {
+            pthread_join(threads[i], nullptr);
+        }
+
+        free(threads);
+        free(args);
+    };
+
+    pthread_barrier_wait(barrier);
+
+    begin = tp::now();
+
+    terminate(fragment_stage, fragment);
+    terminate(refine_stage, refine);
+    terminate(deduplicate_stage, deduplicate);
+    terminate(compress_stage, compress);
+    terminate(reorder_stage, reorder);
+
+    end = tp::now();
 }
 
 std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {
@@ -689,209 +715,209 @@ std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(D
                 _Encode(timestamp_datas, data, fd, filesize, buffer, begin, end);
             }
     );
-    struct stat filestat;
-    int32 fd;
-
-    _g_data = &data;
-
-    //Create chunk cache
-    cache = hashtable_create(65536, hash_from_key_fn, keys_equal_fn, FALSE);
-    if(cache == NULL) {
-        printf("ERROR: Out of memory\n");
-        exit(1);
-    }
-
-    std::vector<Globals::SmartFIFOTSV> timestamp_datas(1 + 3 * data._nb_threads + 1);
-    struct thread_args_smart fragment_args;
-
-    //queue allocation & initialization
-    const int nqueues = (data._nb_threads / MAX_THREADS_PER_QUEUE) +
-        ((data._nb_threads % MAX_THREADS_PER_QUEUE != 0) ? 1 : 0);
-    bool extra_queue = (data._nb_threads % MAX_THREADS_PER_QUEUE) != 0;
-
-    int init_res = mbuffer_system_init();
-    assert(!init_res);
-
-    /* src file stat */
-    if (stat(data._input_filename.c_str(), &filestat) < 0)
-        EXIT_TRACE("stat() %s failed: %s\n", data._input_filename.c_str(), strerror(errno));
-
-    if (!S_ISREG(filestat.st_mode))
-        EXIT_TRACE("not a normal file: %s\n", data._input_filename.c_str());
-
-    /* src file open */
-    if((fd = open(data._input_filename.c_str(), O_RDONLY | O_LARGEFILE)) < 0)
-        EXIT_TRACE("%s file open error %s\n", data._input_filename.c_str(), strerror(errno));
-
-    //Load entire file into memory if requested by user
-    void *preloading_buffer = NULL;
-    if(data._preloading) {
-        size_t bytes_read=0;
-        int r;
-
-        preloading_buffer = malloc(filestat.st_size);
-        if(preloading_buffer == NULL)
-            EXIT_TRACE("Error allocating memory for input buffer.\n");
-
-        //Read data until buffer full
-        while(bytes_read < filestat.st_size) {
-            r = read(fd, (char*)(preloading_buffer)+bytes_read, filestat.st_size-bytes_read);
-            if(r<0) switch(errno) {
-                case EAGAIN:
-                    EXIT_TRACE("I/O error: No data available\n");break;
-                case EBADF:
-                    EXIT_TRACE("I/O error: Invalid file descriptor\n");break;
-                case EFAULT:
-                    EXIT_TRACE("I/O error: Buffer out of range\n");break;
-                case EINTR:
-                    EXIT_TRACE("I/O error: Interruption\n");break;
-                case EINVAL:
-                    EXIT_TRACE("I/O error: Unable to read from file descriptor\n");break;
-                case EIO:
-                    EXIT_TRACE("I/O error: Generic I/O error\n");break;
-                case EISDIR:
-                    EXIT_TRACE("I/O error: Cannot read from a directory\n");break;
-                default:
-                    EXIT_TRACE("I/O error: Unrecognized error\n");break;
-            }
-            if(r==0) break;
-            bytes_read += r;
-        }
-        fragment_args.input_file.size = filestat.st_size;
-        fragment_args.input_file.buffer = preloading_buffer;
-    }
-
-    fragment_args.tid = 0;
-    fragment_args.nqueues = nqueues;
-    fragment_args.fd = fd;
-    
-    std::vector<SmartFIFOImpl<chunk_t*>*> fragment_to_refine, refine_to_deduplicate,
-                deduplicate_to_compress, dedup_compress_to_reorder;
-
-    std::vector<pthread_t> threads(1 + 3 * data._nb_threads + 1);
-    pthread_barrier_t barrier;
-    pthread_barrier_init(&barrier, nullptr, 1 + 1 + 3 * data._nb_threads + 1);
-
-    for (int i = 0; i < nqueues; ++i) {
-        unsigned int amount = 0;
-        if (i == nqueues - 1 && extra_queue) {
-            amount = data._nb_threads % MAX_THREADS_PER_QUEUE;
-        } else {
-            amount = MAX_THREADS_PER_QUEUE;
-        }
-
-        SmartFIFOImpl<chunk_t*>* f_to_r = new SmartFIFOImpl<chunk_t*>(1, "fragment_to_refine_" + std::to_string(i));
-        f_to_r->add_producer();
-        fragment_to_refine.push_back(f_to_r);
-
-        SmartFIFOImpl<chunk_t*>* r_to_d = new SmartFIFOImpl<chunk_t*>(1, "refine_to_deduplicate_" + std::to_string(i));
-        r_to_d->add_producers(amount);
-        refine_to_deduplicate.push_back(r_to_d);
-
-        SmartFIFOImpl<chunk_t*>* d_to_c = new SmartFIFOImpl<chunk_t*>(1, "deduplicate_to_compress_" + std::to_string(i));
-        d_to_c->add_producers(amount);
-        deduplicate_to_compress.push_back(d_to_c);
-
-        SmartFIFOImpl<chunk_t*>* dc_to_r = new SmartFIFOImpl<chunk_t*>(1, "dedupcompress_to_reorder_" + std::to_string(i));
-        dc_to_r->add_producers(2 * amount);
-        dedup_compress_to_reorder.push_back(dc_to_r);
-    }
-
-    for (int i = 0; i < nqueues; ++i) {
-        FIFOData& fragment_data = data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::PRODUCER][0];
-        fragment_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[i], fragment_data._n, fragment_data._reconfigure, fragment_data._change_step_after, fragment_data._new_step));
-    }
-
-    fragment_args.tid = 0;
-    fragment_args._barrier = &barrier;
-    fragment_args._timestamp_data = timestamp_datas.data();
-    pthread_create(threads.data(), nullptr, _FragmentSmart, thread_args_smart_copy_because_pthread(fragment_args));
-
-    for (int i = 0; i < data._nb_threads; ++i) {
-        int queue_id = i / MAX_THREADS_PER_QUEUE;
-
-        thread_args_smart refine_args;
-        refine_args.tid = i;
-        refine_args.nqueues = nqueues;
-        refine_args._barrier = &barrier;
-        FIFOData& refine = data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::CONSUMER][i];
-        refine_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[queue_id], refine._n, refine._reconfigure, refine._change_step_after, refine._new_step));
-
-        if (i < data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER].size()) {
-            FIFOData& refine_output = data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER][i];
-            refine_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], refine_output._n, refine_output._reconfigure, refine_output._change_step_after, refine_output._new_step));
-            refine_args._timestamp_data = timestamp_datas.data() + 1 + i;
-            pthread_create(threads.data() + 1 + i, nullptr, _RefineSmart, thread_args_smart_copy_because_pthread(refine_args));
-        }
-
-        thread_args_smart deduplicate_args;
-        deduplicate_args.tid = i;
-        deduplicate_args.nqueues = nqueues;
-        deduplicate_args._barrier = &barrier;
-        if (i < data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER].size()) {
-            FIFOData& deduplicate_input = data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER][i];
-            deduplicate_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], deduplicate_input._n, deduplicate_input._reconfigure, deduplicate_input._change_step_after, deduplicate_input._new_step));
-        }
-
-        
-        FIFOData& deduplicate_output = data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::PRODUCER][i];
-        deduplicate_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], deduplicate_output._n, deduplicate_output._reconfigure, deduplicate_output._change_step_after, deduplicate_output._new_step));
-
-        FIFOData& deduplicate_extra = data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::PRODUCER][i];
-        deduplicate_args._extra_output_fifo = new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], deduplicate_extra._n, deduplicate_extra._reconfigure, deduplicate_extra._change_step_after, deduplicate_extra._new_step);
-        deduplicate_args._timestamp_data = timestamp_datas.data() + 1 + data._nb_threads + i;
-        pthread_create(threads.data() + 1 + data._nb_threads + i, nullptr, _DeduplicateSmart, thread_args_smart_copy_because_pthread(deduplicate_args));
-
-        thread_args_smart compress_args;
-        compress_args.tid = i;
-        compress_args.nqueues = nqueues;
-        compress_args._barrier = &barrier;
-        FIFOData& compress_input = data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::CONSUMER][i];
-        compress_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], compress_input._n, compress_input._reconfigure, compress_input._change_step_after, compress_input._new_step));
-
-        FIFOData& compress_output = data._fifo_data[Layers::COMPRESS][Layers::REORDER][FIFORole::PRODUCER][i];
-        compress_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], compress_output._n, compress_output._reconfigure, compress_output._change_step_after, compress_output._new_step));
-        compress_args._timestamp_data = timestamp_datas.data() + 1 + 2 * data._nb_threads + i;
-        pthread_create(threads.data() + 1 + 2 * data._nb_threads + i, nullptr, _CompressSmart, thread_args_smart_copy_because_pthread(compress_args));
-    }
-
-    thread_args_smart reorder_args;
-    for (int i = 0; i < nqueues; ++i) {
-        FIFOData& reorder_input = data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::CONSUMER][0];
-        reorder_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[i], reorder_input._n, reorder_input._reconfigure, reorder_input._change_step_after, reorder_input._new_step));
-    }
-
-    reorder_args.tid = 0;
-    reorder_args.nqueues = nqueues;
-    reorder_args._barrier = &barrier;
-    reorder_args._timestamp_data = timestamp_datas.data() + 1 + 3 * data._nb_threads;
-    pthread_create(threads.data() + 1 + 3 * data._nb_threads, nullptr, _ReorderSmart, thread_args_smart_copy_because_pthread(reorder_args));
-
-    pthread_barrier_wait(&barrier);
-    std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
-
-    for (pthread_t& t: threads) {
-        pthread_join(t, nullptr);
-    }
-    
-    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
-    unsigned long long diff = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
-
-    //clean up after preloading
-    if(data._preloading) {
-        free(preloading_buffer);
-    }
-
-    /* clean up with the src file */
-    if (!data._input_filename.empty())
-        close(fd);
-
-    int des_res = mbuffer_system_destroy();
-    assert(!des_res);
-
-    hashtable_destroy(cache, TRUE);
-
-    return { diff, timestamp_datas };
+//    struct stat filestat;
+//    int32 fd;
+//
+//    _g_data = &data;
+//
+//    //Create chunk cache
+//    cache = hashtable_create(65536, hash_from_key_fn, keys_equal_fn, FALSE);
+//    if(cache == NULL) {
+//        printf("ERROR: Out of memory\n");
+//        exit(1);
+//    }
+//
+//    std::vector<Globals::SmartFIFOTSV> timestamp_datas(1 + 3 * data._nb_threads + 1);
+//    struct thread_args_smart fragment_args;
+//
+//    //queue allocation & initialization
+//    const int nqueues = (data._nb_threads / MAX_THREADS_PER_QUEUE) +
+//        ((data._nb_threads % MAX_THREADS_PER_QUEUE != 0) ? 1 : 0);
+//    bool extra_queue = (data._nb_threads % MAX_THREADS_PER_QUEUE) != 0;
+//
+//    int init_res = mbuffer_system_init();
+//    assert(!init_res);
+//
+//    /* src file stat */
+//    if (stat(data._input_filename.c_str(), &filestat) < 0)
+//        EXIT_TRACE("stat() %s failed: %s\n", data._input_filename.c_str(), strerror(errno));
+//
+//    if (!S_ISREG(filestat.st_mode))
+//        EXIT_TRACE("not a normal file: %s\n", data._input_filename.c_str());
+//
+//    /* src file open */
+//    if((fd = open(data._input_filename.c_str(), O_RDONLY | O_LARGEFILE)) < 0)
+//        EXIT_TRACE("%s file open error %s\n", data._input_filename.c_str(), strerror(errno));
+//
+//    //Load entire file into memory if requested by user
+//    void *preloading_buffer = NULL;
+//    if(data._preloading) {
+//        size_t bytes_read=0;
+//        int r;
+//
+//        preloading_buffer = malloc(filestat.st_size);
+//        if(preloading_buffer == NULL)
+//            EXIT_TRACE("Error allocating memory for input buffer.\n");
+//
+//        //Read data until buffer full
+//        while(bytes_read < filestat.st_size) {
+//            r = read(fd, (char*)(preloading_buffer)+bytes_read, filestat.st_size-bytes_read);
+//            if(r<0) switch(errno) {
+//                case EAGAIN:
+//                    EXIT_TRACE("I/O error: No data available\n");break;
+//                case EBADF:
+//                    EXIT_TRACE("I/O error: Invalid file descriptor\n");break;
+//                case EFAULT:
+//                    EXIT_TRACE("I/O error: Buffer out of range\n");break;
+//                case EINTR:
+//                    EXIT_TRACE("I/O error: Interruption\n");break;
+//                case EINVAL:
+//                    EXIT_TRACE("I/O error: Unable to read from file descriptor\n");break;
+//                case EIO:
+//                    EXIT_TRACE("I/O error: Generic I/O error\n");break;
+//                case EISDIR:
+//                    EXIT_TRACE("I/O error: Cannot read from a directory\n");break;
+//                default:
+//                    EXIT_TRACE("I/O error: Unrecognized error\n");break;
+//            }
+//            if(r==0) break;
+//            bytes_read += r;
+//        }
+//        fragment_args.input_file.size = filestat.st_size;
+//        fragment_args.input_file.buffer = preloading_buffer;
+//    }
+//
+//    fragment_args.tid = 0;
+//    fragment_args.nqueues = nqueues;
+//    fragment_args.fd = fd;
+//    
+//    std::vector<SmartFIFOImpl<chunk_t*>*> fragment_to_refine, refine_to_deduplicate,
+//                deduplicate_to_compress, dedup_compress_to_reorder;
+//
+//    std::vector<pthread_t> threads(1 + 3 * data._nb_threads + 1);
+//    pthread_barrier_t barrier;
+//    pthread_barrier_init(&barrier, nullptr, 1 + 1 + 3 * data._nb_threads + 1);
+//
+//    for (int i = 0; i < nqueues; ++i) {
+//        unsigned int amount = 0;
+//        if (i == nqueues - 1 && extra_queue) {
+//            amount = data._nb_threads % MAX_THREADS_PER_QUEUE;
+//        } else {
+//            amount = MAX_THREADS_PER_QUEUE;
+//        }
+//
+//        SmartFIFOImpl<chunk_t*>* f_to_r = new SmartFIFOImpl<chunk_t*>(1, "fragment_to_refine_" + std::to_string(i));
+//        f_to_r->add_producer();
+//        fragment_to_refine.push_back(f_to_r);
+//
+//        SmartFIFOImpl<chunk_t*>* r_to_d = new SmartFIFOImpl<chunk_t*>(1, "refine_to_deduplicate_" + std::to_string(i));
+//        r_to_d->add_producers(amount);
+//        refine_to_deduplicate.push_back(r_to_d);
+//
+//        SmartFIFOImpl<chunk_t*>* d_to_c = new SmartFIFOImpl<chunk_t*>(1, "deduplicate_to_compress_" + std::to_string(i));
+//        d_to_c->add_producers(amount);
+//        deduplicate_to_compress.push_back(d_to_c);
+//
+//        SmartFIFOImpl<chunk_t*>* dc_to_r = new SmartFIFOImpl<chunk_t*>(1, "dedupcompress_to_reorder_" + std::to_string(i));
+//        dc_to_r->add_producers(2 * amount);
+//        dedup_compress_to_reorder.push_back(dc_to_r);
+//    }
+//
+//    for (int i = 0; i < nqueues; ++i) {
+//        FIFOData& fragment_data = data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::PRODUCER][0];
+//        fragment_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[i], fragment_data._n, fragment_data._reconfigure, fragment_data._change_step_after, fragment_data._new_step));
+//    }
+//
+//    fragment_args.tid = 0;
+//    fragment_args._barrier = &barrier;
+//    fragment_args._timestamp_data = timestamp_datas.data();
+//    pthread_create(threads.data(), nullptr, _FragmentSmart, thread_args_smart_copy_because_pthread(fragment_args));
+//
+//    for (int i = 0; i < data._nb_threads; ++i) {
+//        int queue_id = i / MAX_THREADS_PER_QUEUE;
+//
+//        thread_args_smart refine_args;
+//        refine_args.tid = i;
+//        refine_args.nqueues = nqueues;
+//        refine_args._barrier = &barrier;
+//        FIFOData& refine = data._fifo_data[Layers::FRAGMENT][Layers::REFINE][FIFORole::CONSUMER][i];
+//        refine_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(fragment_to_refine[queue_id], refine._n, refine._reconfigure, refine._change_step_after, refine._new_step));
+//
+//        if (i < data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER].size()) {
+//            FIFOData& refine_output = data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::PRODUCER][i];
+//            refine_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], refine_output._n, refine_output._reconfigure, refine_output._change_step_after, refine_output._new_step));
+//            refine_args._timestamp_data = timestamp_datas.data() + 1 + i;
+//            pthread_create(threads.data() + 1 + i, nullptr, _RefineSmart, thread_args_smart_copy_because_pthread(refine_args));
+//        }
+//
+//        thread_args_smart deduplicate_args;
+//        deduplicate_args.tid = i;
+//        deduplicate_args.nqueues = nqueues;
+//        deduplicate_args._barrier = &barrier;
+//        if (i < data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER].size()) {
+//            FIFOData& deduplicate_input = data._fifo_data[Layers::REFINE][Layers::DEDUPLICATE][FIFORole::CONSUMER][i];
+//            deduplicate_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(refine_to_deduplicate[queue_id], deduplicate_input._n, deduplicate_input._reconfigure, deduplicate_input._change_step_after, deduplicate_input._new_step));
+//        }
+//
+//        
+//        FIFOData& deduplicate_output = data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::PRODUCER][i];
+//        deduplicate_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], deduplicate_output._n, deduplicate_output._reconfigure, deduplicate_output._change_step_after, deduplicate_output._new_step));
+//
+//        FIFOData& deduplicate_extra = data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::PRODUCER][i];
+//        deduplicate_args._extra_output_fifo = new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], deduplicate_extra._n, deduplicate_extra._reconfigure, deduplicate_extra._change_step_after, deduplicate_extra._new_step);
+//        deduplicate_args._timestamp_data = timestamp_datas.data() + 1 + data._nb_threads + i;
+//        pthread_create(threads.data() + 1 + data._nb_threads + i, nullptr, _DeduplicateSmart, thread_args_smart_copy_because_pthread(deduplicate_args));
+//
+//        thread_args_smart compress_args;
+//        compress_args.tid = i;
+//        compress_args.nqueues = nqueues;
+//        compress_args._barrier = &barrier;
+//        FIFOData& compress_input = data._fifo_data[Layers::DEDUPLICATE][Layers::COMPRESS][FIFORole::CONSUMER][i];
+//        compress_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(deduplicate_to_compress[queue_id], compress_input._n, compress_input._reconfigure, compress_input._change_step_after, compress_input._new_step));
+//
+//        FIFOData& compress_output = data._fifo_data[Layers::COMPRESS][Layers::REORDER][FIFORole::PRODUCER][i];
+//        compress_args._output_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[queue_id], compress_output._n, compress_output._reconfigure, compress_output._change_step_after, compress_output._new_step));
+//        compress_args._timestamp_data = timestamp_datas.data() + 1 + 2 * data._nb_threads + i;
+//        pthread_create(threads.data() + 1 + 2 * data._nb_threads + i, nullptr, _CompressSmart, thread_args_smart_copy_because_pthread(compress_args));
+//    }
+//
+//    thread_args_smart reorder_args;
+//    for (int i = 0; i < nqueues; ++i) {
+//        FIFOData& reorder_input = data._fifo_data[Layers::DEDUPLICATE][Layers::REORDER][FIFORole::CONSUMER][0];
+//        reorder_args._input_fifos.push_back(new SmartFIFO<chunk_t*>(dedup_compress_to_reorder[i], reorder_input._n, reorder_input._reconfigure, reorder_input._change_step_after, reorder_input._new_step));
+//    }
+//
+//    reorder_args.tid = 0;
+//    reorder_args.nqueues = nqueues;
+//    reorder_args._barrier = &barrier;
+//    reorder_args._timestamp_data = timestamp_datas.data() + 1 + 3 * data._nb_threads;
+//    pthread_create(threads.data() + 1 + 3 * data._nb_threads, nullptr, _ReorderSmart, thread_args_smart_copy_because_pthread(reorder_args));
+//
+//    pthread_barrier_wait(&barrier);
+//    std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
+//
+//    for (pthread_t& t: threads) {
+//        pthread_join(t, nullptr);
+//    }
+//    
+//    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+//    unsigned long long diff = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+//
+//    //clean up after preloading
+//    if(data._preloading) {
+//        free(preloading_buffer);
+//    }
+//
+//    /* clean up with the src file */
+//    if (!data._input_filename.empty())
+//        close(fd);
+//
+//    int des_res = mbuffer_system_destroy();
+//    assert(!des_res);
+//
+//    hashtable_destroy(cache, TRUE);
+//
+//    return { diff, timestamp_datas };
 }
 
 
