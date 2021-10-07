@@ -2,8 +2,6 @@
 #include "smart_fifo.h"
 
 struct thread_args_smart {
-    int tid;
-    int nqueues;
     int fd;
     struct {
         void* buffer;
@@ -12,7 +10,7 @@ struct thread_args_smart {
 
     std::vector<SmartFIFO<chunk_t*>*> _input_fifos;
     std::vector<SmartFIFO<chunk_t*>*> _output_fifos;
-    SmartFIFO<chunk_t*>* _extra_output_fifo;
+    std::vector<SmartFIFO<chunk_t*>*> _extra_output_fifos;
     pthread_barrier_t* _barrier;
     Globals::SmartFIFOTSV* _timestamp_data;
 };
@@ -359,7 +357,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
         } else {
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
-            size_t push_res = args._extra_output_fifo->push(chunk);
+            size_t push_res = args._extra_output_fifos[0]->push(chunk);
             /* if (push_res && args.tid % args.nqueues == 1) {
                 data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo, args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
                 } */
@@ -368,7 +366,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
     }
 
     args._output_fifos[0]->terminate_producer();
-    args._extra_output_fifo->terminate_producer();
+    args._extra_output_fifos[0]->terminate_producer();
     // printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
 }
 
@@ -606,7 +604,91 @@ void* _ReorderSmart(void* args) {
     return nullptr;
 }
 
+void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+    LayerData& fragment = data._layer_data[Layers::FRAGMENT];
+    LayerData& refine = data._layer_data[Layers::REFINE];
+    LayerData& deduplicate = data._layer_data[Layers::DEDUPLICATE];
+    LayerData& compress = data._layer_data[Layers::COMPRESS];
+    LayerData& reorder = data._layer_data[Layers::REORDER];
+
+    std::set<int> sfragment, srefine, sdeduplicate, scompress, sreorder;
+    std::map<int, SmartFIFOImpl<chunk_t*>*> ids_to_fifos;
+
+    size_t timestamp_pos = 0;
+    timestamp_datas.resize(data.get_total_threads());
+    
+    auto alloc_queues = [&ids_to_fifos](SmartFIFOImpl<chunk_t*>** fifos, std::set<int>& fifo_ids, LayerData const& data, std::string&& description) {
+        compute_fifo_ids_for_layer(fifo_ids, data);
+        *fifos = new SmartFIFOImpl<chunk_t*>[fifo_ids.size()];
+
+        auto iter = fifo_ids.begin();
+        for (int i = 0; i < fifo_ids.size(); ++i, ++iter) {
+            new(*fifos + i) SmartFIFOImpl<chunk_t*>(std::move(description));
+            ids_to_fifos[*iter] = *fifos + i;
+        }
+    };
+
+    SmartFIFOImpl<chunk_t*>* fragment_to_refine, *refine_to_deduplicate, *deduplicate_to_compress, *dedupcompress_to_reorder;
+    alloc_queues(&fragment_to_refine, srefine, fragment);
+    alloc_queues(&refine_to_deduplicate, sdeduplicate, refine);
+    alloc_queues(&deduplicate_to_compress, scompress, deduplicate);
+    
+    {
+        compute_fifo_ids_for_reorder(sreorder, deduplicate, compress);
+        dedupcompress_to_reorder = new SmartFIFOImpl<chunk_t*>[sreorder.size()];
+
+        auto iter = sreorder.begin();
+        for (int i = 0; i < sreorder.size(); ++i, ++iter) {
+            new (dedupcompress_to_reorder + i) SmartFIFOImpl<chunk_t*>("dedup / compress to reorder");
+            ids_to_fifos[*iter] = dedupcompress_to_reorder + i;
+        }
+    }
+
+    auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_datas, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
+        thread_args_smart* args = new thread_args_smart[data.get_total_threads()];
+        pthread_t* threads = new pthread_t*[data.get_total_threads()];
+
+        auto generate_views = [&data, &ids_to_fifos](std::vector<SmartFIFO<chunk_t*>>& target, bool producer, std::set<int> const& fifo_ids) {
+            for (int fifo: fifo_ids) {
+                FIFOData& fifo_data = data._fifo_data[fifo];
+                target.push_back(ids_to_fifo[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step);
+            }
+        };
+
+        int i = 0;
+        for (ThreadData const& thread_data: layer_data._thread_data) {
+            generate_views(args[i]._output_fifos, true, thread_data._outputs);
+            generate_views(args[i]._input_fifos, false, thread_data._inputs);
+
+            if (extra) {
+                generate_views(args[i].extra_output_fifos, true, thread_data._extras);
+            }
+
+            args[i]._barrier = &barrier;
+            args[i]._timestamp_data = timestamp_datas.data() + timestamp_pos;
+            args[i].fd = fd;
+            args[i].input_file.size = filesize;
+            args[i].input_file.buffer = buffer;
+
+            ++i;
+            ++timestamp_pos;
+        }
+    };
+
+    launch_stage(_FragmentSmart, fragment);
+    launch_stage(_RefineSmart, refine);
+    launch_stage(_DeduplicateSmart, deduplicate, true);
+    launch_stage(_CompressSmart, compress);
+    launch_stage(
+}
+
 std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {
+    std::vector<Globals::SmartFIFOTSV> timestamp_datas;
+    // I don't have std::bind_front :(
+    return EncodeBase(data, [&timestamp_datas](DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+                _Encode(timestamp_datas, data, fd, filesize, buffer, begin, end);
+            }
+    );
     struct stat filestat;
     int32 fd;
 
