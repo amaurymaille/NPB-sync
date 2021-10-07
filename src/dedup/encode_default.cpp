@@ -838,7 +838,7 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
     thread_args* compress_args = alloc_thread_args(compress);
     thread_args* reorder_args = alloc_thread_args(reorder);
 
-    auto launch_stage = [&barrier, &fifo_id_to_position](void* (*start_routine)(void*), void* (*routine)(void*), thread_args* args, LayerData const& layer) {
+    auto launch_stage = [&data, &barrier, &fifo_id_to_position](void* (*start_routine)(void*), void* (*routine)(void*), thread_args* args, LayerData const& layer) {
         pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t) * layer.get_total_threads());
         default_launch_args* default_args = (default_launch_args*)malloc(sizeof(default_launch_args) * layer.get_total_threads());
         int i = 0;
@@ -858,10 +858,22 @@ static void _Encode(DedupData& data, size_t filesize, void* buffer, tp& begin, t
             *amount = nb_queues;
         };
 
+        auto init_step = [&data](int* step, std::set<int> const& fifos) {
+            if (!fifos.empty()) {
+                *step = data._fifo_data[*fifos.begin()]._n;
+            } else {
+                *step = 0;
+            }
+        };
+
         for (ThreadData const& thread_data: layer._thread_data) {
             alloc_init_queues(args[i].input_queue_ids, args[i].input_nqueues, thread_data._inputs);
             alloc_init_queues(args[i].output_queue_ids, args[i].output_nqueues, thread_data._outputs);
             alloc_init_queues(args[i].extra_queue_ids, args[i].extra_nqueues, thread_data._extras);
+
+            init_step(&args[i]._input_step, thread_data._inputs);
+            init_step(&args[i]._output_step, thread_data._outputs);
+            init_step(&args[i]._extra_step, thread_data._extras);
 
             default_args[i]._start_routine = routine;
             default_args[i]._args = args + i;
