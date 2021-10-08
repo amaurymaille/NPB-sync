@@ -809,13 +809,13 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
         default_launch_args* default_args = (default_launch_args*)malloc(sizeof(default_launch_args) * layer.get_total_threads());
         int i = 0;
 
-        auto alloc_init_queues = [&fifo_id_to_position](int** queue, int* amount, std::set<int> const& ids) {
+        auto alloc_init_queues = [&fifo_id_to_position](int** queue, int* amount, std::map<int, FIFOData> const& ids) {
             auto nb_queues = ids.size();
             if (nb_queues) {
                 *queue = (int*)malloc(sizeof(int) * nb_queues);
                 auto iter = ids.begin();
                 for (int i = 0; i < nb_queues; ++i, ++iter) {
-                    (*queue)[i] = fifo_id_to_position[*iter];
+                    (*queue)[i] = fifo_id_to_position[iter->first];
                 }
             } else {
                 *queue = nullptr;
@@ -824,9 +824,9 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
             *amount = nb_queues;
         };
 
-        auto init_step = [&data](unsigned int* step, std::set<int> const& fifos) {
+        auto init_step = [&data](unsigned int* step, std::map<int, FIFOData> const& fifos) {
             if (!fifos.empty()) {
-                *step = data._fifo_data[*fifos.begin()]._n;
+                *step = fifos.begin()->second._n;
             } else {
                 *step = 0;
             }

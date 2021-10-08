@@ -2,7 +2,6 @@
 #define LUA_CORE_H
 
 #include <map>
-#include <set>
 #include <string>
 
 #include "dedupdef.h"
@@ -46,15 +45,15 @@ struct FIFOData {
 };
 
 struct ThreadData {
-    std::set<int> _inputs;
-    std::set<int> _outputs;
+    std::map<int, FIFOData> _inputs;
+    std::map<int, FIFOData> _outputs;
     // For Deduplicate layer, because there are outputs to Compress and to 
     // Reorder.
-    std::set<int> _extras;
+    std::map<int, FIFOData> _extras;
 
-    void push_input(int fifo_id);
-    void push_output(int fifo_id);
-    void push_extra(int fifo_id);
+    void push_input(int fifo_id, FIFOData const& data);
+    void push_output(int fifo_id, FIFOData const& data);
+    void push_extra(int fifo_id, FIFOData const& data);
 };
 
 struct LayerData {
@@ -73,7 +72,7 @@ public:
     bool _debug_timestamps = false;
 
     unsigned long long run_orig();
-    unsigned long long run_mutex();
+    // unsigned long long run_mutex();
     unsigned long long run_smart();
     void push_layer_data(Layers layer, LayerData const& data);
     void dump(); 

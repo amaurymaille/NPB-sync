@@ -45,16 +45,16 @@ FIFOData FIFOData::duplicate() {
     return *this;
 }
 
-void ThreadData::push_input(int data) {
-    _inputs.insert(data);
+void ThreadData::push_input(int fifo_id, FIFOData const& data) {
+    _inputs[fifo_id] = data;
 }
 
-void ThreadData::push_output(int data) {
-    _outputs.insert(data);
+void ThreadData::push_output(int fifo_id, FIFOData const& data) {
+    _outputs[fifo_id] = data;
 }
 
-void ThreadData::push_extra(int data) {
-    _extras.insert(data);
+void ThreadData::push_extra(int fifo_id, FIFOData const& data) {
+    _extras[fifo_id] = data;
 }
 
 void LayerData::push(ThreadData const& data) {
@@ -160,4 +160,11 @@ unsigned int DedupData::get_total_threads() const {
     }
 
     return total;
+}
+
+unsigned int DedupData::push_fifo(FIFOData const& data) {
+    unsigned int id = _fifo_id;
+    _fifo_data[id] = data;
+    _fifo_id++;
+    return id;
 }

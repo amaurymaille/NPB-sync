@@ -625,7 +625,7 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
         auto iter = fifo_ids.begin();
         for (int i = 0; i < fifo_ids.size(); ++i, ++iter) {
-            new(*fifos + i) SmartFIFOImpl<chunk_t*>(std::move(description));
+            (*fifos)[i].set_description(std::move(description));
             ids_to_fifos[*iter] = *fifos + i;
         }
     };
@@ -641,7 +641,7 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
         auto iter = sreorder.begin();
         for (int i = 0; i < sreorder.size(); ++i, ++iter) {
-            new (dedupcompress_to_reorder + i) SmartFIFOImpl<chunk_t*>(1, "dedup / compress to reorder");
+            dedupcompress_to_reorder[i].set_description("dedup / compress to reorder");
             ids_to_fifos[*iter] = dedupcompress_to_reorder + i;
         }
     }
@@ -653,9 +653,9 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
         thread_args_smart* args = new thread_args_smart[layer_data.get_total_threads()];
         pthread_t* threads = new pthread_t[layer_data.get_total_threads()];
 
-        auto generate_views = [&data, &ids_to_fifos](std::vector<SmartFIFO<chunk_t*>*>& target, bool producer, std::set<int> const& fifo_ids) {
-            for (int fifo: fifo_ids) {
-                FIFOData& fifo_data = data._fifo_data[fifo];
+        auto generate_views = [&data, &ids_to_fifos](std::vector<SmartFIFO<chunk_t*>*>& target, bool producer, std::map<int, FIFOData> const& fifo_ids) {
+            for (auto const& [fifo, fifo_data]: fifo_ids) {
+                // FIFOData& fifo_data = data._fifo_data[fifo];
                 target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
             }
         };

@@ -328,7 +328,7 @@ int sub_Deduplicate(chunk_t *chunk) {
 }
 
 
-unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, size_t, int, void*, tp&, tp&)>&& fn) {
+unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, int, size_t, void*, tp&, tp&)>&& fn) {
     _g_data = &data;
 
     struct stat filestat;
@@ -415,7 +415,7 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, si
 
 void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data) {
     for (ThreadData const& thread_data: data._thread_data) {
-        for (int fifo_id: thread_data._outputs) {
+        for (auto const& [fifo_id, fifo_data]: thread_data._outputs) {
             fifo_ids.insert(fifo_id);
         }
     }
@@ -423,13 +423,13 @@ void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data) 
 
 void compute_fifo_ids_for_reorder(std::set<int>& fifo_ids, LayerData const& deduplicate, LayerData const& compress) {
     for (ThreadData const& thread_data: deduplicate._thread_data) {
-        for (int fifo_id: thread_data._extras) {
+        for (auto const& [fifo_id, fifo_data]: thread_data._extras) {
             fifo_ids.insert(fifo_id);
         }
     }
 
     for (ThreadData const& thread_data: compress._thread_data) {
-        for (int fifo_id: thread_data._outputs) {
+        for (auto const& [fifo_id, fifo_data]: thread_data._outputs) {
             fifo_ids.insert(fifo_id);
         }
     }

@@ -74,7 +74,6 @@ struct CLIArgs {
     std::string _lua_output_file;
     char _lua_output_file_mode;
     bool _orig;
-    bool _mutex;
     bool _smart;
     std::optional<std::string> _output;
 };
@@ -85,7 +84,6 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         ("help,h", "Display this help and exit")
         ("file,f", po::value<std::string>(), "Name of the Lua file to run")
         ("orig,o",  "Run the original algorithm")
-        ("mutex,m", "Run the mutex FIFO algorithm")
         ("smart,s", "Run the smart FIFO algorithm")
         ("lua-output-file", po::value<std::string>(), "Output file in which the Lua script can write its information")
         ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')")
@@ -113,12 +111,6 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         args._orig = true;
     } else {
         args._orig = false;
-    }
-
-    if (vm.count("mutex")) {
-        args._mutex = true;
-    } else {
-        args._mutex = false;
     }
 
     if (vm.count("smart")) {
@@ -201,7 +193,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["compression"] = &DedupData::_compression;
     dedup_data_type["dump"] = &DedupData::dump;
     dedup_data_type["run_orig"] = &DedupData::run_orig;
-    dedup_data_type["run_mutex"] = &DedupData::run_mutex;
+    // dedup_data_type["run_mutex"] = &DedupData::run_mutex;
     dedup_data_type["run_smart"] = &DedupData::run_smart;
     dedup_data_type["push_layer"] = &DedupData::push_layer_data;
 
