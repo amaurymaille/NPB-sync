@@ -162,9 +162,6 @@ unsigned int DedupData::get_total_threads() const {
     return total;
 }
 
-unsigned int DedupData::push_fifo(FIFOData const& data) {
-    unsigned int id = _fifo_id;
-    _fifo_data[id] = data;
-    _fifo_id++;
-    return id;
+unsigned int DedupData::new_fifo() {
+    return _fifo_id++;
 }

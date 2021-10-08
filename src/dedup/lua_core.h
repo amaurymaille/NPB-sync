@@ -80,7 +80,7 @@ public:
 
     unsigned int get_total_threads() const;
 
-    unsigned int push_fifo(FIFOData const& data);
+    unsigned int new_fifo();
 
     std::map<Layers, LayerData> _layers_data;
     std::map<unsigned int, FIFOData> _fifo_data;

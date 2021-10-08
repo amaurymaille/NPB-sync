@@ -187,7 +187,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["input_filename"] = &DedupData::_input_filename;
     dedup_data_type["output_filename"] = &DedupData::_output_filename; 
     dedup_data_type["preloading"] = &DedupData::_preloading;
-    dedup_data_type["push_fifo"] = &DedupData::push_fifo;
+    dedup_data_type["new_fifo"] = &DedupData::new_fifo;
     dedup_data_type["debug_timestamps"] = &DedupData::_debug_timestamps;
     dedup_data_type["algorithm"] = &DedupData::_algorithm;
     dedup_data_type["compression"] = &DedupData::_compression;
