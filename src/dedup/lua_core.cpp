@@ -46,24 +46,19 @@ FIFOData FIFOData::duplicate() {
 }
 
 void ThreadData::push_input(int data) {
-    _inputs.push_back(data);
+    _inputs.insert(data);
 }
 
 void ThreadData::push_output(int data) {
-    _outputs.push_back(data);
+    _outputs.insert(data);
 }
 
 void ThreadData::push_extra(int data) {
-    _extras.push_back(data);
+    _extras.insert(data);
 }
 
 void LayerData::push(ThreadData const& data) {
     _thread_data.push_back(data);
-}
-
-unsigned int LayerData::push(FIFOData const& data) {
-    _fifo_data[_fifo_id] = data;
-    return _fifo_id++;
 }
 
 void DedupData::push_layer_data(Layers layer, LayerData const& data) {
@@ -74,14 +69,14 @@ void DedupData::dump() {
     std::cout << "DedupData at " << this << std::endl <<
                 "\t_input_filename = " << _input_filename << std::endl << 
                 "\t_output_filename = " << _output_filename << std::endl << 
-                "\t_nb_threads = " << _nb_threads << std::endl <<
+                "\t_nb_threads = " << get_total_threads() << std::endl <<
                 "\t_compression = " << (int)_compression << std::endl <<
                 "\t_preloading = " << _preloading << std::endl <<
                 "\t_algorithm = " << (int)_algorithm << std::endl << 
                 "\t_debug_timestamps = " << _debug_timestamps << std::endl <<
                 "\t_fifos = " << std::endl;
 
-    for (auto& p1: _fifo_data) {
+    /* for (auto& p1: _fifo_data) {
         for (auto& p2: p1.second) {
             for (auto& p3: p2.second) {
                 for (auto& value: p3.second) {
@@ -90,7 +85,7 @@ void DedupData::dump() {
                 }
             }
         }
-    }
+    } */
 }
 
 void DedupData::validate() {
@@ -101,10 +96,10 @@ unsigned long long DedupData::run_orig() {
     return EncodeDefault(*this);
 }
 
-unsigned long long DedupData::run_mutex() {
+/* unsigned long long DedupData::run_mutex() {
     validate();
     return EncodeMutex(*this);
-}
+} */
 
 unsigned long long DedupData::run_smart() {
     validate();
@@ -160,7 +155,7 @@ unsigned int LayerData::get_total_threads() const {
 
 unsigned int DedupData::get_total_threads() const {
     unsigned int total = 0;
-    for (auto const& [std::ignore, data]: _layers_data) {
+    for (auto const& [_, data]: _layers_data) {
         total += data.get_total_threads();
     }
 

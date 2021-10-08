@@ -13,7 +13,7 @@
 #include <map>
 #include <mutex>
 
-#include "fifo_plus.h"
+// #include "fifo_plus.h"
 #include "config.h"
 #include "mbuffer.h"
 #include "sha.h"
@@ -265,13 +265,6 @@ typedef struct {
 
 extern config_t* conf;
 extern struct hashtable* cache;
-
-#ifdef FIFO_PLUS_TIMESTAMP_DATA
-namespace Globals {
-extern std::chrono::time_point<steady_clock> start_time;
-extern std::vector<FIFOPlus<chunk_t*>*> fifos;
-}
-#endif
 
 namespace Globals {
     enum class Action {

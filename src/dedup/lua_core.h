@@ -2,6 +2,7 @@
 #define LUA_CORE_H
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "dedupdef.h"

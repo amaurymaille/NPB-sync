@@ -231,7 +231,7 @@ void *FragmentDefault(void * targs){
 
     //shutdown
     for(i=0; i<args->output_nqueues; i++) {
-        queue_terminate(&refine_que[args->output_queues[i]]);
+        queue_terminate(&refine_que[args->output_queues_ids[i]]);
     }
 
     printf("Fragment finished. Inserted %d values\n", count);
@@ -366,7 +366,9 @@ void *FragmentRefineDefault(void * targs) {
     ringbuffer_destroy(&send_buf);
 
     //shutdown
-    queue_terminate(&deduplicate_que[output_qid]);
+    for (int i = 0; i < args->output_nqueues; ++i) {
+        queue_terminate(&deduplicate_que[args->output_queues_ids[i]]);
+    }
     printf("FragmentRefine finished, inserted %d values\n", count);
 #ifdef ENABLE_STATISTICS
     return thread_stats;
@@ -463,7 +465,9 @@ void * DeduplicateDefault(void * targs) {
     ringbuffer_destroy(&send_buf_reorder);
 
     //shutdown
-    queue_terminate(&compress_que[output_qid]);
+    for (int i = 0; i < args->output_nqueues; ++i) {
+        queue_terminate(&compress_que[args->output_queues_ids[i]]);
+    }
 
     printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
 #ifdef ENABLE_STATISTICS
@@ -536,7 +540,9 @@ void *CompressDefault(void * targs) {
     ringbuffer_destroy(&send_buf);
 
     //shutdown
-    queue_terminate(&reorder_que[output_qid]);
+    for (int i = 0; i < args->output_nqueues; ++i) {
+        queue_terminate(&reorder_que[args->output_queues_ids[i]]);
+    }
 
     printf("Compress finished, produced %d values\n", count);
 #ifdef ENABLE_STATISTICS
@@ -583,7 +589,7 @@ void *ReorderDefault(void * targs) {
         if (ringbuffer_isEmpty(&recv_buf)) {
             //process queues in round-robin fashion
             for(i=0,r=0; r<=0 && i<args->input_nqueues; i++) {
-                r = queue_dequeue(&reorder_que[args->input_queue_ids[queue_id]], &recv_buf, args->_input_step);
+                r = queue_dequeue(&reorder_que[args->input_queues_ids[queue_id]], &recv_buf, args->_input_step);
                 // log_dequeue("Reorder", r, args->tid, qid, &reorder_que[qid]);
                 // qid = (qid+1) % args->nqueues;
                 queue_id = (queue_id + 1) % args->input_nqueues;
@@ -749,8 +755,8 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     alloc_queues(&compress_que, scompress, deduplicate);
 
     {
-        compute_fifo_ids_for_reorder(sreorder, deduplicate, compress);
-        reorder_que = (queue_t*)malloc(sizeof(queue_t) * sreorder.size());
+        compute_fifo_ids_for_reorder(sreorders, deduplicate, compress);
+        reorder_que = (queue_t*)malloc(sizeof(queue_t) * sreorders.size());
     }
 
     std::map<int, int> fifo_id_to_position;
@@ -762,7 +768,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
         auto iter = fifo_ids.begin();
         for (int i = 0; i < fifo_ids.size(); ++i, ++iter) {
             fifo_id_to_position[*iter] = i;
-            queue_init(queues + i, QUEUE_SIZE, nb_producers_for_fifo(*iter, layer_data);
+            queue_init(queues + i, QUEUE_SIZE, nb_producers_for_fifo(*iter, layer_data));
         }
     };
 
@@ -774,12 +780,12 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
         auto iter = sreorders.begin();
         for (int i = 0; i < sreorders.size(); ++i, ++iter) {
             fifo_id_to_position[*iter] = i;
-            queue_init(reorder + i, QUEUE_SIZE, nb_producers_for_reorder_fifo(*iter, deduplicate, compress));
+            queue_init(reorder_que + i, QUEUE_SIZE, nb_producers_for_reorder_fifo(*iter, deduplicate, compress));
         }
     }
 
     pthread_barrier_t barrier;
-    pthread_barrier_init(barrier, nullptr, data.get_total_threads() + 1); 
+    pthread_barrier_init(&barrier, nullptr, data.get_total_threads() + 1); 
 
     auto alloc_thread_args = [](LayerData const& data) {
         return (thread_args*)malloc(sizeof(thread_args) * data.get_total_threads());
@@ -787,8 +793,10 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
 
     thread_args* fragment_args = alloc_thread_args(fragment);
     for (int i = 0; i < fragment.get_total_threads(); ++i) {
-        fragment_args[i].input_file.size = filesize;
-        fragment_args[i].input_file.buffer = buffer;
+        if (data._preloading) {
+            fragment_args[i].input_file.size = filesize;
+            fragment_args[i].input_file.buffer = buffer;
+        }
         fragment_args[i].fd = fd;
     }
     thread_args* refine_args = alloc_thread_args(refine);
@@ -807,7 +815,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
                 *queue = (int*)malloc(sizeof(int) * nb_queues);
                 auto iter = ids.begin();
                 for (int i = 0; i < nb_queues; ++i, ++iter) {
-                    queue[i] = fifo_id_to_position[*iter];
+                    (*queue)[i] = fifo_id_to_position[*iter];
                 }
             } else {
                 *queue = nullptr;
@@ -816,7 +824,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
             *amount = nb_queues;
         };
 
-        auto init_step = [&data](int* step, std::set<int> const& fifos) {
+        auto init_step = [&data](unsigned int* step, std::set<int> const& fifos) {
             if (!fifos.empty()) {
                 *step = data._fifo_data[*fifos.begin()]._n;
             } else {
@@ -825,22 +833,22 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
         };
 
         for (ThreadData const& thread_data: layer._thread_data) {
-            alloc_init_queues(args[i].input_queue_ids, args[i].input_nqueues, thread_data._inputs);
-            alloc_init_queues(args[i].output_queue_ids, args[i].output_nqueues, thread_data._outputs);
-            alloc_init_queues(args[i].extra_queue_ids, args[i].extra_nqueues, thread_data._extras);
+            alloc_init_queues(&(args[i].input_queues_ids), &(args[i].input_nqueues), thread_data._inputs);
+            alloc_init_queues(&(args[i].output_queues_ids), &(args[i].output_nqueues), thread_data._outputs);
+            alloc_init_queues(&(args[i].extra_queues_ids), &(args[i].extra_nqueues), thread_data._extras);
 
             init_step(&args[i]._input_step, thread_data._inputs);
             init_step(&args[i]._output_step, thread_data._outputs);
             init_step(&args[i]._extra_step, thread_data._extras);
 
             default_args[i]._start_routine = routine;
-            default_args[i]._args = args + i;
+            default_args[i]._arg = args + i;
             default_args[i]._barrier = &barrier;
 
-            threads[i] = pthread_create(threads[i], nullptr, start_routine, default_args + i);
+            threads[i] = pthread_create(threads + i, nullptr, start_routine, default_args + i);
         }
 
-        return threads, default_args;
+        return std::tuple<pthread_t*, default_launch_args*>(threads, default_args);
     };
 
     auto [fragment_threads, dfragment_args] = launch_stage(_dfragment, FragmentDefault, fragment_args, fragment);
@@ -849,7 +857,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     auto [compress_threads, dcompress_args] = launch_stage(_dcompress, CompressDefault, compress_args, compress);
     auto [reorder_threads, dreorder_args] = launch_stage(_dreorder, ReorderDefault, reorder_args, reorder);
 
-    pthread_barrier_wait(barrier);
+    pthread_barrier_wait(&barrier);
     begin = sc::now();
 
     auto join_threads = [](pthread_t* threads, LayerData const& data) {

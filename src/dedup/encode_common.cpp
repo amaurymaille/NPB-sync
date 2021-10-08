@@ -1,11 +1,6 @@
-#ifndef ENCODE_COMMON_H
-#define ENCODE_COMMON_H
-
 #include "encode_common.h"
 
-class DedupDta;
-
-extern DedupData* _g_data;
+DedupData* _g_data;
 
 int rf_win;
 int rf_win_dataprocess;
@@ -18,6 +13,8 @@ unsigned int hash_from_key_fn( void *k ) {
 int keys_equal_fn ( void *key1, void *key2 ) {
     return (memcmp(key1, key2, SHA1_LEN) == 0);
 }
+
+#ifdef ENABLE_STATISTICS
 
 //Initialize a statistics record
 void init_stats(stats_t *s) {
@@ -103,7 +100,8 @@ void print_stats(stats_t *s) {
 
 //variable with global statistics
 stats_t stats;
-#endif //ENABLE_STATISTICS
+
+#endif
 
 //Simple write utility function
 int write_file(int fd, u_char type, u_long len, u_char * content) {
@@ -391,16 +389,12 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, si
             if(r==0) break;
             bytes_read += r;
         }
-        // Goes into Fragment args
-#ifdef ENABLE_PTHREADS
-        data_process_args.input_file.size = filestat.st_size;
-        data_process_args.input_file.buffer = preloading_buffer;
-#endif //ENABLE_PTHREADS
     }
 
     /// Algorithm specific part
     tp begin, end;
     fn(data, fd, filestat.st_size, preloading_buffer, begin, end);
+    unsigned long long diff = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 
     //clean up after preloading
     if(data._preloading) {

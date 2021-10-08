@@ -8,7 +8,7 @@
 
 struct DedupData;
 
-unsigned long long EncodeMutex(DedupData&);
+// unsigned long long EncodeMutex(DedupData&);
 std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData&);
 unsigned long long EncodeDefault(DedupData&);
 

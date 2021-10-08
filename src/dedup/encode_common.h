@@ -1,21 +1,22 @@
 #ifndef ENCODE_COMMON_H
 #define ENCODE_COMMON_H
 
-#include <assert.h>
-#include <stdbool.h>
+#include <cassert>
+#include <cstdbool>
 #include <strings.h>
-#include <math.h>
+#include <cmath>
 #include <limits.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
-#include <string.h>
+#include <cstring>
 #include <sys/stat.h>
 
 #include <memory>
 #include <set>
 #include <vector>
 
+#include "sha.h"
 #include "util.h"
 #include "dedupdef.h"
 #include "encoder.h"
@@ -93,10 +94,10 @@ void write_chunk_to_file(int fd, chunk_t *chunk);
 void sub_Compress(chunk_t *chunk);
 int sub_Deduplicate(chunk_t *chunk);
 
-using sc = std::chrono::steady_clock
+using sc = std::chrono::steady_clock;
 using tp = std::chrono::time_point<sc>;
 
-unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, int, size_t, void*, tp&, tp1)&& fn);
+unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, int, size_t, void*, tp&, tp&)>&& fn);
 
 void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data);
 void compute_fifo_ids_for_reorder(std::set<int>& fifo_ids, LayerData const& deduplicate, LayerData const& compress);
@@ -106,6 +107,8 @@ unsigned int nb_producers_for_reorder_fifo(int fifo_id, LayerData const& dedupli
 
 extern int rf_win;
 extern int rf_win_dataprocess;
+
+extern DedupData* _g_data;
 
 #define INITIAL_SEARCH_TREE_SIZE 4096
 

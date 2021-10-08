@@ -24,7 +24,7 @@
 
 #include "lua.hpp"
 #include "lua_core.h"
-#include "fifo_plus.tpp"
+// #include "fifo_plus.tpp"
 
 #ifdef ENABLE_DMALLOC
 #include <dmalloc.h>
@@ -170,19 +170,19 @@ void start_sol(CLIArgs const& args) {
     compressions["NONE"] = Compressions::NONE;
     lua["Compressions"] = compressions;
 
-    sol::table roles = lua.create_table_with();
+    /* sol::table roles = lua.create_table_with();
     roles["PRODUCER"] = FIFORole::PRODUCER;
     roles["CONSUMER"] = FIFORole::CONSUMER;
-    lua["Roles"] = roles;
+    lua["Roles"] = roles; */
 
-    sol::table reconfigurations = lua.create_table_with();
+    /* sol::table reconfigurations = lua.create_table_with();
     reconfigurations["PHASE"] = FIFOReconfigure::PHASE;
     reconfigurations["GRADIENT"] = FIFOReconfigure::GRADIENT;
-    lua["Reconfigurations"] = reconfigurations; 
+    lua["Reconfigurations"] = reconfigurations; */
 
     sol::table modes = lua.create_table_with();
     modes["orig"] = args._orig;
-    modes["mutex"] = args._mutex;
+    // modes["mutex"] = args._mutex;
     modes["smart"] = args._smart;
     lua["Modes"] = modes;
 
@@ -195,7 +195,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["input_filename"] = &DedupData::_input_filename;
     dedup_data_type["output_filename"] = &DedupData::_output_filename; 
     dedup_data_type["preloading"] = &DedupData::_preloading;
-    dedup_data_type["add_data"] = &DedupData::push_fifo_data;
+    dedup_data_type["push_fifo"] = &DedupData::push_fifo;
     dedup_data_type["debug_timestamps"] = &DedupData::_debug_timestamps;
     dedup_data_type["algorithm"] = &DedupData::_algorithm;
     dedup_data_type["compression"] = &DedupData::_compression;
@@ -211,10 +211,9 @@ void start_sol(CLIArgs const& args) {
     sol::usertype<ThreadData> thread_datatype = lua.new_usertype<ThreadData>("ThreadData");
     thread_datatype["push_input"] = &ThreadData::push_input;
     thread_datatype["push_output"] = &ThreadData::push_output;
-    thread_datatype["push_extra"] = &TheadData::push_extra;
+    thread_datatype["push_extra"] = &ThreadData::push_extra;
 
     sol::usertype<FIFOData> fifo_data_type = lua.new_usertype<FIFOData>("FIFOData");
-    fifo_data_type["id"] = &FIFOData::_id;
     fifo_data_type["min"] = &FIFOData::_min; 
     fifo_data_type["n"] = &FIFOData::_n;
     fifo_data_type["max"] = &FIFOData::_max;
