@@ -647,7 +647,8 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     }
 
     pthread_barrier_t barrier;
-    pthread_barrier_init(&barrier, nullptr, data.get_total_threads());
+    unsigned int nb_threads = data.get_total_threads();
+    pthread_barrier_init(&barrier, nullptr, nb_threads + 1);
 
     auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_datas, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
         thread_args_smart* args = new thread_args_smart[layer_data.get_total_threads()];
@@ -678,10 +679,10 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
                 args[i].input_file.buffer = buffer;
             }
 
-            ++i;
             ++timestamp_pos;
 
             pthread_create(threads + i, nullptr, routine, args + i);
+            ++i;
         }
 
         return std::tuple<pthread_t*, thread_args_smart*>(threads, args);
@@ -699,8 +700,8 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
             pthread_join(threads[i], nullptr);
         }
 
-        free(threads);
-        free(args);
+        delete[] threads;
+        delete[] args;
     };
 
     pthread_barrier_wait(&barrier);

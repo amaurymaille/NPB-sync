@@ -146,7 +146,7 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
 
 void start_sol(CLIArgs const& args) {
     sol::state lua;
-    lua.open_libraries(sol::lib::base, sol::lib::io);
+    lua.open_libraries(sol::lib::base, sol::lib::io, sol::lib::table);
 
     sol::table layers = lua.create_table_with();
     layers["FRAGMENT"] = Layers::FRAGMENT;

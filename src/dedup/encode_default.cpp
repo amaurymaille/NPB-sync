@@ -469,6 +469,9 @@ void * DeduplicateDefault(void * targs) {
         queue_terminate(&compress_que[args->output_queues_ids[i]]);
     }
 
+    for (int i = 0; i < args->extra_nqueues; ++i) {
+        queue_terminate(&reorder_que[args->extra_queues_ids[i]]);
+    }
     printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
 #ifdef ENABLE_STATISTICS
     return thread_stats;
@@ -772,9 +775,9 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
         }
     };
 
-    init_fifos(refine_que, srefines, refine);
-    init_fifos(deduplicate_que, sdeduplicates, deduplicate);
-    init_fifos(compress_que, scompress, compress);
+    init_fifos(refine_que, srefines, fragment);
+    init_fifos(deduplicate_que, sdeduplicates, refine);
+    init_fifos(compress_que, scompress, deduplicate);
     
     {
         auto iter = sreorders.begin();
@@ -807,7 +810,6 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     auto launch_stage = [&data, &barrier, &fifo_id_to_position](void* (*start_routine)(void*), void* (*routine)(void*), thread_args* args, LayerData const& layer) {
         pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t) * layer.get_total_threads());
         default_launch_args* default_args = (default_launch_args*)malloc(sizeof(default_launch_args) * layer.get_total_threads());
-        int i = 0;
 
         auto alloc_init_queues = [&fifo_id_to_position](int** queue, int* amount, std::map<int, FIFOData> const& ids) {
             auto nb_queues = ids.size();
@@ -832,6 +834,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
             }
         };
 
+        int i = 0;
         for (ThreadData const& thread_data: layer._thread_data) {
             alloc_init_queues(&(args[i].input_queues_ids), &(args[i].input_nqueues), thread_data._inputs);
             alloc_init_queues(&(args[i].output_queues_ids), &(args[i].output_nqueues), thread_data._outputs);
@@ -845,7 +848,8 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
             default_args[i]._arg = args + i;
             default_args[i]._barrier = &barrier;
 
-            threads[i] = pthread_create(threads + i, nullptr, start_routine, default_args + i);
+            pthread_create(threads + i, nullptr, start_routine, default_args + i);
+            ++i;
         }
 
         return std::tuple<pthread_t*, default_launch_args*>(threads, default_args);
