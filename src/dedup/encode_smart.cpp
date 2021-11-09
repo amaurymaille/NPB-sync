@@ -235,14 +235,14 @@ void RefineSmart(thread_args_smart const& args) {
 
     while (TRUE) {
         //if no item for process, get a group of items from the pipeline
-        std::optional<chunk_t*> value;
-        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
+        std::optional<chunk_t**> value;
+        auto [valid, nb_elements] = args._input_fifos[0]->pop(value);
 
         if (!value) {
             break;
         }
 
-        chunk = *value;
+        chunk = **value;
         // printf("Refine %p: %d, %p\n", args._input_fifos[0], ++pop, chunk);
 
         if (valid) {
@@ -327,15 +327,15 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
     while (1) {
         //if no items available, fetch a group of items from the queue
-        std::optional<chunk_t*> value;
-        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
+        std::optional<chunk_t**> value;
+        auto [valid, nb_elements] = args._input_fifos[0]->pop(value);
 
         if (!value) {
             break;
         }
 
         //get one chunk
-        chunk = *value;
+        chunk = **value;
 
         /* if (valid && args.tid % args.nqueues == 1) {
             data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0], args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
@@ -379,15 +379,15 @@ void CompressSmart(thread_args_smart const& args) {
     int count = 0;
 
     while(1) {
-        std::optional<chunk_t*> value;
-        auto [valid, nb_elements] = args._input_fifos[0]->pop_copy(value);
+        std::optional<chunk_t**> value;
+        auto [valid, nb_elements] = args._input_fifos[0]->pop(value);
 
         if (!value) {
             break;
         }
 
         //fetch one item
-        chunk = *value;
+        chunk = **value;
 
         /* if (valid && args.tid % args.nqueues == 1) {
             data.push_back(std::make_tuple(Globals::now(), args._input_fifos[0], args._input_fifos[0]->impl(), Globals::Action::POP, nb_elements));
@@ -440,7 +440,7 @@ void ReorderSmart(thread_args_smart const& args) {
     int qid = 0;
 
     while(1) {
-        std::optional<chunk_t*> value;
+        std::optional<chunk_t**> value;
         SmartFIFO<chunk_t*>* lfifo = nullptr;
         SmartFIFOImpl<chunk_t*>* fifo = nullptr;
         bool valid = false;
@@ -448,7 +448,7 @@ void ReorderSmart(thread_args_smart const& args) {
         for (int i = 0; i < args._input_fifos.size(); ++i) {
             lfifo = args._input_fifos[qid];
             fifo = args._input_fifos[qid]->impl();
-            std::tie(valid, nb_elements) = args._input_fifos[qid]->pop_copy(value);
+            std::tie(valid, nb_elements) = args._input_fifos[qid]->pop(value);
             qid = (qid + 1) % args._input_fifos.size();
             if (value) {
                 break;
@@ -463,7 +463,7 @@ void ReorderSmart(thread_args_smart const& args) {
             // data.push_back(std::make_tuple(Globals::now(), lfifo, fifo, Globals::Action::POP, nb_elements));
         }
 
-        chunk = *value;
+        chunk = **value;
         //printf("ReorderSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
         if (chunk == NULL) break;
