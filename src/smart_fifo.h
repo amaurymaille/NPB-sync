@@ -1,7 +1,9 @@
 #pragma once
 
+#include <pthread.h>
 #include <semaphore.h>
 
+#include <array>
 #include <map>
 #include <tuple>
 #include <vector>
@@ -12,6 +14,12 @@
 #include <utility>
 
 #include "utils.h"
+
+extern std::map<void*, std::tuple<std::string, std::array<size_t, 2>>> _semaphore_data;
+namespace Globals {
+    extern std::chrono::time_point<std::chrono::steady_clock> _start_time;
+    std::chrono::time_point<std::chrono::steady_clock> now();
+}
 
 template<typename T>
 class FIFOChunk;
@@ -444,11 +452,19 @@ public:
     typedef SmartFIFO<T> smart_fifo;
 
 public:
-    SmartFIFOImpl(size_t chunk_size, std::string&& description) : _chunk_size(chunk_size), _description(std::move(description)), _sem(0) {
-        _tail.store(new FIFOChunk<T>(chunk_size), std::memory_order_relaxed);
+    SmartFIFOImpl() : _sem(0), _description(), _sem_data(std::get<std::array<size_t, 2>>(_semaphore_data[this])) {
+        _tail.store(new FIFOChunk<T>(0, FIFOChunk<T>::size_constructor_hint), std::memory_order_relaxed);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
+        std::get<std::string>(_semaphore_data[this]) = _description;
+        // _sem_data[0] = 0;
+        // _sem_data[1] = 0;
         // sem_init(&_sem, 0, 0);
+
+    }
+
+    SmartFIFOImpl(std::string&& description) : SmartFIFOImpl() {
+        _description = std::move(description);
     }
 
     ~SmartFIFOImpl() {
@@ -466,26 +482,31 @@ public:
     SmartFIFOImpl<T>& operator=(SmartFIFO<T> const&) = delete;
     SmartFIFOImpl<T>& operator=(SmartFIFO<T>&&) = delete;
 
+    void set_description(std::string&& description) {
+        _description = std::move(description);
+    }
+
     SmartFIFO<T> get_proxy(size_t step) {
         return SmartFIFO(this, step);
     }
 
-    template<typename T2>
-    decay_enable_if_t<T, T2, void> push(T2&& element) {
-        std::unique_lock<std::mutex> lck(_prod_mutex);
-        FIFOChunk<T>* tail = _tail.load(std::memory_order_relaxed);
-        FIFOChunk<T>* next = tail->push(std::move(element));
-        if (next) {
-            _tail.store(next, std::memory_order_release);
-        }
-
-        /* int waiting;
-        sem_getvalue(&_sem, &waiting);
-        if (waiting <= 0) {
-            sem_post(&_sem);
-        } */
-        _sem.post(1);
-    }
+//    template<typename T2>
+//    decay_enable_if_t<T, T2, void> push(T2&& element) {
+//        std::unique_lock<std::mutex> lck(_prod_mutex);
+//        FIFOChunk<T>* tail = _tail.load(std::memory_order_relaxed);
+//        FIFOChunk<T>* next = tail->push(std::move(element));
+//        if (next) {
+//            _tail.store(next, std::memory_order_release);
+//        }
+//
+//        /* int waiting;
+//        sem_getvalue(&_sem, &waiting);
+//        if (waiting <= 0) {
+//            sem_post(&_sem);
+//        } */
+//        _sem.post(1);
+//         _sem_data[0] += 1;
+//    }
     
     void push_chunk(FIFOChunk<T>* chunk, size_t nb_elements) {
         std::unique_lock<std::mutex> lck(_prod_mutex);
@@ -566,6 +587,7 @@ public:
             sem_post(&_sem);
         } */
         _sem.post(nb_elements);
+        // _sem_data[0] += nb_elements;
         // _cv.notify_all();
     }
 
@@ -580,7 +602,9 @@ public:
                 _head->destroy();
                 _head = next;
             } else {
-                _sem.wait(nb_elements);
+                unsigned int count = _sem.wait(nb_elements);
+                // printf("%p waited %d items\n", this, count);
+                // _sem_data[1] += count;
                 // sem_wait(&_sem);
                 // _cv.wait(lck);
             }
@@ -670,13 +694,14 @@ private:
     std::atomic<FIFOChunk<T>*> _tail;
     std::mutex _prod_mutex;
     std::mutex _cons_mutex;
-    size_t _chunk_size;
     // std::mutex _m;
     // std::condition_variable _cv;
     // sem_t _sem;
     SmartFIFOSemaphore _sem;
     std::string _description;
+    std::array<size_t, 2>& _sem_data;
 };
+
 
 /* template<typename T>
 using SmartFIFO = typename SmartFIFOImpl<T>::smart_fifo; */

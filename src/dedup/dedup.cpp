@@ -146,7 +146,7 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
 
 void start_sol(CLIArgs const& args) {
     sol::state lua;
-    lua.open_libraries(sol::lib::base, sol::lib::io, sol::lib::table);
+    lua.open_libraries(sol::lib::base, sol::lib::io, sol::lib::table, sol::lib::package);
 
     sol::table layers = lua.create_table_with();
     layers["FRAGMENT"] = Layers::FRAGMENT;
@@ -266,10 +266,10 @@ int main(int argc, char** argv) {
 
   start_sol(args);
 
-  for (auto const& [addr, data]: _semaphore_data) {
+  /* for (auto const& [addr, data]: _semaphore_data) {
     const auto& [name, arr] = data;
     std::cout << "[End] FIFO " << name << " => " << arr[0] << ", " << arr[1] << std::endl;
-  } 
+  } */ 
 
   /*conf = (config_t *) malloc(sizeof(config_t));
   if (conf == NULL) {
