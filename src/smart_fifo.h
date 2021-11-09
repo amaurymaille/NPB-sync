@@ -43,43 +43,60 @@ class SmartFIFOSemaphore {
 public:
     SmartFIFOSemaphore(unsigned int start) {
         _value.store(start, std::memory_order_relaxed);
+        _finished.store(false, std::memory_order_relaxed);
+        sem_init(&_sem, 0, 0);
+    }
+
+    ~SmartFIFOSemaphore() {
     }
 
     void post(unsigned int i) {
         _value.fetch_add(i, std::memory_order_release);
+        /* int waiting;
+        sem_getvalue(&_sem, &waiting);
+        if (waiting <= 0) {
+            sem_post(&_sem);
+        } */
     }
 
     /* Attempt to decrease the value by at most i. The value held by the semaphore
      * must be at least 1 for the operation to succeed. Otherwise, continually 
      * attempt to decrease the value by at most i until the value was at least 1
      * when the attempt was made.
+     *
+     * Pas de famine si on a un seul consommateur à la fois !
      */
     unsigned int wait(unsigned int i) {
-        int old_value = always_wait(i);
+        int old_value;
         /* If there was nothing in the semaphore (which should not happen in a 
          * single consumer context), post back what was taken and then always_wait.
          */
-        if (old_value <= 0) {
+        while ((old_value = always_wait(i)) <= 0 && !_finished.load(std::memory_order_acquire)) {
             post(i);
-            /* Check for zero too, because we can only exit once the previous 
-             * value was at least 1.
-             */
-            while ((old_value = always_wait(i)) <= 0) {
-                post(i);
-            }
+            // sem_wait(&_sem);
+        } 
 
-            /* Taken more than what was there. Go back to zero. */
-            if (old_value < i) {
-                post(i - old_value);
-            }
-        } else if (old_value < i) {
+        if (_finished.load(std::memory_order_acquire)) {
+            return 0;
+        }
+
+        if (old_value < i) {
             /* Corner case: we took more than what was there. So only take what was 
              * there and give back the excess.
              */
             post(i - old_value);
         }
 
-        return std::abs<long>((long)old_value - (long)i);
+        // There wasn't enough in the FIFO. i > old_value, return old_value
+        if (old_value < i) {
+            return old_value;
+        } else {
+            return i;
+        }
+    }
+
+    void finish() {
+        _finished.store(true, std::memory_order_release);
     }
 
 private:
@@ -88,16 +105,21 @@ private:
     }
 
     std::atomic<int> _value;
+    std::atomic<bool> _finished;
+    sem_t _sem;
 };
 
 template<typename T>
 class FIFOChunk {
+    struct size_constructor_hint_t { };
 public:
+    static size_constructor_hint_t size_constructor_hint;
+
     friend SmartFIFOElements<T>;
     friend SmartFIFOImpl<T>;
     friend SmartFIFO<T>;
 
-    FIFOChunk(size_t size) : _size(size), _elements(new T[size]) {
+    FIFOChunk(size_t size, size_constructor_hint_t const& s) : _size(size), _elements(new T[size]) {
         _head = _elements;
         _nb_available__has_next.store(0, std::memory_order_relaxed);
         _next.store(nullptr, std::memory_order_relaxed);
@@ -140,7 +162,7 @@ public:
     template<typename T2>
     decay_enable_if_t<T, T2, FIFOChunk<T>*> unsafe_push(T2&& element) {
         if (_size == _nb_elements) {
-            FIFOChunk<T>* chunk = new FIFOChunk<T>(_size);
+            FIFOChunk<T>* chunk = new FIFOChunk<T>(_size, FIFOChunk<T>::size_constructor_hint);
             chunk->unsafe_push(std::forward<T>(element));
             _next.store(chunk, std::memory_order_relaxed);
             _nb_available__has_next.fetch_add(1, std::memory_order_relaxed);
@@ -226,7 +248,11 @@ public:
     }
 
     size_t nb_elements() const {
-        return _nb_elements;
+        if (FIFOChunk<T>* next = _next.load(std::memory_order_relaxed)) {
+            return _nb_elements + next->nb_elements();
+        } else {
+            return _nb_elements;
+        }
     }
 
 private:
@@ -266,6 +292,9 @@ private:
         _size = _nb_elements;
     }
 };
+
+template<typename T>
+typename FIFOChunk<T>::size_constructor_hint_t FIFOChunk<T>::size_constructor_hint;
 
 template<typename T>
 using Ranges = std::vector<FIFOChunkRange<T>>;
@@ -345,8 +374,7 @@ private:
 template<typename T2>
 class SmartFIFO {
 public:
-    SmartFIFO(SmartFIFOImpl<T2>* fifo, size_t step) : _fifo(fifo), _step(step), _elements(Ranges<T2>()), _chunk(step) {
-        
+    SmartFIFO(SmartFIFOImpl<T2>* fifo, size_t step, bool reconfigure, unsigned int change_after = 0, unsigned int new_step = 0) : _fifo(fifo), _step(step), _elements(Ranges<T2>()), _chunk(step, FIFOChunk<T2>::size_constructor_hint), _reconfigure(reconfigure), _change_after(change_after), _new_step(new_step) {
     }
 
     template<typename T3>
@@ -358,6 +386,9 @@ public:
         FIFOChunk<T2>* next = _chunk.unsafe_push(std::forward<T3>(value));
         if (next) {
             _fifo->push_chunk(&_chunk, _step + 1);
+            if (_reconfigure) {
+                _reconfigure_step_push(_step + 1);
+            }
             _chunk.reset(_step);
             return _step + 1;
         } else {
@@ -417,6 +448,9 @@ private:
     std::tuple<bool, size_t, bool> prepare_elements() {
         if (_elements.empty()) {
             _fifo->pop(_elements, _step);
+            if (_reconfigure) {
+                _reconfigure_step_pop(_step);
+            }
             
             if (_elements.empty()) {
                 return std::make_tuple(true, 0, false);
@@ -427,6 +461,10 @@ private:
             _elements.clear();
             _fifo->pop(_elements, _step);
 
+            if (_reconfigure) {
+                _reconfigure_step_pop(_step);
+            }
+
             if (_elements.empty()) {
                 return std::make_tuple(true, 0, false);
             } else {
@@ -436,13 +474,41 @@ private:
 
         return std::make_tuple(false, _elements.size(), true);
     }
-    
+
+    void _reconfigure_step_push(unsigned int added) {
+        _inserted += added;
+        if (_inserted >= _change_after && !_changed) {
+            // printf("Changed push step from %d to %d\n", _step, _new_step);
+            auto now = Globals::now();
+            printf("[Change PUSH] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
+            _step = _new_step;
+            _changed = true;
+        }
+    }
+
+    void _reconfigure_step_pop(unsigned int removed) {
+        _removed += removed;
+        if (_removed >= _change_after && !_changed) {
+            // printf("Changed pop step from %d to %d\n", _step, _new_step);
+            auto now = Globals::now();
+            printf("[Change POP] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
+            _step = _new_step;
+            _changed = true;
+        }
+    }
+
     SmartFIFOImpl<T2>* _fifo;
     size_t _step;
     size_t _nb_elements = 0;
     SmartFIFOElements<T2> _elements;
     FIFOChunk<T2> _chunk;
     bool _over = false;
+    bool _reconfigure = false;
+    unsigned int _change_after = 0;
+    unsigned int _new_step = 0;
+    unsigned int _inserted = 0;
+    unsigned int _removed = 0;
+    bool _changed = false;
 };
 
 template<typename T>
@@ -649,6 +715,14 @@ public:
         elements.set(std::move(pairs));
     }
 
+    template<typename... Args>
+    SmartFIFO<T>* view(bool producer, Args&&... args) {
+        if (producer) {
+            _nb_producers__done.fetch_add(1, std::memory_order_release);
+        }
+        return new SmartFIFO<T>(this, std::forward<Args>(args)...);
+    }
+
     void add_producer() {
         _nb_producers__done.fetch_add(1, std::memory_order_release);
     }
@@ -661,7 +735,7 @@ public:
         // std::unique_lock<std::mutex> lck(_m);
         _nb_producers__done.fetch_add(1ULL << 32, std::memory_order_release);
 
-        // if (terminated()) {
+        if (terminated()) {
             /* There is no need to post multiple times,because there can be at
              * most one consumer waiting on the semaphore. Consumers that arrive
              * later will see the FIFO as terminated and won't wait on the 
@@ -669,7 +743,9 @@ public:
              */
              // sem_post(&_sem);
             // _cv.notify_all();
-        // }
+            // _sem.post(0);
+            _sem.finish();
+        }
     }
 
     bool terminated() const {
