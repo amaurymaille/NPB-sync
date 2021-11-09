@@ -182,6 +182,7 @@ void FragmentSmart(thread_args_smart const& args) {
                     ++count;
 
                     //send a group of items into the next queue in round-robin fashion
+                    // No need to reset count because modulo
                     if (count % args._output_fifos[qid]->get_step() == 0) {
                         qid = (qid + 1) % args._output_fifos.size();
                     }
