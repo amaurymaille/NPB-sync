@@ -24,7 +24,6 @@ struct thread_args_smart {
 void FragmentSmart(thread_args_smart const& args) {
     Globals::SmartFIFOTSV& data = *args._timestamp_data;
 
-    pthread_barrier_wait(args._barrier);
     size_t preloading_buffer_seek = 0;
     int qid = 0;
     int fd = args.fd;
@@ -33,6 +32,7 @@ void FragmentSmart(thread_args_smart const& args) {
     sequence_number_t anchorcount = 0;
     int count = 0;
 
+    pthread_barrier_wait(args._barrier);
     chunk_t *temp = NULL;
     chunk_t *chunk = NULL;
     u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);

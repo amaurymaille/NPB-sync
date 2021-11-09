@@ -29,6 +29,8 @@ struct thread_args {
     unsigned int _output_step;
     // How much to insert into the extra fifo (deduplicate layer only)
     unsigned int _extra_step;
+
+    pthread_barrier_t* _barrier;
 };
 
 #ifdef ENABLE_PTHREADS
@@ -44,6 +46,7 @@ void *FragmentDefault(void * targs){
     int r;
     int count = 0;
 
+    pthread_barrier_wait(args->_barrier);
     chunk_t *temp = NULL;
     chunk_t *chunk = NULL;
     u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);
@@ -236,6 +239,7 @@ void *FragmentDefault(void * targs){
 
     printf("Fragment finished. Inserted %d values\n", count);
 
+
     return NULL;
 }
 
@@ -247,6 +251,8 @@ void *FragmentRefineDefault(void * targs) {
     ringbuffer_t recv_buf, send_buf;
     int r;
     int count = 0;
+
+    pthread_barrier_wait(args->_barrier);
 
     chunk_t *temp;
     chunk_t *chunk;
@@ -387,6 +393,8 @@ void * DeduplicateDefault(void * targs) {
     int r;
     int compress_count = 0, reorder_count = 0;
 
+    pthread_barrier_wait(args->_barrier);
+
     ringbuffer_t recv_buf, send_buf_reorder, send_buf_compress;
 
 #ifdef ENABLE_STATISTICS
@@ -491,6 +499,8 @@ void *CompressDefault(void * targs) {
 
     ringbuffer_t recv_buf, send_buf;
 
+    pthread_barrier_wait(args->_barrier);
+
 #ifdef ENABLE_STATISTICS
     stats_t *thread_stats = (stats_t*)malloc(sizeof(stats_t));
     if(thread_stats == NULL) EXIT_TRACE("Memory allocation failed.\n");
@@ -562,6 +572,8 @@ void *ReorderDefault(void * targs) {
 
     ringbuffer_t recv_buf;
     chunk_t *chunk;
+
+    pthread_barrier_wait(args->_barrier);
 
     SearchTree T;
     T = TreeMakeEmpty(NULL);
@@ -713,7 +725,7 @@ struct default_launch_args {
 
 void* default_launch_thread(void* arg) {
     default_launch_args* args = (default_launch_args*)arg;
-    pthread_barrier_wait(args->_barrier);
+    ((struct thread_args*)args->_arg)->_barrier = args->_barrier;
     return args->_start_routine(args->_arg);
 }
 
@@ -788,7 +800,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     }
 
     pthread_barrier_t barrier;
-    pthread_barrier_init(&barrier, nullptr, data.get_total_threads() + 1); 
+    pthread_barrier_init(&barrier, nullptr, data.get_total_threads() + 1);
 
     auto alloc_thread_args = [](LayerData const& data) {
         return (thread_args*)malloc(sizeof(thread_args) * data.get_total_threads());
