@@ -407,8 +407,8 @@ void * DeduplicateDefault(void * targs) {
 
     r=0;
     r += ringbuffer_init(&recv_buf, args->_input_step);
-    r += ringbuffer_init(&send_buf_reorder, args->_output_step);
-    r += ringbuffer_init(&send_buf_compress, args->_extra_step);
+    r += ringbuffer_init(&send_buf_reorder, args->_extra_step);
+    r += ringbuffer_init(&send_buf_compress, args->_output_step);
     assert(r==0);
 
     while (1) {
