@@ -3,6 +3,11 @@
 #include "encode_common.h"
 #include "smart_fifo.h"
 
+struct deduplicate_push {
+    bool _reorder;
+    std::chrono::time_point<std::chrono::steady_clock> _tp;
+};
+
 struct thread_args_smart {
     int fd;
     struct {
@@ -15,6 +20,7 @@ struct thread_args_smart {
     std::vector<SmartFIFO<chunk_t*>*> _extra_output_fifos;
     pthread_barrier_t* _barrier;
     Globals::SmartFIFOTSV* _timestamp_data;
+    std::vector<deduplicate_push> _times;
 };
 
 // ============================================================================
@@ -32,7 +38,6 @@ void FragmentSmart(thread_args_smart const& args) {
     sequence_number_t anchorcount = 0;
     int count = 0;
 
-    pthread_barrier_wait(args._barrier);
     chunk_t *temp = NULL;
     chunk_t *chunk = NULL;
     u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);
@@ -214,6 +219,7 @@ void FragmentSmart(thread_args_smart const& args) {
     free(rabintab);
     free(rabinwintab);
 
+    pthread_barrier_wait(args._barrier);
     // printf("Fragment finished. Inserted %d values\n", count);
 }
 
@@ -320,11 +326,14 @@ void RefineSmart(thread_args_smart const& args) {
     // printf("FragmentRefine finished, inserted %d values\n", count);
 }
 
+
 void DeduplicateSmart(thread_args_smart const& args) {
     Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
     int compress_count = 0, reorder_count = 0;
+    int pos = 0;
+    std::vector<deduplicate_push>& times = const_cast<std::vector<deduplicate_push>&>(args._times);
 
     while (1) {
         //if no items available, fetch a group of items from the queue
@@ -353,6 +362,9 @@ void DeduplicateSmart(thread_args_smart const& args) {
             //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._output_fifos[0]->push(chunk);
+            /* deduplicate_push& dedup_data = times[pos++];
+            dedup_data._reorder = false;
+            dedup_data._tp = std::chrono::steady_clock::now(); */
             /* if (push_res && args.tid % args.nqueues == 1) {
                 data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
             } */
@@ -361,6 +373,10 @@ void DeduplicateSmart(thread_args_smart const& args) {
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._extra_output_fifos[0]->push(chunk);
+            /* deduplicate_push& dedup_data = times[pos++];
+            dedup_data._reorder = true;
+            dedup_data._tp = std::chrono::steady_clock::now(); */
+
             /* if (push_res && args.tid % args.nqueues == 1) {
                 data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo, args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
                 } */
@@ -368,6 +384,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
         }
     }
 
+    times.resize(pos);
     args._output_fifos[0]->terminate_producer();
     args._extra_output_fifos[0]->terminate_producer();
     // printf("Deduplicate finished, produced %d compress values, %d reorder values\n", compress_count, reorder_count);
@@ -381,7 +398,12 @@ void CompressSmart(thread_args_smart const& args) {
 
     while(1) {
         std::optional<chunk_t**> value;
+        auto before = std::chrono::steady_clock::now();
         auto [valid, nb_elements] = args._input_fifos[0]->pop(value);
+
+        if (valid) {
+
+        }
 
         if (!value) {
             break;
@@ -653,6 +675,10 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
     auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_datas, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
         thread_args_smart* args = new thread_args_smart[layer_data.get_total_threads()];
+        for (int i = 0; i < layer_data.get_total_threads(); ++i) {
+            args[i]._times.resize(100000000);
+        }
+
         pthread_t* threads = new pthread_t[layer_data.get_total_threads()];
 
         auto generate_views = [&data, &ids_to_fifos](std::vector<SmartFIFO<chunk_t*>*>& target, bool producer, std::map<int, FIFOData> const& fifo_ids) {
@@ -695,10 +721,15 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     auto compress_stage = launch_stage(_CompressSmart, compress);
     auto reorder_stage = launch_stage(_ReorderSmart, reorder);
 
-    auto terminate = [](auto stage, LayerData const& layer_data) {
+    std::vector<std::vector<deduplicate_push>> dedup_data(deduplicate.get_total_threads());
+
+    auto terminate = [&dedup_data](auto stage, LayerData const& layer_data, bool dedup = false) {
         auto [threads, args] = stage;
         for (int i = 0; i < layer_data.get_total_threads(); ++i) {
             pthread_join(threads[i], nullptr);
+            if (dedup) {
+                dedup_data[i] = std::move(args[i]._times);
+            }
         }
 
         delete[] threads;
@@ -711,11 +742,23 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
     terminate(fragment_stage, fragment);
     terminate(refine_stage, refine);
-    terminate(deduplicate_stage, deduplicate);
+    terminate(deduplicate_stage, deduplicate, true);
     terminate(compress_stage, compress);
     terminate(reorder_stage, reorder);
 
     end = sc::now();
+
+    int pos = 0;
+    for (auto& v: dedup_data) {
+        for (auto const& time: v) {
+            unsigned long long int diff = std::chrono::duration_cast<std::chrono::nanoseconds>(time._tp - Globals::_start_time).count();
+            if (time._reorder) {
+                printf("[Deduplicate %d, log] %llu reorder\n", pos, diff);
+            } else {
+                printf("[Deduplicate %d, log] %llu compressr\n", pos, diff);
+            }
+        }
+    }
 }
 
 std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {

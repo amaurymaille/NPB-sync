@@ -46,7 +46,6 @@ void *FragmentDefault(void * targs){
     int r;
     int count = 0;
 
-    pthread_barrier_wait(args->_barrier);
     chunk_t *temp = NULL;
     chunk_t *chunk = NULL;
     u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);
@@ -239,7 +238,7 @@ void *FragmentDefault(void * targs){
 
     printf("Fragment finished. Inserted %d values\n", count);
 
-
+    pthread_barrier_wait(args->_barrier);
     return NULL;
 }
 
