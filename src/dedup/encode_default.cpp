@@ -564,39 +564,45 @@ void *CompressDefault(void * targs) {
 #endif //ENABLE_STATISTICS
 }
 
+struct ReorderComputeData {
+    SearchTree T;
+    sequence_number_t* chunks_per_anchor;
+};
+
+static ReorderComputeData c_data;
+
 void *ReorderDefault(void * targs) {
     struct thread_args *args = (struct thread_args *)targs;
     int queue_id = 0;
-    int fd = 0;
+    // int fd = 0;
 
     ringbuffer_t recv_buf;
     chunk_t *chunk;
 
     pthread_barrier_wait(args->_barrier);
 
-    SearchTree T;
-    T = TreeMakeEmpty(NULL);
+    c_data.T = TreeMakeEmpty(NULL);
     Position pos = NULL;
     struct tree_element tele;
 
-    sequence_t next;
-    sequence_reset(&next);
+    /* sequence_t next;
+    sequence_reset(&next); */
 
     //We perform global anchoring in the first stage and refine the anchoring
     //in the second stage. This array keeps track of the number of chunks in
     //a coarse chunk.
-    sequence_number_t *chunks_per_anchor;
+    // sequence_number_t *chunks_per_anchor;
     unsigned int chunks_per_anchor_max = 1024;
-    chunks_per_anchor = (sequence_number_t*)malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
-    if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
-    memset(chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
+    c_data.chunks_per_anchor = (sequence_number_t*)malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
+    if(c_data.chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
+    memset(c_data.chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
     int r;
     int i;
 
     r = ringbuffer_init(&recv_buf, args->_input_step);
     assert(r==0);
 
-    fd = create_output_file(_g_data->_output_filename.c_str());
+    // fd = create_output_file(_g_data->_output_filename.c_str());
 
     while(1) {
         //get a group of items
@@ -615,35 +621,35 @@ void *ReorderDefault(void * targs) {
 
         //Double size of sequence number array if necessary
         if(chunk->sequence.l1num >= chunks_per_anchor_max) {
-            chunks_per_anchor = (sequence_number_t*)realloc(chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
-            if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
-            memset(&chunks_per_anchor[chunks_per_anchor_max], 0, chunks_per_anchor_max * sizeof(sequence_number_t));
+            c_data.chunks_per_anchor = (sequence_number_t*)realloc(c_data.chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
+            if(c_data.chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
+            memset(&c_data.chunks_per_anchor[chunks_per_anchor_max], 0, chunks_per_anchor_max * sizeof(sequence_number_t));
             chunks_per_anchor_max *= 2;
         }
         //Update expected L2 sequence number
         if(chunk->isLastL2Chunk) {
-            assert(chunks_per_anchor[chunk->sequence.l1num] == 0);
-            chunks_per_anchor[chunk->sequence.l1num] = chunk->sequence.l2num+1;
+            assert(c_data.chunks_per_anchor[chunk->sequence.l1num] == 0);
+            c_data.chunks_per_anchor[chunk->sequence.l1num] = chunk->sequence.l2num+1;
         }
 
         //Put chunk into local cache if it's not next in the sequence 
-        if(!sequence_eq(chunk->sequence, next)) {
-            pos = TreeFind(chunk->sequence.l1num, T);
+        // if(!sequence_eq(chunk->sequence, next)) {
+            pos = TreeFind(chunk->sequence.l1num, c_data.T);
             if (pos == NULL) {
                 //FIXME: Can we remove at least one of the two mallocs in this if-clause?
                 //FIXME: Rename "INITIAL_SEARCH_TREE_SIZE" to something more accurate
                 tele.l1num = chunk->sequence.l1num;
                 tele.queue = Initialize(INITIAL_SEARCH_TREE_SIZE);
                 Insert(chunk, tele.queue);
-                T = TreeInsert(tele, T);
+                c_data.T = TreeInsert(tele, c_data.T);
             } else {
                 Insert(chunk, pos->Element.queue);
             }
-            continue;
-        }
+            // continue;
+        // }
 
         //write as many chunks as possible, current chunk is next in sequence
-        pos = TreeFindMin(T);
+        /* pos = TreeFindMin(T);
         do {
             write_chunk_to_file(fd, chunk);
             if(chunk->header.isDuplicate) {
@@ -672,11 +678,11 @@ void *ReorderDefault(void * targs) {
                 //level 1 sequence number does not match or no chunks left in cache
                 chunk = NULL;
             }
-        } while(chunk != NULL);
+        } while(chunk != NULL); */
     }
 
     //flush the blocks left in the cache to file
-    pos = TreeFindMin(T);
+    /* pos = TreeFindMin(T);
     while(pos !=NULL) {
         if(pos->Element.l1num == next.l1num) {
             chunk = FindMin(pos->Element.queue);
@@ -710,8 +716,51 @@ void *ReorderDefault(void * targs) {
 
     ringbuffer_destroy(&recv_buf);
     free(chunks_per_anchor);
+    */
 
     return NULL;
+}
+
+static void Write() {
+    sequence_t next;
+    sequence_reset(&next);
+
+    int fd = create_output_file(_g_data->_output_filename.c_str());
+
+    Position pos = TreeFindMin(c_data.T);
+    chunk_t* chunk;
+    while(pos !=NULL) {
+        if(pos->Element.l1num == next.l1num) {
+            chunk = FindMin(pos->Element.queue);
+            if(sequence_eq(chunk->sequence, next)) {
+                //Remove chunk from cache, update position for next iteration
+                DeleteMin(pos->Element.queue);
+                if(IsEmpty(pos->Element.queue)) {
+                    Destroy(pos->Element.queue);
+                    c_data.T = TreeDelete(pos->Element, c_data.T);
+                    pos = TreeFindMin(c_data.T);
+                }
+            } else {
+                //level 2 sequence number does not match
+                throw std::runtime_error("L2 sequence number mismatch");
+                EXIT_TRACE("L2 sequence number mismatch.\n");
+            }
+        } else {
+            //level 1 sequence number does not match
+            throw std::runtime_error("L1 sequence number mismatch");
+            EXIT_TRACE("L1 sequence number mismatch.\n");
+        }
+        write_chunk_to_file(fd, chunk);
+        if(chunk->header.isDuplicate) {
+            free(chunk);
+            chunk=NULL;
+        }
+        sequence_inc_l2(&next);
+        if(c_data.chunks_per_anchor[next.l1num]!=0 && next.l2num==c_data.chunks_per_anchor[next.l1num]) sequence_inc_l1(&next);
+    } 
+
+    close(fd);
+    free(c_data.chunks_per_anchor);
 }
 
 #endif // ENABLE_PTHREADS
@@ -890,6 +939,8 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     join_threads(reorder_threads, reorder);
 
     end = sc::now();
+
+    Write();
 
     free(dfragment_args);
     free(fragment_args);

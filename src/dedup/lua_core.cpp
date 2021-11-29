@@ -103,12 +103,13 @@ unsigned long long DedupData::run_orig() {
 
 unsigned long long DedupData::run_smart() {
     validate();
-    auto [duration, datas] = EncodeSmart(*this);
-    process_timestamp_data(datas);
+    // auto [duration, datas] = EncodeSmart(*this);
+    auto duration = EncodeSmart(*this);
+    // process_timestamp_data(datas);
     return duration;
 }
 
-void DedupData::process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data) {
+/* void DedupData::process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data) {
     std::map<SmartFIFOImpl<chunk_t*>*, std::map<Globals::SteadyTP, std::tuple<SmartFIFO<chunk_t*>*, Globals::Action, size_t>>> processed_data;
     for (Globals::SmartFIFOTSV const& vec: data) {
         for (Globals::SmartFIFOTS const& vec_data: vec) {
@@ -147,7 +148,7 @@ void DedupData::process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const&
 
         timestamp_stream << json_data;
     }
-}
+} */
 
 unsigned int LayerData::get_total_threads() const {
     return _thread_data.size();

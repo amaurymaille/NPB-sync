@@ -1,5 +1,7 @@
+#include <future>
 #include <set>
 
+#include "dedupdef.h"
 #include "encode_common.h"
 #include "smart_fifo.h"
 
@@ -19,7 +21,7 @@ struct thread_args_smart {
     std::vector<SmartFIFO<chunk_t*>*> _output_fifos;
     std::vector<SmartFIFO<chunk_t*>*> _extra_output_fifos;
     pthread_barrier_t* _barrier;
-    Globals::SmartFIFOTSV* _timestamp_data;
+    // Globals::SmartFIFOTSV* _timestamp_data;
     std::vector<deduplicate_push> _times;
 };
 
@@ -28,7 +30,7 @@ struct thread_args_smart {
 // ============================================================================
 
 void FragmentSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV& data = *args._timestamp_data;
+    // Globals::SmartFIFOTSV& data = *args._timestamp_data;
 
     size_t preloading_buffer_seek = 0;
     int qid = 0;
@@ -54,6 +56,8 @@ void FragmentSmart(thread_args_smart const& args) {
         printf("WARNING: I/O buffer size is very small. Performance degraded.\n");
         fflush(NULL);
     }
+
+    int fragment_count = -1;
 
     //read from input file / buffer
     while (1) {
@@ -127,6 +131,8 @@ void FragmentSmart(thread_args_smart const& args) {
                 bytes_read += r;
             }
         }
+
+        fragment_count++;
         //No data left over from last iteration and also nothing new read in, simply clean up and quit
         if(bytes_left + bytes_read == 0) {
             mbuffer_free(&chunk->uncompressed_data);
@@ -159,6 +165,7 @@ void FragmentSmart(thread_args_smart const& args) {
             //Try to split the buffer at least ANCHOR_JUMP bytes away from its beginning
             if(ANCHOR_JUMP < chunk->uncompressed_data.n) {
                 int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr + ANCHOR_JUMP, chunk->uncompressed_data.n - ANCHOR_JUMP, rf_win_dataprocess, rabintab, rabinwintab);
+                // printf("Fragment %d, offset = %d\n", fragment_count, offset); 
                 //Did we find a split location?
                 if(offset == 0) {
                     //Split found at the very beginning of the buffer (should never happen due to technical limitations)
@@ -224,7 +231,7 @@ void FragmentSmart(thread_args_smart const& args) {
 }
 
 void RefineSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV& data = *args._timestamp_data;
+    // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     int r;
     int count = 0;
@@ -328,7 +335,7 @@ void RefineSmart(thread_args_smart const& args) {
 
 
 void DeduplicateSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV& data = *args._timestamp_data;
+    // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
     int compress_count = 0, reorder_count = 0;
@@ -356,9 +363,21 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
         //Do the processing
         int isDuplicate = sub_Deduplicate(chunk);
+        bool duplicate_last = false;
+        int in_row = 0;
 
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
+            if (duplicate_last) {
+                duplicate_last = false;
+                // in_row = 1;
+            } else {
+                ++in_row;
+                if (in_row >= args._extra_output_fifos[0]->get_step()) {
+                    args._extra_output_fifos[0]->safe_push_immediate();
+                    in_row = 0;
+                }
+            }
             //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._output_fifos[0]->push(chunk);
@@ -370,6 +389,16 @@ void DeduplicateSmart(thread_args_smart const& args) {
             } */
             ++compress_count;
         } else {
+            if (!duplicate_last) {
+                duplicate_last = true;
+                // in_row = 1;
+            } else {
+                ++in_row;
+                if (in_row >= args._output_fifos[0]->get_step()) {
+                    args._output_fifos[0]->safe_push_immediate();
+                    in_row = 0;
+                }
+            }
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
             size_t push_res = args._extra_output_fifos[0]->push(chunk);
@@ -391,7 +420,7 @@ void DeduplicateSmart(thread_args_smart const& args) {
 }
 
 void CompressSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV& data = *args._timestamp_data;
+    // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
     int count = 0;
@@ -435,31 +464,44 @@ void CompressSmart(thread_args_smart const& args) {
     // printf("Compress finished, produced %d values\n", count);
 }
 
+struct ReorderComputeData {
+    SearchTree T;
+    sequence_number_t* chunks_per_anchor;
+};
+
+static ReorderComputeData c_data;
+
 void ReorderSmart(thread_args_smart const& args) {
-    Globals::SmartFIFOTSV& data = *args._timestamp_data;
+    // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     int fd = 0;
 
+    reorder_data = static_cast<ReorderData*>(malloc(1000000 * sizeof(ReorderData)));
+    reorder_tree_data = static_cast<ReorderTreeData*>(malloc(1000000 * sizeof(ReorderTreeData)));
+
+    reorder_tree_data_n = 1;
+    reorder_tree_data[0].time = 0;
+    reorder_tree_data[0].nb_elements = 0;
+
     chunk_t *chunk;
 
-    SearchTree T;
-    T = TreeMakeEmpty(NULL);
+    c_data.T = TreeMakeEmpty(NULL);
     Position pos = NULL;
     struct tree_element tele;
 
-    sequence_t next;
-    sequence_reset(&next);
+    /* sequence_t next;
+    sequence_reset(&next); */
 
     //We perform global anchoring in the first stage and refine the anchoring
     //in the second stage. This array keeps track of the number of chunks in
     //a coarse chunk.
-    sequence_number_t *chunks_per_anchor;
+    // sequence_number_t *chunks_per_anchor;
     unsigned int chunks_per_anchor_max = 1024;
-    chunks_per_anchor = (sequence_number_t*)malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
-    if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
-    memset(chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
+    c_data.chunks_per_anchor = (sequence_number_t*)malloc(chunks_per_anchor_max * sizeof(sequence_number_t));
+    if(c_data.chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
+    memset(c_data.chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
 
-    fd = create_output_file(_g_data->_output_filename.c_str());
+    // fd = create_output_file(_g_data->_output_filename.c_str());
     int qid = 0;
 
     while(1) {
@@ -487,43 +529,59 @@ void ReorderSmart(thread_args_smart const& args) {
         }
 
         chunk = **value;
+        /* auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(Globals::now() - Globals::_start_time).count();
+        ReorderData& rd = reorder_data[reorder_data_n++];
+        rd.time = diff;
+        rd.l1 = chunk->sequence.l1num;
+        rd.l2 = chunk->sequence.l2num; */
         //printf("ReorderSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
         if (chunk == NULL) break;
 
         //Double size of sequence number array if necessary
         if(chunk->sequence.l1num >= chunks_per_anchor_max) {
-            chunks_per_anchor = (sequence_number_t*)realloc(chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
-            if(chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
-            memset(&chunks_per_anchor[chunks_per_anchor_max], 0, chunks_per_anchor_max * sizeof(sequence_number_t));
+            c_data.chunks_per_anchor = (sequence_number_t*)realloc(c_data.chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
+            if(c_data.chunks_per_anchor == NULL) EXIT_TRACE("Error allocating memory\n");
+            memset(&c_data.chunks_per_anchor[chunks_per_anchor_max], 0, chunks_per_anchor_max * sizeof(sequence_number_t));
             chunks_per_anchor_max *= 2;
         }
         //Update expected L2 sequence number
         if(chunk->isLastL2Chunk) {
-            assert(chunks_per_anchor[chunk->sequence.l1num] == 0);
-            chunks_per_anchor[chunk->sequence.l1num] = chunk->sequence.l2num+1;
+            assert(c_data.chunks_per_anchor[chunk->sequence.l1num] == 0);
+            c_data.chunks_per_anchor[chunk->sequence.l1num] = chunk->sequence.l2num+1;
         }
 
         //Put chunk into local cache if it's not next in the sequence 
-        if(!sequence_eq(chunk->sequence, next)) {
-            pos = TreeFind(chunk->sequence.l1num, T);
+        // if(!sequence_eq(chunk->sequence, next)) {
+            pos = TreeFind(chunk->sequence.l1num, c_data.T);
             if (pos == NULL) {
                 //FIXME: Can we remove at least one of the two mallocs in this if-clause?
                 //FIXME: Rename "INITIAL_SEARCH_TREE_SIZE" to something more accurate
                 tele.l1num = chunk->sequence.l1num;
                 tele.queue = Initialize(INITIAL_SEARCH_TREE_SIZE);
                 Insert(chunk, tele.queue);
-                T = TreeInsert(tele, T);
+                c_data.T = TreeInsert(tele, c_data.T);
             } else {
                 Insert(chunk, pos->Element.queue);
             }
-            continue;
-        }
+            /* auto time = std::chrono::duration_cast<std::chrono::nanoseconds>(Globals::now() - Globals::_start_time).count();
+            ReorderTreeData& tdata = reorder_tree_data[reorder_tree_data_n];
+            tdata.time = time;
+            tdata.nb_elements = reorder_tree_data[reorder_tree_data_n - 1].nb_elements + 1;
+            ++reorder_tree_data_n; */
+            // continue;
+        // }
 
         //write as many chunks as possible, current chunk is next in sequence
-        pos = TreeFindMin(T);
+        /* pos = TreeFindMin(T);
+        ReorderTreeData& rtb = reorder_tree_data[reorder_tree_data_n];
+        rtb.time = std::chrono::duration_cast<std::chrono::nanoseconds>(Globals::now() - Globals::_start_time).count();
+        rtb.nb_elements = reorder_tree_data[reorder_tree_data_n - 1].nb_elements;
+        ++reorder_tree_data_n;
+        unsigned int count = 0;
         do {
             write_chunk_to_file(fd, chunk);
+            ++count;
             if(chunk->header.isDuplicate) {
                 free(chunk);
                 chunk=NULL;
@@ -551,6 +609,10 @@ void ReorderSmart(thread_args_smart const& args) {
                 chunk = NULL;
             }
         } while(chunk != NULL);
+        ReorderTreeData& tdata = reorder_tree_data[reorder_tree_data_n];
+        tdata.time = std::chrono::duration_cast<std::chrono::nanoseconds>(Globals::now() - Globals::_start_time).count();
+        tdata.nb_elements = reorder_tree_data[reorder_tree_data_n - 1].nb_elements - count + 1;
+        ++reorder_tree_data_n; */
     }
 
     /* for (SmartFIFO<chunk_t*>* fifo: args._input_fifos) {
@@ -558,7 +620,7 @@ void ReorderSmart(thread_args_smart const& args) {
     } */
 
     //flush the blocks left in the cache to file
-    pos = TreeFindMin(T);
+    /* pos = TreeFindMin(T);
     while(pos !=NULL) {
         if(pos->Element.l1num == next.l1num) {
             chunk = FindMin(pos->Element.queue);
@@ -572,7 +634,7 @@ void ReorderSmart(thread_args_smart const& args) {
                 }
             } else {
                 //level 2 sequence number does not match
-                throw std::runtime_error("L2 sequencen number mismatch");
+                throw std::runtime_error("L2 sequence number mismatch");
                 EXIT_TRACE("L2 sequence number mismatch.\n");
             }
         } else {
@@ -588,11 +650,11 @@ void ReorderSmart(thread_args_smart const& args) {
         sequence_inc_l2(&next);
         if(chunks_per_anchor[next.l1num]!=0 && next.l2num==chunks_per_anchor[next.l1num]) sequence_inc_l1(&next);
 
-    }
+    } */
 
-    close(fd);
+    // close(fd);
 
-    free(chunks_per_anchor);
+    // free(chunks_per_anchor);
 }
 
 std::vector<std::unique_ptr<thread_args_smart>> _thread_args_smart_vector;
@@ -629,7 +691,49 @@ void* _ReorderSmart(void* args) {
     return nullptr;
 }
 
-void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+static void Write() {
+    sequence_t next;
+    sequence_reset(&next);
+
+    int fd = create_output_file(_g_data->_output_filename.c_str());
+
+    Position pos = TreeFindMin(c_data.T);
+    chunk_t* chunk;
+    while(pos !=NULL) {
+        if(pos->Element.l1num == next.l1num) {
+            chunk = FindMin(pos->Element.queue);
+            if(sequence_eq(chunk->sequence, next)) {
+                //Remove chunk from cache, update position for next iteration
+                DeleteMin(pos->Element.queue);
+                if(IsEmpty(pos->Element.queue)) {
+                    Destroy(pos->Element.queue);
+                    c_data.T = TreeDelete(pos->Element, c_data.T);
+                    pos = TreeFindMin(c_data.T);
+                }
+            } else {
+                //level 2 sequence number does not match
+                throw std::runtime_error("L2 sequence number mismatch");
+                EXIT_TRACE("L2 sequence number mismatch.\n");
+            }
+        } else {
+            //level 1 sequence number does not match
+            throw std::runtime_error("L1 sequence number mismatch");
+            EXIT_TRACE("L1 sequence number mismatch.\n");
+        }
+        write_chunk_to_file(fd, chunk);
+        if(chunk->header.isDuplicate) {
+            free(chunk);
+            chunk=NULL;
+        }
+        sequence_inc_l2(&next);
+        if(c_data.chunks_per_anchor[next.l1num]!=0 && next.l2num==c_data.chunks_per_anchor[next.l1num]) sequence_inc_l1(&next);
+    } 
+
+    close(fd);
+    free(c_data.chunks_per_anchor);
+}
+
+void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
     LayerData& fragment = data._layers_data[Layers::FRAGMENT];
     LayerData& refine = data._layers_data[Layers::REFINE];
     LayerData& deduplicate = data._layers_data[Layers::DEDUPLICATE];
@@ -640,7 +744,7 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     std::map<int, SmartFIFOImpl<chunk_t*>*> ids_to_fifos;
 
     size_t timestamp_pos = 0;
-    timestamp_datas.resize(data.get_total_threads());
+    // timestamp_datas.resize(data.get_total_threads());
     
     auto alloc_queues = [&ids_to_fifos](SmartFIFOImpl<chunk_t*>** fifos, std::set<int>& fifo_ids, LayerData const& data, std::string&& description) {
         compute_fifo_ids_for_layer(fifo_ids, data);
@@ -664,6 +768,7 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
         auto iter = sreorder.begin();
         for (int i = 0; i < sreorder.size(); ++i, ++iter) {
+            dedupcompress_to_reorder[i].set_log(true);
             dedupcompress_to_reorder[i].set_description("dedup / compress to reorder");
             ids_to_fifos[*iter] = dedupcompress_to_reorder + i;
         }
@@ -673,11 +778,11 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     unsigned int nb_threads = data.get_total_threads();
     pthread_barrier_init(&barrier, nullptr, nb_threads + 1);
 
-    auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_datas, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
+    auto launch_stage = [&barrier, &data, &ids_to_fifos, &timestamp_pos, &fd, &filesize, &buffer](void* (*routine)(void*), LayerData const& layer_data, bool extra = false) {
         thread_args_smart* args = new thread_args_smart[layer_data.get_total_threads()];
-        for (int i = 0; i < layer_data.get_total_threads(); ++i) {
+        /*for (int i = 0; i < layer_data.get_total_threads(); ++i) {
             args[i]._times.resize(100000000);
-        }
+        }*/
 
         pthread_t* threads = new pthread_t[layer_data.get_total_threads()];
 
@@ -698,7 +803,7 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
             }
 
             args[i]._barrier = &barrier;
-            args[i]._timestamp_data = timestamp_datas.data() + timestamp_pos;
+            // args[i]._timestamp_data = timestamp_datas.data() + timestamp_pos;
             args[i].fd = fd;
 
             if (data._preloading) {
@@ -748,6 +853,8 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
 
     end = sc::now();
 
+    Write();
+
     int pos = 0;
     for (auto& v: dedup_data) {
         for (auto const& time: v) {
@@ -761,12 +868,13 @@ void _Encode(std::vector<Globals::SmartFIFOTSV>& timestamp_datas, DedupData& dat
     }
 }
 
-std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {
-    std::vector<Globals::SmartFIFOTSV> timestamp_datas;
+// std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {
+unsigned long long EncodeSmart(DedupData& data) {
+    // std::vector<Globals::SmartFIFOTSV> timestamp_datas;
     // I don't have std::bind_front :(
-    return { EncodeBase(data, [&timestamp_datas](DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
-                _Encode(timestamp_datas, data, fd, filesize, buffer, begin, end);
-            }), timestamp_datas };
+    return EncodeBase(data, [](DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+                _Encode(data, fd, filesize, buffer, begin, end);
+            });
 //    struct stat filestat;
 //    int32 fd;
 //

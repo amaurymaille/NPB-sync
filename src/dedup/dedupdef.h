@@ -17,7 +17,7 @@
 #include "config.h"
 #include "mbuffer.h"
 #include "sha.h"
-#include "smart_fifo.h"
+// #include "smart_fifo.h"
 
 using std::chrono::steady_clock;
 
@@ -266,6 +266,23 @@ typedef struct {
 extern config_t* conf;
 extern struct hashtable* cache;
 
+struct ReorderData {
+    unsigned long long time;
+    int l1;
+    int l2;
+};
+
+extern ReorderData* reorder_data;
+extern size_t reorder_data_n;
+
+struct ReorderTreeData {
+    unsigned long long time;
+    long long int nb_elements;
+};
+
+extern ReorderTreeData* reorder_tree_data;
+extern size_t reorder_tree_data_n;
+
 namespace Globals {
     enum class Action {
         POP,
@@ -273,11 +290,11 @@ namespace Globals {
     };
 
     typedef std::chrono::time_point<std::chrono::steady_clock> SteadyTP;
-    typedef std::tuple<SteadyTP, SmartFIFO<chunk_t*>*, SmartFIFOImpl<chunk_t*>*, Action, size_t> SmartFIFOTS;
-    typedef std::vector<SmartFIFOTS> SmartFIFOTSV;
+    // typedef std::tuple<SteadyTP, SmartFIFO<chunk_t*>*, SmartFIFOImpl<chunk_t*>*, Action, size_t> SmartFIFOTS;
+    // typedef std::vector<SmartFIFOTS> SmartFIFOTSV;
 
-    extern std::vector<std::vector<SmartFIFOTS>> _smart_fifo_ts_data;
-    extern std::mutex _smart_fifo_ts_m;
+    // extern std::vector<std::vector<SmartFIFOTS>> _smart_fifo_ts_data;
+    // extern std::mutex _smart_fifo_ts_m;
     extern SteadyTP _start_time;
 
     inline SteadyTP now() {

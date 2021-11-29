@@ -85,7 +85,7 @@ public:
     std::map<Layers, LayerData> _layers_data;
     std::map<unsigned int, FIFOData> _fifo_data;
 private:
-    void process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data);
+    // void process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data);
     unsigned int _fifo_id;
 };
 

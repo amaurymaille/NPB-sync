@@ -47,6 +47,9 @@ struct hashtable* cache;
 
 std::map<void*, std::tuple<std::string, std::array<size_t, 2>>> _semaphore_data;
 
+TimestampData timestamp_data[1000000];
+size_t _log_n = 0;
+
 /*--------------------------------------------------------------------------*/
 static void
 usage(char* prog)
@@ -228,6 +231,12 @@ void start_sol(CLIArgs const& args) {
     lua.script_file(args._lua_file);
 }
 
+ReorderData* reorder_data;
+size_t reorder_data_n;
+
+ReorderTreeData* reorder_tree_data;
+size_t reorder_tree_data_n;
+
 /*--------------------------------------------------------------------------*/
 int main(int argc, char** argv) {
 #ifdef FIFO_PLUS_TIMESTAMP_DATA
@@ -265,6 +274,28 @@ int main(int argc, char** argv) {
   } */
 
   start_sol(args);
+  std::ofstream log_stream("fifo_active_wait.log", std::ios::out);
+  if (!log_stream) {
+      std::cout << ":( :( :( :(" << std::endl;
+      return 0;
+  }
+
+  for (size_t i = 0; i < _log_n; ++i) {
+      TimestampData& td = timestamp_data[i];
+      log_stream << td.begin << ", " << td.end << ", " << td.diff << ", " << td.count << std::endl;
+  }
+
+  std::ofstream reorder_stream("reorder_active_wait.log", std::ios::out);
+  for (size_t i = 0; i < reorder_data_n; ++i) {
+    ReorderData& rd = reorder_data[i];
+    reorder_stream << rd.time << ", " << rd.l1 << ", " << rd.l2 << std::endl;
+  }
+
+  std::ofstream reorder_tree_stream("reorder_tree.log", std::ios::out);
+  for (size_t i = 0; i < reorder_tree_data_n; ++i) {
+    ReorderTreeData& rd = reorder_tree_data[i];
+    reorder_tree_stream << rd.time << "," << rd.nb_elements << std::endl;
+  }
 
   /* for (auto const& [addr, data]: _semaphore_data) {
     const auto& [name, arr] = data;
