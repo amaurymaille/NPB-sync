@@ -99,6 +99,10 @@ public:
         _finished.store(true, std::memory_order_release);
     }
 
+    int get_value() {
+        return _value.load(std::memory_order_acquire);
+    }
+
 private:
     int always_wait(unsigned int i) {
         return _value.fetch_sub(i, std::memory_order_release);
@@ -253,6 +257,10 @@ public:
         } else {
             return _nb_elements;
         }
+    }
+
+    size_t unsafe_nb_elements_self() const {
+        return _nb_elements;
     }
 
 private:
@@ -424,6 +432,20 @@ public:
         return std::make_tuple(valid && nb_elements != 0, nb_elements);
     }
 
+    void push_immediate() {
+        _fifo->push_chunk(&_chunk, _step);
+        if (_reconfigure) {
+            _reconfigure_step_push(_step);
+        }
+        _chunk.reset(_step);
+    }
+
+    void safe_push_immediate() {
+        if (_chunk.unsafe_nb_elements_self() != 0) {
+            push_immediate();
+        }
+    }
+
     void terminate_producer() {
         _chunk.freeze();
         _fifo->push_chunk(&_chunk, _chunk.nb_elements());
@@ -480,7 +502,7 @@ private:
         if (_inserted >= _change_after && !_changed) {
             // printf("Changed push step from %d to %d\n", _step, _new_step);
             auto now = Globals::now();
-            printf("[Change PUSH] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
+            // printf("[Change PUSH] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
             _step = _new_step;
             _changed = true;
         }
@@ -491,7 +513,7 @@ private:
         if (_removed >= _change_after && !_changed) {
             // printf("Changed pop step from %d to %d\n", _step, _new_step);
             auto now = Globals::now();
-            printf("[Change POP] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
+            // printf("[Change POP] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
             _step = _new_step;
             _changed = true;
         }
@@ -511,6 +533,16 @@ private:
     bool _changed = false;
 };
 
+struct TimestampData {
+    unsigned long long begin;
+    unsigned long long end;
+    unsigned long long diff;
+    unsigned long long count;
+};
+
+extern TimestampData timestamp_data[1000000];
+extern size_t _log_n;
+
 template<typename T>
 class SmartFIFOImpl {
 public:
@@ -518,7 +550,7 @@ public:
     typedef SmartFIFO<T> smart_fifo;
 
 public:
-    SmartFIFOImpl() : _sem(0), _description(), _sem_data(std::get<std::array<size_t, 2>>(_semaphore_data[this])) {
+    SmartFIFOImpl(bool log = false) : _log(log), _sem(0), _description(), _sem_data(std::get<std::array<size_t, 2>>(_semaphore_data[this])) {
         _tail.store(new FIFOChunk<T>(0, FIFOChunk<T>::size_constructor_hint), std::memory_order_relaxed);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
@@ -550,6 +582,10 @@ public:
 
     void set_description(std::string&& description) {
         _description = std::move(description);
+    }
+
+    void set_log(bool on) {
+        _log = on;
     }
 
     SmartFIFO<T> get_proxy(size_t step) {
@@ -658,8 +694,21 @@ public:
     }
 
     void pop(SmartFIFOElements<T>& elements, size_t nb_elements) {
+        bool requires_diff = false;
+        std::chrono::time_point<std::chrono::steady_clock> begin;
+        /* std::unique_lock<std::mutex> lck;
+        if (!_cons_mutex.try_lock()) {
+            begin = Globals::now();
+            requires_diff = true;
+            lck = std::move(std::unique_lock<std::mutex>(_cons_mutex));
+            auto end = Globals::now();
+            auto diff_begin = std::chrono::duration_cast<std::chrono::nanoseconds>(begin - Globals::_start_time).count();
+            auto diff_wait = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+            printf("Waited on lock from %lu to %lu, duration = %lu\n", diff_begin, diff_begin + diff_wait, diff_wait);
+        } else {
+            lck = std::move(std::unique_lock<std::mutex>(_cons_mutex, std::adopt_lock));
+        } */
         std::unique_lock<std::mutex> lck(_cons_mutex);
-        // std::unique_lock<std::mutex> lck(_m);
         
         bool has_next;
         while (_head->empty(has_next) && !terminated()) {
@@ -668,7 +717,18 @@ public:
                 _head->destroy();
                 _head = next;
             } else {
+                auto now = Globals::now();
                 unsigned int count = _sem.wait(nb_elements);
+                /* if (_log) {
+                    auto then = Globals::now();
+                    auto diff_begin = std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count();
+                    auto diff_wait = std::chrono::duration_cast<std::chrono::nanoseconds>(then - now).count();
+                    TimestampData& td = timestamp_data[_log_n++];
+                    td.begin = diff_begin;
+                    td.end = diff_begin + diff_wait;
+                    td.diff = diff_wait;
+                    td.count = count;
+                } */
                 // printf("%p waited %d items\n", this, count);
                 // _sem_data[1] += count;
                 // sem_wait(&_sem);
@@ -764,6 +824,7 @@ public:
     }
 
 private:
+    bool _log;
     // 32 high bits are producers done, 32 low bits are producers.
     std::atomic<size_t> _nb_producers__done;
     FIFOChunk<T>* _head = nullptr;
