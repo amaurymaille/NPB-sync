@@ -2,6 +2,7 @@
 #include <set>
 
 #include "dedupdef.h"
+#include "hashtable_private.h"
 #include "encode_common.h"
 #include "smart_fifo.h"
 
@@ -333,7 +334,6 @@ void RefineSmart(thread_args_smart const& args) {
     // printf("FragmentRefine finished, inserted %d values\n", count);
 }
 
-
 void DeduplicateSmart(thread_args_smart const& args) {
     // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
@@ -344,8 +344,23 @@ void DeduplicateSmart(thread_args_smart const& args) {
 
     bool duplicate_last = false;
     int in_row = 0;
-    int nb_compress = 0;
-    int nb_reorder = 0;
+    // int nb_compress = 0;
+    // int nb_reorder = 0;
+
+    /* auto& [lock_size, lock_arr] = deduplicate_locks_logger.register_thread(cache->tablelength);
+    lock_size = cache->tablelength;
+    memset(lock_arr, 0, sizeof(cache->tablelength) * sizeof(*lock_arr)); */
+
+    /* auto& [array_size, array_data] = deduplicate_logger.register_thread(250000);
+    struct Sequence {
+        unsigned int l1;
+        unsigned int l2;
+        unsigned int arrived;
+    };
+    size_t last_sequence = 0;
+    size_t curr_sequence = 0;
+    Sequence* sequences = static_cast<Sequence*>(malloc(sizeof(Sequence) * 250000)); */
+
     while (1) {
         //if no items available, fetch a group of items from the queue
         std::optional<chunk_t**> value;
@@ -366,20 +381,26 @@ void DeduplicateSmart(thread_args_smart const& args) {
         // check_chunk(chunk);
 
         //Do the processing
-        int isDuplicate = sub_Deduplicate(chunk);
+        auto [isDuplicate, lock_idx] = sub_Deduplicate(chunk);
+        // ++(lock_arr[lock_idx]);
 
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
-            ++in_row;
+            /* ++in_row;
             if (in_row >= args._extra_output_fifos[0]->get_step()) {
                 if (nb_reorder != 0) {
                     args._extra_output_fifos[0]->safe_push_immediate();
                     nb_reorder = 0;
                 }
                 in_row = 0;
-            }
+            } */
             //printf("DeduplicateSmart: pushed non duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
+            /* Sequence& seq = sequences[curr_sequence++];
+            seq.l1 = chunk->sequence.l1num;
+            seq.l2 = chunk->sequence.l2num;
+            seq.arrived = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - Globals::_start_time).count(); */
+
             size_t push_res = args._output_fifos[0]->push(chunk);
             /* deduplicate_push& dedup_data = times[pos++];
             dedup_data._reorder = false;
@@ -387,19 +408,41 @@ void DeduplicateSmart(thread_args_smart const& args) {
             /* if (push_res && args.tid % args.nqueues == 1) {
                 data.push_back(std::make_tuple(Globals::now(), args._output_fifos[0], args._output_fifos[0]->impl(), Globals::Action::PUSH, push_res));
             } */
-            ++nb_compress;
+            // ++nb_compress;
+            /* if (push_res) {
+                auto now = std::chrono::steady_clock::now();
+                auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count();
+                for (; last_sequence < curr_sequence; ++last_sequence) {
+                    DeduplicateData& ddata = array_data[array_size++];
+                    ddata.l1 = sequences[last_sequence].l1;
+                    ddata.l2 = sequences[last_sequence].l2;
+                    ddata.arrived = sequences[last_sequence].arrived;
+                    ddata.push = diff;
+                }
+            } */
             ++compress_count;
         } else {
-            ++in_row;
+            /* ++in_row;
             if (in_row >= args._output_fifos[0]->get_step()) {
                 if (nb_compress != 0) {
-                    nb_compress = 0;
-                    args._output_fifos[0]->safe_push_immediate();
+                    nb_compress = 0; */
+                    /* auto now = std::chrono::steady_clock::now();
+                    auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count();
+                    for (; last_sequence < curr_sequence; ++last_sequence) {
+                        DeduplicateData& ddata = array_data[array_size++];
+                        ddata.l1 = sequences[last_sequence].l1;
+                        ddata.l2 = sequences[last_sequence].l2;
+                        ddata.arrived = sequences[last_sequence].arrived;
+                        ddata.push = diff;
+                    } */
+
+                    /* args._output_fifos[0]->safe_push_immediate();
                 }
                 in_row = 0;
-            }
+            } */
             //printf("DeduplicateSmart: pushed duplicated chunk %p\n", chunk);
             // dump_chunk(chunk);
+            
             size_t push_res = args._extra_output_fifos[0]->push(chunk);
             /* deduplicate_push& dedup_data = times[pos++];
             dedup_data._reorder = true;
@@ -408,8 +451,8 @@ void DeduplicateSmart(thread_args_smart const& args) {
             /* if (push_res && args.tid % args.nqueues == 1) {
                 data.push_back(std::make_tuple(Globals::now(), args._extra_output_fifo, args._extra_output_fifo->impl(), Globals::Action::PUSH, push_res));
                 } */
-            ++nb_reorder;
-            ++reorder_count;
+            // ++nb_reorder;
+            // ++reorder_count;
         }
     }
 
@@ -425,10 +468,12 @@ void CompressSmart(thread_args_smart const& args) {
     chunk_t * chunk;
     int count = 0;
 
+    // auto& [array_size, log_data] = compress_logger.register_thread(50000);
+
     while(1) {
         std::optional<chunk_t**> value;
-        auto before = std::chrono::steady_clock::now();
-        auto [valid, nb_elements] = args._input_fifos[0]->pop(value);
+        // auto before = std::chrono::steady_clock::now();
+        auto [valid, nb_elements] = args._input_fifos[0]->pop(value, std::chrono::nanoseconds(50ULL), args._output_fifos[0]);
 
         if (valid) {
 
@@ -447,7 +492,12 @@ void CompressSmart(thread_args_smart const& args) {
         //printf("CompressSmart: poped chunk %p\n", chunk);
         // check_chunk(chunk);
 
+        /* CompressData& lcompress_data = log_data[array_size++];
+        lcompress_data.l1 = chunk->sequence.l1num;
+        lcompress_data.l2 = chunk->sequence.l2num;
+        lcompress_data.in = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - Globals::_start_time).count(); */
         sub_Compress(chunk);
+        // lcompress_data.out = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - Globals::_start_time).count();
 
         //printf("CompressSmart: pushed chunk %p\n", chunk);
         // dump_chunk(chunk);
@@ -479,12 +529,12 @@ void ReorderSmart(thread_args_smart const& args) {
     pthread_barrier_wait(args._barrier);
     int fd = 0;
 
-    reorder_data = static_cast<ReorderData*>(malloc(1000000 * sizeof(ReorderData)));
+    /* reorder_data = static_cast<ReorderData*>(malloc(1000000 * sizeof(ReorderData)));
     reorder_tree_data = static_cast<ReorderTreeData*>(malloc(1000000 * sizeof(ReorderTreeData)));
 
     reorder_tree_data_n = 1;
     reorder_tree_data[0].time = 0;
-    reorder_tree_data[0].nb_elements = 0;
+    reorder_tree_data[0].nb_elements = 0; */
 
     chunk_t *chunk;
 
@@ -507,6 +557,8 @@ void ReorderSmart(thread_args_smart const& args) {
 
     fd = create_output_file(_g_data->_output_filename.c_str());
     int qid = 0;
+
+    // dedupcompress_data = (DedupCompressData*)malloc(sizeof(DedupCompressData) * 400000);
 
     while(1) {
         std::optional<chunk_t**> value;
@@ -533,14 +585,20 @@ void ReorderSmart(thread_args_smart const& args) {
         }
 
         chunk = **value;
+        //printf("ReorderSmart: poped chunk %p\n", chunk);
+        // check_chunk(chunk);
+        if (chunk == NULL) break;
+
         /* auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(Globals::now() - Globals::_start_time).count();
         ReorderData& rd = reorder_data[reorder_data_n++];
         rd.time = diff;
         rd.l1 = chunk->sequence.l1num;
         rd.l2 = chunk->sequence.l2num; */
-        //printf("ReorderSmart: poped chunk %p\n", chunk);
-        // check_chunk(chunk);
-        if (chunk == NULL) break;
+
+        /* DedupCompressData& dc = dedupcompress_data[dedupcompress_data_n++];
+        dc.l1 = chunk->sequence.l1num;
+        dc.l2 = chunk->sequence.l2num;
+        dc.compress = !chunk->header.isDuplicate; */
 
         //Double size of sequence number array if necessary
         if(chunk->sequence.l1num >= chunks_per_anchor_max) {
@@ -573,7 +631,7 @@ void ReorderSmart(thread_args_smart const& args) {
             tdata.time = time;
             tdata.nb_elements = reorder_tree_data[reorder_tree_data_n - 1].nb_elements + 1;
             ++reorder_tree_data_n; */
-            // continue;
+            continue;
         }
 
         //write as many chunks as possible, current chunk is next in sequence
@@ -669,12 +727,12 @@ void ReorderSmart(thread_args_smart const& args) {
     pthread_barrier_wait(args._barrier);
     int fd = 0;
 
-    reorder_data = static_cast<ReorderData*>(malloc(1000000 * sizeof(ReorderData)));
+    /* reorder_data = static_cast<ReorderData*>(malloc(1000000 * sizeof(ReorderData)));
     reorder_tree_data = static_cast<ReorderTreeData*>(malloc(1000000 * sizeof(ReorderTreeData)));
 
     reorder_tree_data_n = 1;
     reorder_tree_data[0].time = 0;
-    reorder_tree_data[0].nb_elements = 0;
+    reorder_tree_data[0].nb_elements = 0; */
 
     chunk_t *chunk;
 

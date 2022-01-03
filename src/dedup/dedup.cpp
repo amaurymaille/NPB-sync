@@ -51,7 +51,7 @@ TimestampData timestamp_data[1000000];
 size_t _log_n = 0;
 
 /*--------------------------------------------------------------------------*/
-static void
+/* static void
 usage(char* prog)
 {
   printf("usage: %s [-cusfvh] [-w gzip/bzip2/none] [-i file] [-o file] [-t number_of_threads]\n",prog);
@@ -64,7 +64,7 @@ usage(char* prog)
   printf("-t \t\t\tnumber of threads per stage \n");
   printf("-v \t\t\tverbose output\n");
   printf("-h \t\t\thelp\n");
-}
+} */
 
 #ifdef FIFO_PLUS_TIMESTAMP_DATA
 std::chrono::time_point<steady_clock> Globals::start_time;
@@ -231,11 +231,18 @@ void start_sol(CLIArgs const& args) {
     lua.script_file(args._lua_file);
 }
 
-ReorderData* reorder_data;
+/* ReorderData* reorder_data;
 size_t reorder_data_n;
 
 ReorderTreeData* reorder_tree_data;
 size_t reorder_tree_data_n;
+
+DedupCompressData* dedupcompress_data;
+size_t dedupcompress_data_n;
+
+TSLogger<CompressData> compress_logger;
+TSLogger<DeduplicateData> deduplicate_logger;
+TSLogger<unsigned int> deduplicate_locks_logger; */
 
 /*--------------------------------------------------------------------------*/
 int main(int argc, char** argv) {
@@ -256,11 +263,10 @@ int main(int argc, char** argv) {
         __parsec_bench_begin(__parsec_dedup);
 #endif //ENABLE_PARSEC_HOOKS
 
-  int32 compress = TRUE;
+  // int32 compress = TRUE;
 
   //We force the sha1 sum to be integer-aligned, check that the length of a sha1 sum is a multiple of unsigned int
   assert(SHA1_LEN % sizeof(unsigned int) == 0);
-
 
   CLIArgs args;
   parse_args(argc, argv, args);
@@ -274,7 +280,7 @@ int main(int argc, char** argv) {
   } */
 
   start_sol(args);
-  std::ofstream log_stream("fifo_active_wait.log", std::ios::out);
+  /* std::ofstream log_stream("fifo_active_wait.log", std::ios::out);
   if (!log_stream) {
       std::cout << ":( :( :( :(" << std::endl;
       return 0;
@@ -289,14 +295,42 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < reorder_data_n; ++i) {
     ReorderData& rd = reorder_data[i];
     reorder_stream << rd.time << ", " << rd.l1 << ", " << rd.l2 << std::endl;
-  }
+  } */
 
-  std::ofstream reorder_tree_stream("reorder_tree.log", std::ios::out);
+  /* std::ofstream reorder_tree_stream("reorder_tree.log", std::ios::out);
   for (size_t i = 0; i < reorder_tree_data_n; ++i) {
     ReorderTreeData& rd = reorder_tree_data[i];
     reorder_tree_stream << rd.time << "," << rd.nb_elements << std::endl;
+  } */
+
+  /* std::ofstream dedupcompress_stream("dedupcompress.log", std::ios::out);
+  for (int i = 0; i < dedupcompress_data_n; ++i) {
+      dedupcompress_stream << dedupcompress_data[i].l1 << ", " << dedupcompress_data[i].l2 << ", ";
+      if (dedupcompress_data[i].compress) {
+          dedupcompress_stream << "compress";
+      } else {
+          dedupcompress_stream << "deduplicate";
+      }
+
+      dedupcompress_stream << std::endl;
   }
 
+  free(dedupcompress_data);
+
+  std::ofstream compress_data_stream("compress.log", std::ios::out);
+  compress_logger.log([&compress_data_stream](CompressData const& data) -> void {
+            compress_data_stream << data.l1 << ", " << data.l2 << ", " << data.in << ", " << data.out << std::endl;
+          });
+
+  std::ofstream deduplicate_data_stream("dedup_to_compress.log", std::ios::out);
+  deduplicate_logger.log([&deduplicate_data_stream](DeduplicateData const& data) -> void {
+            deduplicate_data_stream << data.l1 << ", " << data.l2 << ", " << data.arrived << ", " << data.push << std::endl;
+        });
+
+  std::ofstream deduplicate_locks_stream("dedup_lock.log", std::ios::out);
+  deduplicate_locks_logger.log([&deduplicate_locks_stream](int const& l) -> void {
+          deduplicate_locks_stream << l << std::endl;
+          }); */
   /* for (auto const& [addr, data]: _semaphore_data) {
     const auto& [name, arr] = data;
     std::cout << "[End] FIFO " << name << " => " << arr[0] << ", " << arr[1] << std::endl;

@@ -283,6 +283,15 @@ struct ReorderTreeData {
 extern ReorderTreeData* reorder_tree_data;
 extern size_t reorder_tree_data_n;
 
+/* struct DedupCompressData {
+    int l1 = -1;
+    int l2 = -1;
+    bool compress;
+};
+
+extern DedupCompressData* dedupcompress_data;
+extern size_t dedupcompress_data_n; */
+
 namespace Globals {
     enum class Action {
         POP,
