@@ -423,7 +423,7 @@ void * DeduplicateDefault(void * targs) {
         assert(chunk!=NULL);
 
         //Do the processing
-        int isDuplicate = sub_Deduplicate(chunk);
+        auto [isDuplicate, _] = sub_Deduplicate(chunk);
 
 #ifdef ENABLE_STATISTICS
         if(isDuplicate) {

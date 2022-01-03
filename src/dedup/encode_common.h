@@ -92,7 +92,7 @@ int create_output_file(const char *outfile);
 void write_chunk_to_file(int fd, chunk_t *chunk);
 
 void sub_Compress(chunk_t *chunk);
-int sub_Deduplicate(chunk_t *chunk);
+std::tuple<int, unsigned int> sub_Deduplicate(chunk_t *chunk);
 
 using sc = std::chrono::steady_clock;
 using tp = std::chrono::time_point<sc>;

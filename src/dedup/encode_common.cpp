@@ -288,7 +288,7 @@ void sub_Compress(chunk_t *chunk) {
  *    - On miss add chunk to database
  *    - Returns chunk redundancy status
  */
-int sub_Deduplicate(chunk_t *chunk) {
+std::tuple<int, unsigned int> sub_Deduplicate(chunk_t *chunk) {
     int isDuplicate;
     chunk_t *entry;
 
@@ -299,7 +299,7 @@ int sub_Deduplicate(chunk_t *chunk) {
 
     //Query database to determine whether we've seen the data chunk before
 #ifdef ENABLE_PTHREADS
-    pthread_mutex_t *ht_lock = hashtable_getlock(cache, (void *)(chunk->sha1));
+    auto [ht_lock, idx] = hashtable_getlock(cache, (void *)(chunk->sha1));
     pthread_mutex_lock(ht_lock);
 #endif
     entry = (chunk_t *)hashtable_search(cache, (void *)(chunk->sha1));
@@ -324,7 +324,7 @@ int sub_Deduplicate(chunk_t *chunk) {
     pthread_mutex_unlock(ht_lock);
 #endif
 
-    return isDuplicate;
+    return { isDuplicate, idx };
 }
 
 
