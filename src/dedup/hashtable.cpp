@@ -39,6 +39,8 @@
 #include <string.h>
 #include <math.h>
 
+#include <tuple>
+
 #ifdef ENABLE_DMALLOC
 #include <dmalloc.h>
 #endif //ENABLE_DMALLOC
@@ -118,13 +120,13 @@ unsigned int hash(struct hashtable *h, void *k) {
 
 #ifdef ENABLE_PTHREADS
 /*****************************************************************************/
-pthread_mutex_t * hashtable_getlock(struct hashtable *h, void *k) {
+std::tuple<pthread_mutex_t *, unsigned int> hashtable_getlock(struct hashtable *h, void *k) {
   unsigned int hashvalue, index;
 
   hashvalue = hash(h,k);
   //NOTE: If dynamic expansion is disabled then tablelength is read-only
   index = indexFor(h->tablelength,hashvalue);
-  return &(h->locks[index]);
+  return { &(h->locks[index]), index };
 }
 #endif
 

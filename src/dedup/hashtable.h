@@ -40,6 +40,8 @@
 #include <pthread.h>
 #include "config.h"
 
+#include <tuple>
+
 //WARNING: Dynamic expansion is not thread-safe
 //#define ENABLE_DYNAMIC_EXPANSION
 
@@ -141,7 +143,7 @@ struct hashtable * hashtable_create(
  * accesses to the hash table with this key are thread-safe.
  */
 #ifdef ENABLE_PTHREADS
-pthread_mutex_t * hashtable_getlock(struct hashtable *h, void *k);
+std::tuple<pthread_mutex_t *, unsigned int> hashtable_getlock(struct hashtable *h, void *k);
 #endif
 
 /*****************************************************************************
