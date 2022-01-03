@@ -66,13 +66,20 @@ public:
      *
      * Pas de famine si on a un seul consommateur à la fois !
      */
-    unsigned int wait(unsigned int i) {
+    int wait(unsigned int i, std::optional<std::chrono::nanoseconds> const& timeout) {
         int old_value;
+        auto begin = std::chrono::steady_clock::now();
         /* If there was nothing in the semaphore (which should not happen in a 
          * single consumer context), post back what was taken and then always_wait.
          */
         while ((old_value = always_wait(i)) <= 0 && !_finished.load(std::memory_order_acquire)) {
             post(i);
+
+            if (timeout) {
+                if (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - begin) >= *timeout) {
+                    return -1;
+                }
+            }
             // sem_wait(&_sem);
         } 
 
@@ -123,7 +130,7 @@ public:
     friend SmartFIFOImpl<T>;
     friend SmartFIFO<T>;
 
-    FIFOChunk(size_t size, size_constructor_hint_t const& s) : _size(size), _elements(new T[size]) {
+    FIFOChunk(size_t size, size_constructor_hint_t const&) : _size(size), _elements(new T[size]) {
         _head = _elements;
         _nb_available__has_next.store(0, std::memory_order_relaxed);
         _next.store(nullptr, std::memory_order_relaxed);
@@ -404,8 +411,11 @@ public:
         }
     }
 
-    std::tuple<bool, size_t> pop_copy(std::optional<T2>& opt) {
-        auto [valid, nb_elements, prepared] = prepare_elements();
+    std::tuple<bool, size_t> pop_copy(std::optional<T2>& opt, std::optional<std::chrono::nanoseconds> const& duration = std::nullopt, SmartFIFO<T2>* target_fifo = nullptr) {
+        auto [valid, nb_elements, prepared] = prepare_elements(duration, target_fifo);
+        if (nb_elements == 0 && !prepared) {
+            throw std::runtime_error("Niah ?");
+        }
         if (!prepared) {
             opt = std::nullopt;
         } else {
@@ -421,8 +431,8 @@ public:
         return std::make_tuple(valid && prepared, nb_elements);
     }
 
-    std::tuple<bool, size_t> pop(std::optional<T2*>& opt) {
-        auto [valid, nb_elements, prepared] = prepare_elements();
+    std::tuple<bool, size_t> pop(std::optional<T2*>& opt, std::optional<std::chrono::nanoseconds> const& duration = std::nullopt, SmartFIFO<T2>* target_fifo = nullptr) {
+        auto [valid, nb_elements, prepared] = prepare_elements(duration, target_fifo);
         if (!prepared) {
             opt = std::nullopt;
         } else {
@@ -467,9 +477,17 @@ public:
     }
 
 private:
-    std::tuple<bool, size_t, bool> prepare_elements() {
+    // Return valid (?), number of elements extracted, and
+    std::tuple<bool, size_t, bool> prepare_elements(std::optional<std::chrono::nanoseconds> const& duration = std::nullopt, SmartFIFO<T2>* target_fifo = nullptr) {
         if (_elements.empty()) {
-            _fifo->pop(_elements, _step);
+            if (!_fifo->pop(_elements, _step, duration)) {
+                // printf("Timed out !\n");
+                if (target_fifo) {
+                    target_fifo->safe_push_immediate();
+                }
+                return prepare_elements();
+            }
+
             if (_reconfigure) {
                 _reconfigure_step_pop(_step);
             }
@@ -481,7 +499,13 @@ private:
             }
         } else if (!_elements.has_next()) {
             _elements.clear();
-            _fifo->pop(_elements, _step);
+            if (!_fifo->pop(_elements, _step, duration)) {
+                // printf("Timed out !\n");
+                if (target_fifo) {
+                    target_fifo->safe_push_immediate();
+                }
+                return prepare_elements();
+            }
 
             if (_reconfigure) {
                 _reconfigure_step_pop(_step);
@@ -494,6 +518,7 @@ private:
             }
         } 
 
+        // !_elements.empty() && _elements.has_next()
         return std::make_tuple(false, _elements.size(), true);
     }
 
@@ -501,7 +526,7 @@ private:
         _inserted += added;
         if (_inserted >= _change_after && !_changed) {
             // printf("Changed push step from %d to %d\n", _step, _new_step);
-            auto now = Globals::now();
+            // auto now = Globals::now();
             // printf("[Change PUSH] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
             _step = _new_step;
             _changed = true;
@@ -512,8 +537,8 @@ private:
         _removed += removed;
         if (_removed >= _change_after && !_changed) {
             // printf("Changed pop step from %d to %d\n", _step, _new_step);
-            auto now = Globals::now();
-            // printf("[Change POP] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
+            //auto now = Globals::now();
+            //printf("[Change POP] %lu:%lu\n", _step, std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count());
             _step = _new_step;
             _changed = true;
         }
@@ -693,9 +718,8 @@ public:
         // _cv.notify_all();
     }
 
-    void pop(SmartFIFOElements<T>& elements, size_t nb_elements) {
-        bool requires_diff = false;
-        std::chrono::time_point<std::chrono::steady_clock> begin;
+    bool pop(SmartFIFOElements<T>& elements, size_t nb_elements, std::optional<std::chrono::nanoseconds> const& timeout = std::nullopt) {
+        // bool requires_diff = false;
         /* std::unique_lock<std::mutex> lck;
         if (!_cons_mutex.try_lock()) {
             begin = Globals::now();
@@ -708,7 +732,15 @@ public:
         } else {
             lck = std::move(std::unique_lock<std::mutex>(_cons_mutex, std::adopt_lock));
         } */
-        std::unique_lock<std::mutex> lck(_cons_mutex);
+        // std::unique_lock<std::mutex> lck(_cons_mutex);
+        std::unique_lock<std::timed_mutex> lck(_cons_mutex, std::defer_lock);
+        if (timeout) {
+            if (!lck.try_lock_for(*timeout)) {
+                return false;
+            }
+        } else {
+            lck.lock();
+        }
         
         bool has_next;
         while (_head->empty(has_next) && !terminated()) {
@@ -717,8 +749,8 @@ public:
                 _head->destroy();
                 _head = next;
             } else {
-                auto now = Globals::now();
-                unsigned int count = _sem.wait(nb_elements);
+                // auto now = Globals::now();
+                int count = _sem.wait(nb_elements, timeout);
                 /* if (_log) {
                     auto then = Globals::now();
                     auto diff_begin = std::chrono::duration_cast<std::chrono::nanoseconds>(now - Globals::_start_time).count();
@@ -733,13 +765,16 @@ public:
                 // _sem_data[1] += count;
                 // sem_wait(&_sem);
                 // _cv.wait(lck);
+                if (count < 0) {
+                    return false;
+                }
             }
         }
 
         while (terminated() && _head->empty(has_next)) {
             if (!has_next) {
                 elements.set(Ranges<T>());
-                return;
+                return true;
             } else {
                 FIFOChunk<T>* next = _head->_next.load(std::memory_order_acquire);
                 _head->destroy();
@@ -759,7 +794,7 @@ public:
             if (!done) {
                 if (_head == _tail.load(std::memory_order_acquire)) {
                     elements.set(std::move(pairs));
-                    return;
+                    return true;
                 }
                 FIFOChunk<T>* next = _head->_next.load(std::memory_order_acquire);
                 if (next == nullptr) {
@@ -773,6 +808,7 @@ public:
         }
 
         elements.set(std::move(pairs));
+        return true;
     }
 
     template<typename... Args>
@@ -830,7 +866,7 @@ private:
     FIFOChunk<T>* _head = nullptr;
     std::atomic<FIFOChunk<T>*> _tail;
     std::mutex _prod_mutex;
-    std::mutex _cons_mutex;
+    std::timed_mutex _cons_mutex;
     // std::mutex _m;
     // std::condition_variable _cv;
     // sem_t _sem;
