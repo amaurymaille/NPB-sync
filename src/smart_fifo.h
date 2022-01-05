@@ -15,7 +15,7 @@
 
 #include "utils.h"
 
-extern std::map<void*, std::tuple<std::string, std::array<size_t, 2>>> _semaphore_data;
+// extern std::map<void*, std::tuple<std::string, std::array<size_t, 2>>> _semaphore_data;
 namespace Globals {
     extern std::chrono::time_point<std::chrono::steady_clock> _start_time;
     std::chrono::time_point<std::chrono::steady_clock> now();
@@ -575,14 +575,10 @@ public:
     typedef SmartFIFO<T> smart_fifo;
 
 public:
-    SmartFIFOImpl(bool log = false) : _log(log), _sem(0), _description(), _sem_data(std::get<std::array<size_t, 2>>(_semaphore_data[this])) {
+    SmartFIFOImpl(bool log = false) : _log(log), _sem(0), _description() {
         _tail.store(new FIFOChunk<T>(0, FIFOChunk<T>::size_constructor_hint), std::memory_order_relaxed);
         _head = _tail;
         _nb_producers__done.store(0, std::memory_order_relaxed);
-        std::get<std::string>(_semaphore_data[this]) = _description;
-        // _sem_data[0] = 0;
-        // _sem_data[1] = 0;
-        // sem_init(&_sem, 0, 0);
 
     }
 
@@ -872,7 +868,7 @@ private:
     // sem_t _sem;
     SmartFIFOSemaphore _sem;
     std::string _description;
-    std::array<size_t, 2>& _sem_data;
+    // std::array<size_t, 2>& _sem_data;
 };
 
 
