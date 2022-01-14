@@ -1,4 +1,9 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include <chrono>
+#include <fstream>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -7,10 +12,12 @@
 #include "smart_fifo.h"
 
 #include <boost/program_options.hpp>
+#include "nlohmann/json.hpp"
 #include <sol/sol.hpp>
 
 namespace po = boost::program_options;
 
+using json = nlohmann::json;
 using SteadyClock = std::chrono::steady_clock;
 using TP = std::chrono::time_point<SteadyClock>;
 
@@ -20,12 +27,24 @@ void consumer(SmartFIFO<int>*, int, int);
 void producer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 void consumer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 
+void producer(NaiveQueueImpl<int>*, int, int);
+void consumer(NaiveQueueImpl<int>*, int, int);
+
 unsigned long long diff(TP const& begin, TP const& end) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
+enum RunType {
+    SMART_FIFO,
+    NAIVE,
+    MASTER,
+    MASTER_RECONFIGURE,
+};
+
 struct Args {
     std::string _filename;
+    std::string _output;
+    std::vector<RunType> _run_types;
 };
 
 struct SmartFIFOConfig {
@@ -73,7 +92,11 @@ class LuaRun {
 
             TP end = SteadyClock::now();
             _threads.clear();
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+
+            // log_time("SmartFIFO", diff(begin, end) / 1000000000.f);
+            // write(sock, stream.str().c_str(), stream.str().size());
+            // return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+            return diff(begin, end);
         }
 
         unsigned long long run_queue() {
@@ -83,7 +106,7 @@ class LuaRun {
 
             using fn = void(*)(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 
-            NaiveQueue<int> queue(1000000, _producers_loops.size());
+            NaiveQueue<int> queue(10000000000ULL, _producers_loops.size());
             std::vector<Ringbuffer<int>*> ringbuffers;
 
             TP begin = SteadyClock::now();
@@ -111,7 +134,84 @@ class LuaRun {
 
             _threads.clear();
 
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+            return diff(begin, end);
+        }
+
+        unsigned long long run_naive_master() {
+            if (_producers_loops.empty() || _consumers_loops.empty()) {
+                throw std::runtime_error("Must have at least one producer and one consumer");
+            }
+
+            using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+
+            NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
+            std::vector<NaiveQueueImpl<int>*> queues;
+
+            TP begin = SteadyClock::now();
+            for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
+                queues.push_back(impl);
+            }
+
+            for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
+                queues.push_back(impl);
+            }
+
+            for (std::thread& thread: _threads) {
+                thread.join();
+            }
+
+            TP end = SteadyClock::now();
+
+            for (NaiveQueueImpl<int>* impl: queues) {
+                delete impl;
+            }
+
+            _threads.clear();
+
+            return diff(begin, end);
+        }
+
+        unsigned long long run_naive_master_reconfigure() {
+            if (_producers_loops.empty() || _consumers_loops.empty()) {
+                throw std::runtime_error("Must have at least one producer and one consumer");
+            }
+
+            using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+
+            NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
+            std::vector<NaiveQueueImpl<int>*> queues;
+
+            TP begin = SteadyClock::now();
+            for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
+                queues.push_back(impl);
+            }
+
+            for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
+                queues.push_back(impl);
+            }
+
+            for (std::thread& thread: _threads) {
+                thread.join();
+            }
+
+            TP end = SteadyClock::now();
+
+            for (NaiveQueueImpl<int>* impl: queues) {
+                delete impl;
+            }
+
+            _threads.clear();
+
+            return diff(begin, end);
+
         }
 
     private:
@@ -124,7 +224,12 @@ void parse_args(int argc, char** argv, Args& args) {
     po::options_description options("All options");
     options.add_options()
         ("help,h", "Display this help and exit")
-        ("file,f", po::value<std::string>(), "Name of the Lua file to run");
+        ("file,f", po::value<std::string>(), "Name of the JSON file to process")
+        ("output,o", po::value<std::string>(), "Name of the output file to which results will be written")
+        ("smart", "Run SmartFIFO")
+        ("naive", "Run original naive version")
+        ("master", "Run original version with integrated local buffer")
+        ("reconfigure", "Run original version with integrated local buffer and reconfiguration");
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
@@ -141,6 +246,28 @@ void parse_args(int argc, char** argv, Args& args) {
         exit(1);
     }
 
+    if (!vm.count("output")) {
+        std::cout << "No output file specified, will write to stdout" << std::endl;
+    } else {
+        args._output = vm["output"].as<std::string>();
+    }
+
+    if (vm.count("smart")) {
+        args._run_types.push_back(SMART_FIFO);
+    } 
+
+    if (vm.count("naive")) {
+        args._run_types.push_back(NAIVE);
+    } 
+
+    if (vm.count("master")) {
+        args._run_types.push_back(MASTER);
+    }
+
+    if (vm.count("reconfigure")) {
+        args._run_types.push_back(MASTER_RECONFIGURE);
+    }
+
     args._filename = vm["file"].as<std::string>();
 }
 
@@ -155,30 +282,88 @@ void init_lua(sol::state& lua) {
     lua_run_datatype["add_consumer"] = &LuaRun::add_consumer;
     lua_run_datatype["run"] = &LuaRun::run;
     lua_run_datatype["run_queue"] = &LuaRun::run_queue;
+    lua_run_datatype["run_naive_master"] = &LuaRun::run_naive_master;
+}
+
+void parse_json(std::string const& filename, LuaRun& run) {
+    std::ifstream stream(filename);
+    json j;
+    stream >> j;
+    stream.close();
+
+    auto producers = j["producers"];
+    auto consumers = j["consumers"];
+
+    for (auto const& producer: producers) {
+        run.add_producer(producer["iterations"], producer["work"], SmartFIFOConfig(producer["start"], producer["threshold"], producer["new"]));
+    }
+
+    for (auto const& consumer: consumers) {
+        run.add_consumer(consumer["iterations"], consumer["work"], SmartFIFOConfig(consumer["start"], consumer["threshold"], consumer["new"]));
+    }
 }
 
 int main(int argc, char** argv) {
     Args args;
     parse_args(argc, argv, args);
 
-    sol::state lua;
+    /* sol::state lua;
     init_lua(lua);
 
-    lua.script_file(args._filename);
+    lua.script_file(args._filename); */
+
+    LuaRun run;
+    parse_json(args._filename, run);
+    /* run.add_producer(4000000, 200, SmartFIFOConfig(1, 0, 0));
+    run.add_consumer(4000000, 200, SmartFIFOConfig(1, 0, 0)); */
+
+    std::ofstream stream(args._output, std::ios::app);
+    for (RunType run_type: args._run_types) {
+        unsigned long long time = 0;
+        std::string type;
+
+        switch (run_type) {
+            case SMART_FIFO:
+                time = run.run();
+                type = "SmartFIFO";
+                break;
+
+            case NAIVE:
+                time = run.run_queue();
+                type = "Naive";
+                break;
+
+            case MASTER:
+                time = run.run_naive_master();
+                type = "Master";
+                break;
+
+            case MASTER_RECONFIGURE:
+                time = run.run_naive_master_reconfigure();
+                type = "MasterReconfigure";
+                break;
+
+            default:
+                throw std::runtime_error("What ?");
+        }
+
+        stream << type << " " << time / 1000000000.f << std::endl;
+    }
+
     return 0;
 }
 
 void producer(SmartFIFO<int>* fifo, int global_loops, int work_loops) {
-    unsigned long long work = 0;
-    TP out_begin = SteadyClock::now();
+    // unsigned long long work = 0;
+    // TP out_begin = SteadyClock::now();
 
     for (int i = 0; i < global_loops; ++i) {
-        TP begin = SteadyClock::now();
+        // TP begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
-        TP end = SteadyClock::now();
-        work += std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+        // TP end = SteadyClock::now();
+        // work += std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 
         /* std::ostringstream stream;
         stream << "FIFO " << fifo << " pushing value " << i << std::endl;
@@ -191,16 +376,16 @@ void producer(SmartFIFO<int>* fifo, int global_loops, int work_loops) {
         // std::cout << diff(begin, end) << std::endl;
     }
     
-    std::ostringstream stream;
-    stream << "[Smart][Prod] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
-    std::cout << stream.str();
+    // std::ostringstream stream;
+    // stream << "[Smart][Prod] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
+    // std::cout << stream.str();
 
     fifo->terminate_producer();
 }
 
 void consumer(SmartFIFO<int>* fifo, int global_loops, int work_loops) {
-    TP out_begin = SteadyClock::now();
-    unsigned long long work = 0;
+    // TP out_begin = SteadyClock::now();
+    // unsigned long long work = 0;
 
     for (int i = 0; i < global_loops; ++i) {
         std::optional<int> value;
@@ -217,27 +402,27 @@ void consumer(SmartFIFO<int>* fifo, int global_loops, int work_loops) {
         stream << "FIFO " << fifo << " poped value " << *value << std::endl;
         std::cout << stream.str(); */
 
-        TP begin = SteadyClock::now();
+        // TP begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
-        work += diff(begin, SteadyClock::now());
+        // work += diff(begin, SteadyClock::now());
     }
 
-    std::ostringstream stream;
-    stream << "[Smart][Cons] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
-    std::cout << stream.str();
+    // std::ostringstream stream;
+    // stream << "[Smart][Cons] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
+    // std::cout << stream.str();
 }
 
 void producer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, int work_loops) {
-    unsigned long long work = 0;
-    TP out_begin = SteadyClock::now();
+    // unsigned long long work = 0;
+    // TP out_begin = SteadyClock::now();
     for (int i = 0; i < glob_loops; ++i) {
-        TP begin = SteadyClock::now();
+        // TP begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
-        work += diff(begin, SteadyClock::now());
+        // work += diff(begin, SteadyClock::now());
 
         buffer->push(i);
         if (buffer->full()) {
@@ -249,16 +434,16 @@ void producer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, i
         queue->enqueue(buffer, buffer->size());
     }
     
-    std::ostringstream stream;
+    /* std::ostringstream stream;
     stream << "[Naive][Prod] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
-    std::cout << stream.str();
+    std::cout << stream.str(); */
 
     queue->terminate();
 }
 
 void consumer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, int work_loops) {
-    unsigned long long work = 0;
-    TP out_begin = SteadyClock::now();
+    // unsigned long long work = 0;
+    // TP out_begin = SteadyClock::now();
     for (int i = 0; i < glob_loops; ++i) {
         int res = 0;
         if (buffer->empty()) {
@@ -271,14 +456,45 @@ void consumer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, i
 
         buffer->pop();
 
-        TP begin = SteadyClock::now();
+        // TP begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
-        work += diff(begin, SteadyClock::now());
+        // work += diff(begin, SteadyClock::now());
     }
 
-    std::ostringstream stream;
-    stream << "[Naive][Cons] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
-    std::cout << stream.str();
+    // std::ostringstream stream;
+    // stream << "[Naive][Cons] " << diff(out_begin, SteadyClock::now()) << ", " << work << std::endl;
+    // std::cout << stream.str();
+}
+
+void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+    int i = 0;
+    for (; i < glob_loops; ++i) {
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+
+        queue->push(i);
+    }
+
+    queue->terminate();
+    printf("Producer finished after %d iterations, expected %d\n", i, glob_loops);
+}
+
+void consumer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+    int i = 0;
+    for (; i < glob_loops; ++i) {
+        std::optional<int> result = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        // printf("Consumer received %d\n", *result);
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+    }
+
+    printf("Consumer finished after %d iterations, expected %d\n", i, glob_loops);
 }
