@@ -444,7 +444,7 @@ void producer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, i
 void consumer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, int work_loops) {
     // unsigned long long work = 0;
     // TP out_begin = SteadyClock::now();
-    for (int i = 0; i < glob_loops; ++i) {
+    while (true) {
         int res = 0;
         if (buffer->empty()) {
             res = queue->dequeue(buffer, buffer->size());
@@ -470,31 +470,44 @@ void consumer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, i
 
 void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
     int i = 0;
+    // TP out_begin = SteadyClock::now();
+    // unsigned long long sum = 0;
     for (; i < glob_loops; ++i) {
+        // TP work_begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
+        // sum += diff(work_begin, SteadyClock::now());
 
         queue->push(i);
     }
 
+    // unsigned long long f = diff(out_begin, SteadyClock::now());
     queue->terminate();
-    printf("Producer finished after %d iterations, expected %d\n", i, glob_loops);
+    // printf("Total = %llu, work = %llu, diff = %llu", f, sum, f - sum);
+    // printf("Total = %llu\n", f);
+    // printf("Producer finished after %d iterations, expected %d\n", i, glob_loops);
 }
 
 void consumer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
     int i = 0;
-    for (; i < glob_loops; ++i) {
+    // TP out_begin = SteadyClock::now();
+    // unsigned long long sum = 0;
+    while (true) {
         std::optional<int> result = queue->pop();
         if (!result) {
             break;
         }
 
         // printf("Consumer received %d\n", *result);
+        // TP work_begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
+        // sum += diff(work_begin, SteadyClock::now());
     }
+    // unsigned long long f = diff(out_begin, SteadyClock::now());
 
-    printf("Consumer finished after %d iterations, expected %d\n", i, glob_loops);
+    // printf("Total = %llu, work = %llu, diff = %llu", f, sum, f - sum);
+    // printf("Consumer finished after %d iterations, expected %d\n", i, glob_loops);
 }
