@@ -259,7 +259,7 @@ class NaiveQueueImpl {
             // the desired size - 1 because fuck the guy who wrote the original ringbuffer in
             // dedup with its stupid -1 rule.
             if (size < _size - 1 && n_elements() >= size) {
-                printf("Reducing (size = %d, _size = %d) and n_elements = %d\n", size, _size, n_elements());
+                // printf("Reducing (size = %d, _size = %d) and n_elements = %d\n", size, _size, n_elements());
                 return false;
             }
 
@@ -319,7 +319,7 @@ class NaiveQueueImpl {
                 // We just shift to the beginning of the array.
 
                 if (reduce && _head > size) {
-                    printf("Resize: reducing and _head (%d) is greater than size (%d)\n", _head, size);
+                    // printf("Resize: reducing and _head (%d) is greater than size (%d)\n", _head, size);
                     // Move to the base of the array as it wouldn't change much to shift
                     // in such a way that _head is now at the extremity of the array.
                     // memmove will induce a small overhead because of the intermediate 
@@ -339,7 +339,7 @@ class NaiveQueueImpl {
                 // that it ends at the end of the new buffer.
 
                 if (!reduce) {
-                    printf("Resize: increasing and _head (%d) before _tail (%d)\n", _head, _tail);
+                    // printf("Resize: increasing and _head (%d) before _tail (%d)\n", _head, _tail);
                     // Assume the buffer can hold 10 elements, and we resize so that it can store
                     // 15 elements. T is _tail, H is _head. Letters represent elements.
                     // 
@@ -360,7 +360,7 @@ class NaiveQueueImpl {
                     memmove(_data + _tail + size + 1 - _size, _data + _tail, sizeof(T) * (_size - _tail));
                     _tail += (size + 1 - _size);
                 } else {
-                    printf("Resize: reducing and _head (%d) before _tail (%d)\n", _head, _tail);
+                    // printf("Resize: reducing and _head (%d) before _tail (%d)\n", _head, _tail);
                     // Assume the buffer can hold 10 elements, and we resize so that it can 
                     // store 8 elements. T is _tail, H is _head. Letters represent elements.
                     //
