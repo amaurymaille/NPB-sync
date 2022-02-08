@@ -2,8 +2,14 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
+
 #include <chrono>
+#include <future>
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -27,9 +33,6 @@ void consumer(SmartFIFO<int>*, int, int);
 void producer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 void consumer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 
-void producer(NaiveQueueImpl<int>*, int, int);
-void consumer(NaiveQueueImpl<int>*, int, int);
-
 unsigned long long diff(TP const& begin, TP const& end) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
@@ -39,6 +42,7 @@ enum RunType {
     NAIVE,
     MASTER,
     MASTER_RECONFIGURE,
+    MASTER_AUTO_RECONFIGURE,
 };
 
 struct Args {
@@ -54,6 +58,28 @@ struct SmartFIFOConfig {
     unsigned int _change_after;
     unsigned int _new_step;
 };
+
+struct StupidObject {
+    int32_t v1;
+    int8_t v2;
+    int64_t v3;
+    int32_t v4[10];
+    int8_t v5;
+    int16_t v6;
+    void* v7;
+    int64_t v8[12];
+    void* v9[13];
+    char v10[50];
+    int16_t v11[30];
+};
+
+inline void MakeStupidObject(StupidObject& obj) __attribute__((always_inline));
+
+void producer(NaiveQueueImpl<StupidObject>*, int, int);
+void consumer(NaiveQueueImpl<StupidObject>*, int, int);
+
+void producer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
+void consumer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 
 class LuaRun {
     public:
@@ -142,20 +168,25 @@ class LuaRun {
                 throw std::runtime_error("Must have at least one producer and one consumer");
             }
 
-            using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+            // using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+            using fn = void(*)(NaiveQueueImpl<StupidObject>*, int, int);
 
-            NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
-            std::vector<NaiveQueueImpl<int>*> queues;
+            // NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
+            NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
+            // std::vector<NaiveQueueImpl<int>*> queues;
+            std::vector<NaiveQueueImpl<StupidObject>*> queues;
 
             TP begin = SteadyClock::now();
             for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
-                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, 0, 0);
                 _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
                 queues.push_back(impl);
             }
 
             for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
-                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, 0, 0);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, 0, 0);
                 _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
                 queues.push_back(impl);
             }
@@ -166,7 +197,8 @@ class LuaRun {
 
             TP end = SteadyClock::now();
 
-            for (NaiveQueueImpl<int>* impl: queues) {
+            // for (NaiveQueueImpl<int>* impl: queues) {
+            for (NaiveQueueImpl<StupidObject>* impl: queues) {
                 delete impl;
             }
 
@@ -180,20 +212,25 @@ class LuaRun {
                 throw std::runtime_error("Must have at least one producer and one consumer");
             }
 
-            using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+            // using fn = void(*)(NaiveQueueImpl<int>*, int, int);
+            using fn = void(*)(NaiveQueueImpl<StupidObject>*, int, int);
 
-            NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
-            std::vector<NaiveQueueImpl<int>*> queues;
+            // NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
+            NaiveQueueMaster<StupidObject> queue(10000000000ULL, _producers_loops.size());
+            // std::vector<NaiveQueueImpl<int>*> queues;
+            std::vector<NaiveQueueImpl<StupidObject>*> queues;
 
             TP begin = SteadyClock::now();
             for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
-                NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
                 queues.push_back(impl);
             }
 
             for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
-                NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
                 queues.push_back(impl);
             }
@@ -204,7 +241,8 @@ class LuaRun {
 
             TP end = SteadyClock::now();
 
-            for (NaiveQueueImpl<int>* impl: queues) {
+            // for (NaiveQueueImpl<int>* impl: queues) {
+            for (NaiveQueueImpl<StupidObject>* impl: queues) {
                 delete impl;
             }
 
@@ -212,6 +250,62 @@ class LuaRun {
 
             return diff(begin, end);
 
+        }
+
+        unsigned long long run_master_auto_reconfigure() {
+            if (_producers_loops.empty() || _consumers_loops.empty()) {
+                throw std::runtime_error("Must have at least one producer and one consumer");
+            }
+
+            using fn = void(*)(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
+
+            std::vector<std::packaged_task<void()>> tasks;
+            NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
+            Observer<StupidObject> observer(250, std::get<0>(_producers_loops[0]));
+            // std::vector<NaiveQueueImpl<int>*> queues;
+            std::vector<NaiveQueueImpl<StupidObject>*> queues;
+
+            TP begin = SteadyClock::now();
+            for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                observer.add_producer(impl);
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, 10)));
+                // _threads.push_back(std::thread((fn)producer, impl, &observer, glob_loops, work_loops, 10));
+                queues.push_back(impl);
+            }
+
+            for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
+                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
+                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                observer.add_consumer(impl);
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, 10)));
+                // _threads.push_back(std::thread((fn)consumer, impl, &observer, glob_loops, work_loops, 10));
+                queues.push_back(impl);
+            }
+
+            observer.set_prod_size(10);
+            observer.set_cons_size(10);
+            observer.set_cost_p_size(10);
+
+            for (auto& task: tasks) {
+                _threads.push_back(std::thread(std::move(task)));
+            }
+
+            for (std::thread& thread: _threads) {
+                thread.join();
+            }
+
+            TP end = SteadyClock::now();
+
+            // for (NaiveQueueImpl<int>* impl: queues) {
+            for (NaiveQueueImpl<StupidObject>* impl: queues) {
+                delete impl;
+            }
+
+            _threads.clear();
+
+            return diff(begin, end);
         }
 
     private:
@@ -229,7 +323,8 @@ void parse_args(int argc, char** argv, Args& args) {
         ("smart", "Run SmartFIFO")
         ("naive", "Run original naive version")
         ("master", "Run original version with integrated local buffer")
-        ("reconfigure", "Run original version with integrated local buffer and reconfiguration");
+        ("reconfigure", "Run original version with integrated local buffer and reconfiguration")
+        ("auto-reconfigure", "Run original version with integrated local buffer and auto reconfiguration at runtime");
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
@@ -268,6 +363,10 @@ void parse_args(int argc, char** argv, Args& args) {
         args._run_types.push_back(MASTER_RECONFIGURE);
     }
 
+    if (vm.count("auto-reconfigure")) {
+        args._run_types.push_back(MASTER_AUTO_RECONFIGURE);
+    }
+
     args._filename = vm["file"].as<std::string>();
 }
 
@@ -304,6 +403,22 @@ void parse_json(std::string const& filename, LuaRun& run) {
 }
 
 int main(int argc, char** argv) {
+    // std::cout << sizeof(StupidObject) << std::endl;
+
+    /* NaiveQueueMaster<StupidObject> master(10000L, 1);
+    NaiveQueueImpl<StupidObject>* queue = master.view(2000, false, 0, 0);
+
+    unsigned long long sum = 0;
+    for (int i = 0; i < 1000; ++i) {
+        StupidObject obj;
+        MakeStupidObject(obj);
+        TP begin = SteadyClock::now();
+        queue->push(obj);
+        sum += diff(begin, SteadyClock::now());
+    }
+    std::cout << "Average is " << sum / 1000 << std::endl;
+
+    return 0; */
     Args args;
     parse_args(argc, argv, args);
 
@@ -343,6 +458,11 @@ int main(int argc, char** argv) {
                 type = "MasterReconfigure";
                 break;
 
+            case MASTER_AUTO_RECONFIGURE:
+                time = run.run_master_auto_reconfigure();
+                type = "MasterAutoReconfigure";
+                break;
+
             default:
                 throw std::runtime_error("What ?");
         }
@@ -351,6 +471,47 @@ int main(int argc, char** argv) {
     }
 
     return 0;
+}
+
+static std::mt19937_64 gen(12);
+
+#define RAND_INIT(val) val = randv<decltype(val)>()
+
+template<typename T>
+std::decay_t<T> randv() {
+    return gen() % std::numeric_limits<std::decay_t<T>>::max();
+}
+
+void MakeStupidObject(StupidObject& obj) {
+    // RAND_INIT(obj.v1);
+    // RAND_INIT(obj.v2);
+    // RAND_INIT(obj.v3);
+    obj.v1 = obj.v2 = obj.v3 = 0;
+    for (int i = 0; i < 10; ++i) {
+        // RAND_INIT(obj.v4[i]);
+        obj.v4[i] = 0;
+    }
+    // RAND_INIT(obj.v5);
+    // RAND_INIT(obj.v6);
+    obj.v5 = obj.v6 = 0;
+    // obj.v7 = nullptr;
+    obj.v7 = nullptr;
+    for (int i = 0; i < 12; ++i) {
+        // RAND_INIT(obj.v8[i]);
+        obj.v8[i] = 0;
+    }
+    for (int i = 0; i < 13; ++i) {
+        // obj.v9[i] = nullptr;
+        obj.v9[i] = nullptr;
+    }
+    for (int i = 0; i < 50; ++i) {
+        // RAND_INIT(obj.v10[i]);
+        obj.v10[i] = 0;
+    }
+    for (int i = 0; i < 30; ++i) {
+        // RAND_INIT(obj.v11[i]);
+        obj.v11[i] = 0;
+    }
 }
 
 void producer(SmartFIFO<int>* fifo, int global_loops, int work_loops) {
@@ -468,7 +629,8 @@ void consumer(NaiveQueue<int>* queue, Ringbuffer<int>* buffer, int glob_loops, i
     // std::cout << stream.str();
 }
 
-void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+// void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+void producer(NaiveQueueImpl<StupidObject>* queue, int glob_loops, int work_loops) {
     int i = 0;
     // TP out_begin = SteadyClock::now();
     // unsigned long long sum = 0;
@@ -479,7 +641,11 @@ void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
         }
         // sum += diff(work_begin, SteadyClock::now());
 
-        queue->push(i);
+        StupidObject obj;
+        MakeStupidObject(obj);
+        queue->push(obj);
+
+        // queue->push(i);
     }
 
     // unsigned long long f = diff(out_begin, SteadyClock::now());
@@ -489,12 +655,14 @@ void producer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
     // printf("Producer finished after %d iterations, expected %d\n", i, glob_loops);
 }
 
-void consumer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+// void consumer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
+void consumer(NaiveQueueImpl<StupidObject>* queue, int glob_loops, int work_loops) {
     int i = 0;
     // TP out_begin = SteadyClock::now();
     // unsigned long long sum = 0;
     while (true) {
-        std::optional<int> result = queue->pop();
+        // std::optional<int> result = queue->pop();
+        std::optional<StupidObject> result = queue->pop();
         if (!result) {
             break;
         }
@@ -511,3 +679,61 @@ void consumer(NaiveQueueImpl<int>* queue, int glob_loops, int work_loops) {
     // printf("Total = %llu, work = %llu, diff = %llu", f, sum, f - sum);
     // printf("Consumer finished after %d iterations, expected %d\n", i, glob_loops);
 }
+
+void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int glob_loops, int work_loops, int timed_loops) {
+    int i = 0;
+    for (; i < timed_loops; ++i) {
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        observer->add_producer_time(queue, diff(begin, SteadyClock::now()));
+
+        StupidObject obj;
+        MakeStupidObject(obj);
+        begin = SteadyClock::now();
+        queue->push(obj);
+        observer->add_cost_p_time(queue, diff(begin, SteadyClock::now()));
+    }
+
+    for (; i < glob_loops; ++i) {
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+
+        StupidObject obj;
+        MakeStupidObject(obj);
+        queue->push(obj);
+    }
+
+    queue->terminate();
+
+}
+
+void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int, int work_loops, int timed_loops) {
+    int i = 0;
+    for (; i < timed_loops; ++i) {
+        std::optional<StupidObject> result = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        observer->add_consumer_time(queue, diff(begin, SteadyClock::now()));
+    }
+
+    while (true) {
+        std::optional<StupidObject> result = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+    }
+}
+

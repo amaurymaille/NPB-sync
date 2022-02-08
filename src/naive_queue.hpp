@@ -1,14 +1,19 @@
 #pragma once
 
-#include <cstdlib>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
+#include <atomic>
 #include <condition_variable>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <utility>
+#include <type_traits>
 
 template<typename T>
 class Ringbuffer {
@@ -180,6 +185,7 @@ class NaiveQueueImpl {
                 unsigned int threshold, unsigned int new_step) : 
             _master(master), _reconfigure(reconfigure), 
             _threshold(threshold), _new_step(new_step) {
+            _need_reconfigure.store(false, std::memory_order_relaxed);
             init(size, new_step);
         }
 
@@ -410,6 +416,15 @@ class NaiveQueueImpl {
             std::cout << "_head = " << _head << ", _tail = " << _tail << std::endl;
         }
 
+        void prepare_reconfigure(size_t size) {
+            _new_step = size;
+            _need_reconfigure.store(true, std::memory_order_release);
+        }
+
+        size_t get_step() const {
+            return _size;
+        }
+
     private:
         T* _data;
         size_t _n_elements;
@@ -417,6 +432,7 @@ class NaiveQueueImpl {
         int _head, _tail;
         NaiveQueueMaster<T>* _master;
 
+        std::atomic<bool> _need_reconfigure;
         bool _reconfigure;
         unsigned int _threshold;
         unsigned int _new_step;
@@ -428,7 +444,8 @@ class NaiveQueueImpl {
         bool _changed = false;
 
         void init(size_t size, size_t new_size) {
-            _data = static_cast<T*>(malloc(sizeof(T) * (std::max(size, new_size) + 1)));
+            // _data = static_cast<T*>(malloc(sizeof(T) * (std::max(size, new_size) + 1)));
+            _data = static_cast<T*>(malloc(sizeof(T) * 1000000));
             _size = size + 1;
             _head = _tail = _n_elements = 0;
 
@@ -492,11 +509,20 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
             return std::nullopt;
         }
 
-        if (_reconfigure && !_changed) {
+        /* if (_reconfigure && !_changed) {
             _processed += n_elements();
             if (_processed >= _threshold) {
                 _changed = resize(_new_step);
             }
+        } */
+
+    }
+    
+    if (_need_reconfigure.load(std::memory_order_acquire)) {
+        if (resize(_new_step)) {
+            _need_reconfigure.store(false, std::memory_order_relaxed);
+        } else {
+            printf("Error while resizing %p\n", this);
         }
     }
 
@@ -529,6 +555,14 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
                     throw std::runtime_error("Unable to resize producer ringbuffer in 10 tries");
                 }
             }
+        }
+    }
+
+    if (_need_reconfigure.load(std::memory_order_acquire)) {
+        if (resize(_new_step)) {
+            _need_reconfigure.store(false, std::memory_order_relaxed);
+        } else {
+            printf("Error while resizing %p\n", this);
         }
     }
 }
@@ -575,3 +609,63 @@ inline int NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     return i;
 }
 
+template<typename T>
+class Observer {
+    struct Data {
+        uint64_t _cost_p;
+        uint64_t _cost_s;
+        uint64_t _iter;
+    };
+
+    struct MapData {
+        bool _producer;
+        uint64_t* _work_times;
+        size_t _n_work;
+        uint64_t* _push_times;
+        size_t _n_push;
+    };
+
+    public:
+        Observer(uint64_t cost_sync, uint64_t iter_prod);
+
+        /* void set_consumer(NaiveQueueImpl<T>* consumer);
+        void set_producer(NaiveQueueImpl<T>* producer); */
+
+        void add_producer(NaiveQueueImpl<T>* producer);
+        void add_consumer(NaiveQueueImpl<T>* consumer);
+
+        void set_prod_size(size_t prod_size);
+        void set_cons_size(size_t cons_size);
+        void set_cost_p_size(size_t cost_p_size);
+
+        void add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time);
+        void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
+        void add_cost_p_time(NaiveQueueImpl<T>* producer, uint64_t time);
+
+    private:
+        void trigger_reconfigure();
+
+        /* uint64_t* _prod_times;
+        uint64_t* _cons_times;
+        uint64_t* _cost_p_times; */
+
+        std::map<NaiveQueueImpl<T>*, MapData> _times;
+
+        /* size_t _n_prod;
+        size_t _n_cons;
+        size_t _n_cost_p; */
+
+        size_t _prod_size;
+        size_t _cons_size;
+        size_t _cost_p_size;
+
+        bool _reconfigured = false;
+
+        /* NaiveQueueImpl<T>* _consumer;
+        NaiveQueueImpl<T>* _producer; */
+
+        Data _data;
+        std::mutex _m;
+};
+
+#include "naive_queue.tpp"
