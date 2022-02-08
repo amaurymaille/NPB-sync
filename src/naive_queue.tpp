@@ -105,7 +105,7 @@ void Observer<T>::trigger_reconfigure() {
         for (auto& [queue, data]: _times) {
             if (data._producer) {
                 auto step = queue->get_step();
-                uint64_t sum = std::accumulate(data._push_times, data._push_times + data._n_push, data._n_push);
+                uint64_t sum = std::accumulate(data._push_times, data._push_times + data._n_push, 0);
                 uint64_t cost = (sum - (_cost_p_size * _data._cost_s) / step) / (2 * _cost_p_size);
                 cost_p.push_back(cost);
             }
