@@ -11,6 +11,11 @@ Observer<T>::Observer(uint64_t cost_sync, uint64_t iter) :
     _data._iter = iter;
 }
 
+template<typename T>
+Observer<T>::~Observer() {
+    std::cout << "Found best step = " << _best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << std::endl;
+}
+
 /* template<typename T>
 void Observer<T>::set_consumer(NaiveQueueImpl<T>* consumer) {
     _consumer = consumer;
@@ -125,7 +130,9 @@ void Observer<T>::trigger_reconfigure() {
         // _consumer->prepare_reconfigure(best_step);
         // _producer->prepare_reconfigure(best_step);
 
-        printf("Reconfiguring producer and consumer to %d\n", best_step);
+        _best_step = best_step;
+        _worst_avg = worst_avg;
+        // printf("Reconfiguring producer and consumer to %d\n", best_step);
     }
 }
 

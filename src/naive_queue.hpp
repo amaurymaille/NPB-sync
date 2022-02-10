@@ -627,6 +627,7 @@ class Observer {
 
     public:
         Observer(uint64_t cost_sync, uint64_t iter_prod);
+        ~Observer();
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -658,6 +659,9 @@ class Observer {
         size_t _prod_size;
         size_t _cons_size;
         size_t _cost_p_size;
+
+        unsigned int _best_step = 0;
+        unsigned int _worst_avg = 0;
 
         bool _reconfigured = false;
 
