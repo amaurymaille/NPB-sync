@@ -216,23 +216,30 @@ class LuaRun {
             using fn = void(*)(NaiveQueueImpl<StupidObject>*, int, int);
 
             // NaiveQueueMaster<int> queue(10000000000ULL, _producers_loops.size());
-            NaiveQueueMaster<StupidObject> queue(10000000000ULL, _producers_loops.size());
+            NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
             // std::vector<NaiveQueueImpl<int>*> queues;
             std::vector<NaiveQueueImpl<StupidObject>*> queues;
+            std::vector<std::packaged_task<void()>> tasks;
 
             TP begin = SteadyClock::now();
             for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
-                _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
+                // _threads.push_back(std::thread((fn)producer, impl, glob_loops, work_loops));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, glob_loops, work_loops)));
                 queues.push_back(impl);
             }
 
             for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
-                _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
+                // _threads.push_back(std::thread((fn)consumer, impl, glob_loops, work_loops));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, glob_loops, work_loops)));
                 queues.push_back(impl);
+            }
+
+            for (std::packaged_task<void()>& task: tasks) {
+                _threads.push_back(std::thread(std::move(task)));
             }
 
             for (std::thread& thread: _threads) {
