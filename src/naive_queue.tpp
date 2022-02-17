@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include <algorithm>
+#include <iterator>
 #include <numeric>
 
 template<typename T>
@@ -9,11 +10,12 @@ Observer<T>::Observer(uint64_t cost_sync, uint64_t iter) :
     // _data._cost_p = cost_push;
     _data._cost_s = cost_sync;
     _data._iter = iter;
+    // sem_init(&_reconfigure_sem, 0, 0);
 }
 
 template<typename T>
 Observer<T>::~Observer() {
-    std::cout << "Found best step = " << _best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << std::endl;
+    // std::cout << "Found best step = " << _best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << std::endl;
 }
 
 /* template<typename T>
@@ -24,6 +26,11 @@ void Observer<T>::set_consumer(NaiveQueueImpl<T>* consumer) {
 template<typename T>
 void Observer<T>::set_producer(NaiveQueueImpl<T>* producer) {
     _producer = producer;
+} */
+
+/* template<typename T>
+void Observer<T>::begin() {
+    _begin = std::chrono::steady_clock::now();
 } */
 
 template<typename T>
@@ -87,6 +94,15 @@ void Observer<T>::add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time) 
     }
 }
 
+/* template<typename T>
+void Observer<T>::measure() {
+    while (!_reconfigured) {
+        sem_wait(&_reconfigure_sem);
+    }
+    _time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - _begin).count();
+    std::cout << _time << std::endl;
+} */
+
 template<typename T>
 void Observer<T>::trigger_reconfigure() {
     std::unique_lock<std::mutex> lck(_m);
@@ -99,6 +115,7 @@ void Observer<T>::trigger_reconfigure() {
         }
     })) {
         _reconfigured = true;
+        // sem_post(&_reconfigure_sem);
         std::vector<uint64_t> cost_p;
         cost_p.reserve(_times.size());
         std::vector<unsigned int> averages(_times.size());
@@ -109,10 +126,7 @@ void Observer<T>::trigger_reconfigure() {
 
         for (auto& [queue, data]: _times) {
             if (data._producer) {
-                auto step = queue->get_step();
-                uint64_t sum = std::accumulate(data._push_times, data._push_times + data._n_push, 0);
-                uint64_t cost = (sum - (_cost_p_size * _data._cost_s) / step) / (2 * _cost_p_size);
-                cost_p.push_back(cost);
+                cost_p.push_back(avg(data._push_times, data._n_push));
             }
 
             averages.push_back(avg(data._work_times, data._n_work));
@@ -132,6 +146,11 @@ void Observer<T>::trigger_reconfigure() {
 
         _best_step = best_step;
         _worst_avg = worst_avg;
+
+        _cost_p = std::move(cost_p);
+        _averages = std::move(averages);
+
+        // _time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - _begin).count();
         // printf("Reconfiguring producer and consumer to %d\n", best_step);
     }
 }
@@ -152,9 +171,25 @@ void Observer<T>::set_cost_p_size(size_t cost_p_size) {
 
 template<typename T>
 void Observer<T>::add_cost_p_time(NaiveQueueImpl<T>* producer, uint64_t time) {
+    printf("Adding CostP = %llu\n", time);
     MapData& data = _times[producer];
     data._push_times[data._n_push++] = time;
     if (data._n_push == _cost_p_size) {
         trigger_reconfigure();
     }
+}
+
+template<typename T>
+json Observer<T>::serialize() const {
+    json result;
+    result["best_step"] = _best_step;
+    result["worst_avg"] = _worst_avg;
+    result["cost_p"] = _data._cost_p;
+
+    json extra;
+    extra["cost_p"] = _cost_p;
+    extra["average"] = _averages;
+    
+    result["extra"] = extra;
+    return result;
 }

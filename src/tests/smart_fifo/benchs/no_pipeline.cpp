@@ -9,6 +9,7 @@
 #include <chrono>
 #include <future>
 #include <fstream>
+#include <iomanip>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -259,16 +260,17 @@ class LuaRun {
 
         }
 
-        unsigned long long run_master_auto_reconfigure() {
+        std::tuple<unsigned long long, json> run_master_auto_reconfigure() {
             if (_producers_loops.empty() || _consumers_loops.empty()) {
                 throw std::runtime_error("Must have at least one producer and one consumer");
             }
 
             using fn = void(*)(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 
+            unsigned int nb_samples = 100;
             std::vector<std::packaged_task<void()>> tasks;
             NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
-            Observer<StupidObject> observer(250, std::get<0>(_producers_loops[0]));
+            Observer<StupidObject> observer(2000, std::get<0>(_producers_loops[0]));
             // std::vector<NaiveQueueImpl<int>*> queues;
             std::vector<NaiveQueueImpl<StupidObject>*> queues;
 
@@ -277,7 +279,7 @@ class LuaRun {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_producer(impl);
-                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, 10)));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, nb_samples)));
                 // _threads.push_back(std::thread((fn)producer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
@@ -286,14 +288,14 @@ class LuaRun {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_consumer(impl);
-                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, 10)));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, nb_samples)));
                 // _threads.push_back(std::thread((fn)consumer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
 
-            observer.set_prod_size(10);
-            observer.set_cons_size(10);
-            observer.set_cost_p_size(10);
+            observer.set_prod_size(nb_samples);
+            observer.set_cons_size(nb_samples);
+            observer.set_cost_p_size(nb_samples);
 
             for (auto& task: tasks) {
                 _threads.push_back(std::thread(std::move(task)));
@@ -312,7 +314,7 @@ class LuaRun {
 
             _threads.clear();
 
-            return diff(begin, end);
+            return { diff(begin, end), observer.serialize() } ;
         }
 
     private:
@@ -434,48 +436,60 @@ int main(int argc, char** argv) {
 
     lua.script_file(args._filename); */
 
-    LuaRun run;
-    parse_json(args._filename, run);
+    LuaRun lrun;
+    parse_json(args._filename, lrun);
     /* run.add_producer(4000000, 200, SmartFIFOConfig(1, 0, 0));
     run.add_consumer(4000000, 200, SmartFIFOConfig(1, 0, 0)); */
 
     std::ofstream stream(args._output, std::ios::app);
+    std::vector<json> runs;
     for (RunType run_type: args._run_types) {
         unsigned long long time = 0;
+        json run;
         std::string type;
 
         switch (run_type) {
             case SMART_FIFO:
-                time = run.run();
+                time = lrun.run();
                 type = "SmartFIFO";
                 break;
 
             case NAIVE:
-                time = run.run_queue();
+                time = lrun.run_queue();
                 type = "Naive";
                 break;
 
             case MASTER:
-                time = run.run_naive_master();
+                time = lrun.run_naive_master();
                 type = "Master";
                 break;
 
             case MASTER_RECONFIGURE:
-                time = run.run_naive_master_reconfigure();
+                time = lrun.run_naive_master_reconfigure();
                 type = "MasterReconfigure";
                 break;
 
-            case MASTER_AUTO_RECONFIGURE:
-                time = run.run_master_auto_reconfigure();
+            case MASTER_AUTO_RECONFIGURE: {
+                json observer;
+                std::tie(time, observer) = lrun.run_master_auto_reconfigure();
+                run["observer"] = observer;
                 type = "MasterAutoReconfigure";
                 break;
+            }
 
             default:
                 throw std::runtime_error("What ?");
         }
 
-        stream << type << " " << time / 1000000000.f << std::endl;
+        run["type"] = type;
+        run["time"] = time / 1000000000.f;
+        runs.push_back(run);
+        // stream << type << " " << time / 1000000000.f << std::endl;
     }
+
+    json runs_json;
+    runs_json["runs"] = runs;
+    stream << runs_json << std::endl;
 
     return 0;
 }
@@ -698,9 +712,12 @@ void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
 
         StupidObject obj;
         MakeStupidObject(obj);
-        begin = SteadyClock::now();
-        queue->push(obj);
-        observer->add_cost_p_time(queue, diff(begin, SteadyClock::now()));
+        auto [push_time, enqueue_time] = queue->timed_push(obj);
+        observer->add_cost_p_time(queue, push_time); 
+
+        if (enqueue_time != 0) {
+            printf("enqueue_time = %llu\n", enqueue_time);
+        }
     }
 
     for (; i < glob_loops; ++i) {

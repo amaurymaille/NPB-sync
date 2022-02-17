@@ -15,6 +15,12 @@
 #include <utility>
 #include <type_traits>
 
+#include <semaphore.h>
+
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
+
 template<typename T>
 class Ringbuffer {
     public:
@@ -186,11 +192,13 @@ class NaiveQueueImpl {
             _master(master), _reconfigure(reconfigure), 
             _threshold(threshold), _new_step(new_step) {
             _need_reconfigure.store(false, std::memory_order_relaxed);
+            _begin = std::chrono::steady_clock::now();
             init(size, new_step);
         }
 
         ~NaiveQueueImpl() {
             free(_data);
+            // printf("%p finished at step = %d\n", this, _size);
         }
 
         inline bool empty() const __attribute__((always_inline)) {
@@ -221,6 +229,7 @@ class NaiveQueueImpl {
         }
 
         inline void push(T const& data) __attribute__((always_inline));
+        inline std::tuple<uint64_t, uint64_t> timed_push(T const& data) __attribute__((always_inline));
 
         inline bool push_local(T const& data) __attribute__((always_inline)) {
             if (full()) {
@@ -431,6 +440,7 @@ class NaiveQueueImpl {
         size_t _size;
         int _head, _tail;
         NaiveQueueMaster<T>* _master;
+        std::chrono::time_point<std::chrono::steady_clock> _begin;
 
         std::atomic<bool> _need_reconfigure;
         bool _reconfigure;
@@ -509,17 +519,20 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
             return std::nullopt;
         }
 
-        /* if (_reconfigure && !_changed) {
+        if (_reconfigure && !_changed) {
             _processed += n_elements();
             if (_processed >= _threshold) {
                 _changed = resize(_new_step);
             }
-        } */
+        }
 
     }
     
     if (_need_reconfigure.load(std::memory_order_acquire)) {
+        // printf("Reconfiguring %p\n", this);
         if (resize(_new_step)) {
+            // auto now = std::chrono::steady_clock::now();
+            // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
             _need_reconfigure.store(false, std::memory_order_relaxed);
         } else {
             printf("Error while resizing %p\n", this);
@@ -527,6 +540,59 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
     }
 
     return pop_local();
+}
+
+template<typename T>
+inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& data) {
+    std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
+    push_local(data);
+    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> begin_enqueue; 
+    std::chrono::time_point<std::chrono::steady_clock> end_enqueue;
+    bool enqueued = false;
+
+    if (full()) {
+        // dump();
+        // std::cout << "[Push] Full" << std::endl;
+        
+        enqueued = true;
+        unsigned int amount = n_elements();
+        begin_enqueue = std::chrono::steady_clock::now();
+        _master->enqueue(this, _size - 1);
+        end_enqueue = std::chrono::steady_clock::now();
+
+        if (_reconfigure && !_changed) {
+            unsigned int consumed = amount - n_elements();
+            _processed += consumed;
+
+            if (_processed >= _threshold) {
+                _changed = true;
+                unsigned int attempts = 0;
+                while (!resize(_new_step) && attempts < 10) {
+                    ++attempts;
+                    _master->enqueue(this, _size - 1);
+                }
+
+                if (attempts == 10) {
+                    throw std::runtime_error("Unable to resize producer ringbuffer in 10 tries");
+                }
+            }
+        }
+    }
+
+    if (_need_reconfigure.load(std::memory_order_acquire)) {
+        if (resize(_new_step)) {
+            // printf("Reconfiguring %p\n", this);
+            // auto now = std::chrono::steady_clock::now();
+            // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
+            _need_reconfigure.store(false, std::memory_order_relaxed);
+        } else {
+            printf("Error while resizing %p\n", this);
+        }
+    }
+
+    return { std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count(),
+        enqueued ? std::chrono::duration_cast<std::chrono::nanoseconds>(end_enqueue - begin_enqueue).count() : 0 };
 }
 
 template<typename T>
@@ -560,6 +626,9 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
 
     if (_need_reconfigure.load(std::memory_order_acquire)) {
         if (resize(_new_step)) {
+            // printf("Reconfiguring %p\n", this);
+            // auto now = std::chrono::steady_clock::now();
+            // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
             _need_reconfigure.store(false, std::memory_order_relaxed);
         } else {
             printf("Error while resizing %p\n", this);
@@ -643,6 +712,11 @@ class Observer {
         void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
         void add_cost_p_time(NaiveQueueImpl<T>* producer, uint64_t time);
 
+        json serialize() const;
+
+        // void begin();
+        // void measure();
+
     private:
         void trigger_reconfigure();
 
@@ -651,6 +725,9 @@ class Observer {
         uint64_t* _cost_p_times; */
 
         std::map<NaiveQueueImpl<T>*, MapData> _times;
+        /* std::chrono::time_point<std::chrono::steady_clock> _begin;
+        unsigned long long _time;
+        sem_t _reconfigure_sem; */
 
         /* size_t _n_prod;
         size_t _n_cons;
@@ -662,6 +739,8 @@ class Observer {
 
         unsigned int _best_step = 0;
         unsigned int _worst_avg = 0;
+        std::vector<uint64_t> _cost_p;
+        std::vector<unsigned int> _averages;
 
         bool _reconfigured = false;
 
