@@ -147,6 +147,7 @@ class NaiveQueue {
 
         inline int enqueue(Ringbuffer<T>* buf, int limit) __attribute__ ((always_inline)) {
             std::unique_lock<std::mutex> lck(_mutex);
+            printf("_buf._n_elements = %d\n", _buf.n_elements());
             while (_buf.full()) {
                 _not_full.wait(lck);
             }
@@ -662,6 +663,7 @@ inline int NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
 template<typename T>
 inline int NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     std::unique_lock<std::mutex> lck(_mutex);
+    // printf("_buf._n_elements = %d\n", _buf.n_elements());
     while (_buf.full()) {
         _not_full.wait(lck);
     }
@@ -692,6 +694,8 @@ class Observer {
         size_t _n_work;
         uint64_t* _push_times;
         size_t _n_push;
+        uint64_t* _sync_times;
+        uint64_t _n_sync;
     };
 
     public:
@@ -706,11 +710,11 @@ class Observer {
 
         void set_prod_size(size_t prod_size);
         void set_cons_size(size_t cons_size);
-        void set_cost_p_size(size_t cost_p_size);
+        void set_cost_p_cost_s_size(size_t cost_p_cost_s_size);
 
         void add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time);
         void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
-        void add_cost_p_time(NaiveQueueImpl<T>* producer, uint64_t time);
+        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t sync_time);
 
         json serialize() const;
 
@@ -735,7 +739,7 @@ class Observer {
 
         size_t _prod_size;
         size_t _cons_size;
-        size_t _cost_p_size;
+        size_t _cost_p_cost_s_size;
 
         unsigned int _best_step = 0;
         unsigned int _worst_avg = 0;

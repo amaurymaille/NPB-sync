@@ -295,7 +295,7 @@ class LuaRun {
 
             observer.set_prod_size(nb_samples);
             observer.set_cons_size(nb_samples);
-            observer.set_cost_p_size(nb_samples);
+            observer.set_cost_p_cost_s_size(nb_samples);
 
             for (auto& task: tasks) {
                 _threads.push_back(std::thread(std::move(task)));
@@ -702,6 +702,7 @@ void consumer(NaiveQueueImpl<StupidObject>* queue, int glob_loops, int work_loop
 }
 
 void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int glob_loops, int work_loops, int timed_loops) {
+    // int cpu_id = sched_getcpu();
     int i = 0;
     for (; i < timed_loops; ++i) {
         TP begin = SteadyClock::now();
@@ -713,11 +714,11 @@ void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
         StupidObject obj;
         MakeStupidObject(obj);
         auto [push_time, enqueue_time] = queue->timed_push(obj);
-        observer->add_cost_p_time(queue, push_time); 
+        observer->add_cost_p_cost_s_time(queue, push_time, enqueue_time); 
 
-        if (enqueue_time != 0) {
+        /* if (enqueue_time != 0) {
             printf("enqueue_time = %llu\n", enqueue_time);
-        }
+        } */
     }
 
     for (; i < glob_loops; ++i) {
@@ -731,10 +732,12 @@ void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
     }
 
     queue->terminate();
-
+    // int cpu_id2 = sched_getcpu();
+    // printf("Producer: cpu_id = %d, cpu_id2 = %d\n", cpu_id, cpu_id2);
 }
 
 void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int, int work_loops, int timed_loops) {
+    // int cpu_id = sched_getcpu();
     int i = 0;
     for (; i < timed_loops; ++i) {
         std::optional<StupidObject> result = queue->pop();
@@ -759,5 +762,8 @@ void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
             ;
         }
     }
+
+    // int cpu_id2 = sched_getcpu();
+    // printf("Consumer: cpu_id = %d, cpu_id2 = %d\n", cpu_id, cpu_id2);
 }
 

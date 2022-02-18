@@ -6,7 +6,7 @@
 
 template<typename T>
 Observer<T>::Observer(uint64_t cost_sync, uint64_t iter) : 
-    _prod_size(0), _cons_size(0), _cost_p_size(0) {
+    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0) {
     // _data._cost_p = cost_push;
     _data._cost_s = cost_sync;
     _data._iter = iter;
@@ -37,7 +37,7 @@ template<typename T>
 void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
     MapData& data = _times[producer];
     data._work_times = data._push_times = nullptr;
-    data._n_work = data._n_push = 0;
+    data._n_work = data._n_push = data._n_sync = 0;
     data._producer = true;
 }
 
@@ -45,7 +45,7 @@ template<typename T>
 void Observer<T>::add_consumer(NaiveQueueImpl<T>* consumer) {
     MapData& data = _times[consumer];
     data._work_times = data._push_times = nullptr;
-    data._n_work = data._n_push = 0;
+    data._n_work = data._n_push = data._n_sync = 0;
     data._producer = false;
 }
 
@@ -109,7 +109,7 @@ void Observer<T>::trigger_reconfigure() {
     if (!_reconfigured && std::all_of(_times.begin(), _times.end(), [this](auto const& value) {
         auto const& [_, data] = value;
         if (data._producer) {
-            return data._n_work == this->_prod_size && data._n_push == this->_cost_p_size;
+            return data._n_work == this->_prod_size && data._n_push == this->_cost_p_cost_s_size;
         } else {
             return data._n_work == this->_cons_size;
         }
@@ -156,25 +156,27 @@ void Observer<T>::trigger_reconfigure() {
 }
 
 template<typename T>
-void Observer<T>::set_cost_p_size(size_t cost_p_size) {
+void Observer<T>::set_cost_p_cost_s_size(size_t cost_p_cost_s_size) {
     for (auto& [_, data]: _times) {
         if (data._producer) {
             if (data._push_times) {
                 throw std::runtime_error("You cannot change the size of the time");
             }
-            data._push_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_size);
+            data._push_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
+            data._sync_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
         }
     }
 
-    _cost_p_size = cost_p_size;
+    _cost_p_cost_s_size = cost_p_cost_s_size;
 }
 
 template<typename T>
-void Observer<T>::add_cost_p_time(NaiveQueueImpl<T>* producer, uint64_t time) {
-    printf("Adding CostP = %llu\n", time);
+void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t sync_time) {
+    // printf("Adding CostP = %llu\n", time);
     MapData& data = _times[producer];
-    data._push_times[data._n_push++] = time;
-    if (data._n_push == _cost_p_size) {
+    data._push_times[data._n_push++] = push_time;
+    data._sync_times[data._n_sync++] = sync_time;
+    if (data._n_push == _cost_p_cost_s_size) {
         trigger_reconfigure();
     }
 }
@@ -190,6 +192,18 @@ json Observer<T>::serialize() const {
     extra["cost_p"] = _cost_p;
     extra["average"] = _averages;
     
+    json cost_s = json::array();
+    for (auto const& [_, data]: _times) {
+        if (data._producer) {
+            json this_producer = json::array();
+            for (int i = 0; i < data._n_sync; ++i) {
+                this_producer.push_back(data._sync_times[i]);
+            }
+            cost_s.push_back(this_producer);
+        }
+    }
+    
+    extra["cost_s"] = cost_s;
     result["extra"] = extra;
     return result;
 }
