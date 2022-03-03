@@ -6,10 +6,12 @@
 #include <cstdlib>
 #include <ctime>
 
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <fstream>
 #include <iomanip>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -27,6 +29,8 @@ namespace po = boost::program_options;
 using json = nlohmann::json;
 using SteadyClock = std::chrono::steady_clock;
 using TP = std::chrono::time_point<SteadyClock>;
+
+static std::atomic<unsigned int> CPU_ID;
 
 void producer(SmartFIFO<int>*, int, int);
 void consumer(SmartFIFO<int>*, int, int);
@@ -81,6 +85,8 @@ void consumer(NaiveQueueImpl<StupidObject>*, int, int);
 
 void producer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 void consumer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
+
+static int second_sync_size = 50;
 
 class LuaRun {
     public:
@@ -267,10 +273,9 @@ class LuaRun {
 
             using fn = void(*)(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 
-            unsigned int nb_samples = 100;
             std::vector<std::packaged_task<void()>> tasks;
             NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
-            Observer<StupidObject> observer(2000, std::get<0>(_producers_loops[0]));
+            Observer<StupidObject> observer(400, std::get<0>(_producers_loops[0]), _producers_loops.size() + _consumers_loops.size());
             // std::vector<NaiveQueueImpl<int>*> queues;
             std::vector<NaiveQueueImpl<StupidObject>*> queues;
 
@@ -279,7 +284,7 @@ class LuaRun {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_producer(impl);
-                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, nb_samples)));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, _n_samples)));
                 // _threads.push_back(std::thread((fn)producer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
@@ -288,14 +293,15 @@ class LuaRun {
                 // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
                 NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_consumer(impl);
-                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, nb_samples)));
+                tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, _n_samples)));
                 // _threads.push_back(std::thread((fn)consumer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
 
-            observer.set_prod_size(nb_samples);
-            observer.set_cons_size(nb_samples);
-            observer.set_cost_p_cost_s_size(nb_samples);
+            observer.set_prod_size(_n_samples);
+            observer.set_cons_size(_n_samples);
+            observer.set_cost_p_cost_s_size(_n_samples);
+            observer.set_cost_s_size(second_sync_size);
 
             for (auto& task: tasks) {
                 _threads.push_back(std::thread(std::move(task)));
@@ -317,10 +323,15 @@ class LuaRun {
             return { diff(begin, end), observer.serialize() } ;
         }
 
+        void set_n_samples(unsigned int samples) {
+            _n_samples = samples;
+        }
+
     private:
         std::vector<std::tuple<int, int, SmartFIFOConfig>> _producers_loops;
         std::vector<std::tuple<int, int, SmartFIFOConfig>> _consumers_loops;
         std::vector<std::thread> _threads;
+        unsigned int _n_samples;
 };
 
 void parse_args(int argc, char** argv, Args& args) {
@@ -409,6 +420,10 @@ void parse_json(std::string const& filename, LuaRun& run) {
     for (auto const& consumer: consumers) {
         run.add_consumer(consumer["iterations"], consumer["work"], SmartFIFOConfig(consumer["start"], consumer["threshold"], consumer["new"]));
     }
+
+    if (j.contains("samples")) {
+        run.set_n_samples(j["samples"]);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -430,6 +445,8 @@ int main(int argc, char** argv) {
     return 0; */
     Args args;
     parse_args(argc, argv, args);
+
+    CPU_ID.store(1, std::memory_order_relaxed);
 
     /* sol::state lua;
     init_lua(lua);
@@ -703,22 +720,45 @@ void consumer(NaiveQueueImpl<StupidObject>* queue, int glob_loops, int work_loop
 
 void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int glob_loops, int work_loops, int timed_loops) {
     // int cpu_id = sched_getcpu();
+    /* cpu_set_t set;
+    CPU_ZERO(&set);
+    int cpu_id = (CPU_ID += 2);
+    CPU_SET(cpu_id, &set);
+    sched_setaffinity(0, sizeof(set), &set); */
     int i = 0;
-    for (; i < timed_loops; ++i) {
+
+    // First batch
+    int limit = queue->get_step() * timed_loops;
+    for (; i < limit && i < glob_loops; ++i) {
         TP begin = SteadyClock::now();
         for (volatile int j = 0; j < work_loops; ++j) {
             ;
         }
-        observer->add_producer_time(queue, diff(begin, SteadyClock::now()));
+        auto d = diff(begin, SteadyClock::now());
 
         StupidObject obj;
         MakeStupidObject(obj);
         auto [push_time, enqueue_time] = queue->timed_push(obj);
-        observer->add_cost_p_cost_s_time(queue, push_time, enqueue_time); 
+        if (enqueue_time) {
+            observer->add_cost_p_cost_s_time(queue, push_time, enqueue_time); 
+            observer->add_producer_time(queue, d);
+        }
+    }
 
-        /* if (enqueue_time != 0) {
-            printf("enqueue_time = %llu\n", enqueue_time);
-        } */
+    bool reconfigured = false;
+    int j = 0;
+    while (!reconfigured && i < glob_loops) {
+        for (volatile int k = 0; k < work_loops; ++k) {
+            ;
+        }
+
+        StupidObject obj;
+        MakeStupidObject(obj);
+        auto [push_time, enqueue_time] = queue->timed_push(obj);
+        if (enqueue_time) {
+            reconfigured = observer->add_cost_s_time(queue, enqueue_time);
+        }
+        ++i;
     }
 
     for (; i < glob_loops; ++i) {
@@ -728,18 +768,38 @@ void producer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
 
         StupidObject obj;
         MakeStupidObject(obj);
+        /* auto [push_time, enqueue_time] = queue->timed_push(obj);
+        if (enqueue_time != 0) {
+            str << enqueue_time << " ";
+        } */
         queue->push(obj);
     }
 
+    // str << std::endl;
+
     queue->terminate();
+
+    /* int now = sched_getcpu();
+    if (now != cpu_id) {
+        printf("CPU discrepancy: e = %d, f = %d\n", cpu_id, now);
+    } else {
+        printf("CPU %d\n", now);
+    } */
+    // printf("%s\n", str.str().c_str());
     // int cpu_id2 = sched_getcpu();
     // printf("Producer: cpu_id = %d, cpu_id2 = %d\n", cpu_id, cpu_id2);
 }
 
-void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int, int work_loops, int timed_loops) {
+void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* observer, int glob_loops, int work_loops, int timed_loops) {
     // int cpu_id = sched_getcpu();
+    /* cpu_set_t set;
+    CPU_ZERO(&set);
+    int cpu_id = (CPU_ID += 2);
+    CPU_SET(cpu_id, &set);
+    sched_setaffinity(0, sizeof(set), &set); */
     int i = 0;
-    for (; i < timed_loops; ++i) {
+    int limit = queue->get_step() * timed_loops ;
+    for (; i < limit && i < glob_loops; ++i) {
         std::optional<StupidObject> result = queue->pop();
         if (!result) {
             break;
@@ -763,6 +823,12 @@ void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
         }
     }
 
+    /* int now = sched_getcpu();
+    if (now != cpu_id) {
+        printf("CPU discrepancy: e = %d, f = %d\n", cpu_id, now);
+    } else {
+        printf("CPU %d\n", now);
+    } */
     // int cpu_id2 = sched_getcpu();
     // printf("Consumer: cpu_id = %d, cpu_id2 = %d\n", cpu_id, cpu_id2);
 }

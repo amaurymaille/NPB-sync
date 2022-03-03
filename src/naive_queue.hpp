@@ -176,7 +176,6 @@ class NaiveQueue {
         std::mutex _mutex;
         std::condition_variable _not_empty, _not_full;
 
-
         bool terminated() const {
             return _n_producers == _n_terminated;
         }
@@ -192,6 +191,7 @@ class NaiveQueueImpl {
                 unsigned int threshold, unsigned int new_step) : 
             _master(master), _reconfigure(reconfigure), 
             _threshold(threshold), _new_step(new_step) {
+            _reconfigured.store(false, std::memory_order_relaxed);
             _need_reconfigure.store(false, std::memory_order_relaxed);
             _begin = std::chrono::steady_clock::now();
             init(size, new_step);
@@ -432,7 +432,11 @@ class NaiveQueueImpl {
         }
 
         size_t get_step() const {
-            return _size;
+            return _size - 1;
+        }
+
+        bool was_reconfigured() const {
+            return _reconfigured.load(std::memory_order_acquire);
         }
 
     private:
@@ -443,10 +447,25 @@ class NaiveQueueImpl {
         NaiveQueueMaster<T>* _master;
         std::chrono::time_point<std::chrono::steady_clock> _begin;
 
-        std::atomic<bool> _need_reconfigure;
-        bool _reconfigure;
-        unsigned int _threshold;
+        // New step. Used both in manual and automatic reconfiguration.
+        // Not atomic, but needs to be written before _need_reconfigure is set to true, 
+        // in order for memory_order_acquire to cause the new value to be visible.
         unsigned int _new_step;
+
+        /// Automatic reconfiguration
+
+        // Do we need to perform a reconfiguration ?
+        std::atomic<bool> _need_reconfigure;
+        // Was the reconfiguration done ?
+        std::atomic<bool> _reconfigured;
+
+
+        /// Manual reconfiguration
+
+        // Do we trigger a manually configured reconfiguration ?
+        bool _reconfigure;
+        // If so, when?
+        unsigned int _threshold;
         // How many items have been extracted from / inserted into the shared FIFO
         // Must be used in a single direction (in other word, a NaiveQueue cannot 
         // be used both as a producer and a consumer).
@@ -457,6 +476,7 @@ class NaiveQueueImpl {
         void init(size_t size, size_t new_size) {
             // _data = static_cast<T*>(malloc(sizeof(T) * (std::max(size, new_size) + 1)));
             _data = static_cast<T*>(malloc(sizeof(T) * 1000000));
+            // printf("data = %p\n", _data);
             _size = size + 1;
             _head = _tail = _n_elements = 0;
 
@@ -534,9 +554,10 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
         if (resize(_new_step)) {
             // auto now = std::chrono::steady_clock::now();
             // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
+            _reconfigured.store(true, std::memory_order_release);
             _need_reconfigure.store(false, std::memory_order_relaxed);
         } else {
-            printf("Error while resizing %p\n", this);
+            // printf("Error while resizing %p\n", this);
         }
     }
 
@@ -586,9 +607,10 @@ inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& dat
             // printf("Reconfiguring %p\n", this);
             // auto now = std::chrono::steady_clock::now();
             // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
+            _reconfigured.store(true, std::memory_order_release);
             _need_reconfigure.store(false, std::memory_order_relaxed);
         } else {
-            printf("Error while resizing %p\n", this);
+            // printf("Error while resizing %p\n", this);
         }
     }
 
@@ -630,9 +652,10 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
             // printf("Reconfiguring %p\n", this);
             // auto now = std::chrono::steady_clock::now();
             // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
+            _reconfigured.store(true, std::memory_order_release);
             _need_reconfigure.store(false, std::memory_order_relaxed);
         } else {
-            printf("Error while resizing %p\n", this);
+            // printf("Error while resizing %p\n", this);
         }
     }
 }
@@ -686,6 +709,7 @@ class Observer {
         uint64_t _cost_p;
         uint64_t _cost_s;
         uint64_t _iter;
+        uint64_t _wi;
     };
 
     struct MapData {
@@ -699,7 +723,7 @@ class Observer {
     };
 
     public:
-        Observer(uint64_t cost_sync, uint64_t iter_prod);
+        Observer(uint64_t cost_sync, uint64_t iter_prod, int n_threads);
         ~Observer();
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
@@ -716,19 +740,23 @@ class Observer {
         void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
         void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t sync_time);
 
+        void set_cost_s_size(size_t cost_s_size);
+        bool add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t sync_time);
+
         json serialize() const;
 
         // void begin();
         // void measure();
 
     private:
-        void trigger_reconfigure();
+        void trigger_reconfigure(bool first);
 
         /* uint64_t* _prod_times;
         uint64_t* _cons_times;
         uint64_t* _cost_p_times; */
 
         std::map<NaiveQueueImpl<T>*, MapData> _times;
+        std::map<NaiveQueueImpl<T>*, std::vector<uint64_t>> _cost_s;
         /* std::chrono::time_point<std::chrono::steady_clock> _begin;
         unsigned long long _time;
         sem_t _reconfigure_sem; */
@@ -740,19 +768,23 @@ class Observer {
         size_t _prod_size;
         size_t _cons_size;
         size_t _cost_p_cost_s_size;
+        size_t _cost_s_size;
 
         unsigned int _best_step = 0;
         unsigned int _worst_avg = 0;
         std::vector<uint64_t> _cost_p;
-        std::vector<unsigned int> _averages;
+        std::vector<uint64_t> _averages;
 
         bool _reconfigured = false;
+        bool _reconfigured_twice = false;
 
         /* NaiveQueueImpl<T>* _consumer;
         NaiveQueueImpl<T>* _producer; */
 
         Data _data;
         std::mutex _m;
+
+        int _n_threads;
 };
 
 #include "naive_queue.tpp"
