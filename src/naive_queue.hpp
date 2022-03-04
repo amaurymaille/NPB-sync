@@ -22,8 +22,13 @@
 using json = nlohmann::json;
 
 template<typename T>
+class NaiveQueueImpl;
+
+template<typename T>
 class Ringbuffer {
     public:
+        friend NaiveQueueImpl<T>;
+
         Ringbuffer(size_t size) {
             init(size);
         }
@@ -83,6 +88,11 @@ class Ringbuffer {
         size_t size() const {
             return _size;
         }
+
+        inline int available() const {
+            return _size - _n_elements;
+        }
+
     private:
         T* _data;
         size_t _n_elements;
@@ -184,6 +194,17 @@ class NaiveQueue {
 template<typename T>
 class NaiveQueueMaster;
 
+/* This class works as a ringbuffer.
+ * Internally, it uses an array with a head and a tail.
+ * The head is used to represent the position at which the next insertion will happen.
+ * The tail is used to represent the position at which the current element sits.
+ * If the array is empty, both the head and the tail are at the same position.
+ * 
+ * The array uses a sentinel cell in order to prevent head and tail reaching the same
+ * position in two different scenarios (empty and full). This removes the need for an
+ * extra boolean, which makes the structures slightly more cache-friendly, as th sentinel
+ * cell will fit into the cache, while the boolean may not.
+ */
 template<typename T>
 class NaiveQueueImpl {
     public:
@@ -209,6 +230,8 @@ class NaiveQueueImpl {
         inline bool full() const __attribute__((always_inline)) {
             return _head == (_tail - 1 + _size) % _size;
         }
+
+        inline void shared_transfer(Ringbuffer<T>& _buf, int limit) __attribute__((always_inline));
 
         inline std::optional<T> pop() __attribute__((always_inline));
 
@@ -661,6 +684,126 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
 }
 
 template<typename T>
+inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit) {
+    int available = buffer.available(); 
+    int hard_limit = std::min({(size_t)available, (size_t)limit, n_elements()});
+
+    // Nothing to transfer, empty.
+    if (_head == _tail) {
+        return;
+    } else if (_head > _tail) {
+        // Easy case, the buffer doesn't wrap around at the end.
+        // However, we need to check the state of the target ringbuffer beforehand.
+
+        // No need to wrap around. This covers the following cases:
+        //   * buffer._tail <= buffer._head
+        //   * buffer._head < buffer._tail
+        if (buffer._head + hard_limit < buffer._size) {
+            memcpy(buffer._data + buffer._head, _data + _tail, hard_limit * sizeof(T));
+            buffer._head += hard_limit;
+        } else {
+            // Need to wrap around. There is only one situation in which this can arise,
+            // which is buffer._tail < buffer._head. We cannot have buffer._head < buffer._tail
+            // and need to wrap around as this would implu we wrap around twice, which is not
+            // authorized.
+            memcpy(buffer._data + buffer._head, _data + _tail, sizeof(T) * (buffer._size - 1 - buffer._head));
+            memcpy(buffer._data, _data + _tail + (buffer._size - 1 - buffer._head), sizeof(T) * (hard_limit - (buffer._size - 1 - buffer._head)));
+            buffer._head = hard_limit - (buffer._size - 1 - buffer._head);
+        }
+
+        _tail += hard_limit;
+    } else {
+        // Annoying case, the buffer wraps around at the end.
+        // Split the present ringbuffer into its two parts (tail -> end (upper part), begin -> head (lower part)).
+        // We also need to check the destination ringbuffer to check if we need to wrap data around in that one
+        // as well.
+
+        // Indicates if we need to split the source ringbuffer. If we are copying only a slice
+        // of the upper part of the source ringbuffer, and do not need to wrap around, there is
+        // no need to split. Otherwise, split the copy into two parts: copy the upper part, then
+        // copy the lower part.
+        bool need_source_split = (_tail + hard_limit) >= _size;
+        size_t upper_count = 0;
+        if (need_source_split) {
+            upper_count = hard_limit - (_size - 1 - _tail);
+        }
+        
+        // Same as above, check if we need to wrap around in the target buffer.
+        if (buffer._head + hard_limit < buffer._size) {
+            if (need_source_split) {
+                memcpy(buffer._data + buffer._head, _data + _tail, upper_count * sizeof(T));
+                memcpy(buffer._data + buffer._head + upper_count, _data, (hard_limit - upper_count) * sizeof(T));
+            } else {
+                memcpy(buffer._data + buffer._head, _data + _tail, hard_limit * sizeof(T));
+            }
+
+            buffer._head += hard_limit;
+        } else {
+            if (need_source_split) {
+                // We may have to perform a second split. When attempting to copy either the upper
+                // or lower part of the source ringbuffer, there is no guarantee that each parts will fit
+                // neatly into the destination ringbuffer as the wrap around may occur at any point during
+                // the copy. First check if we need to perform a split.
+                
+                // Do we need to split the upper part of the source buffer ?
+                bool need_upper_split = (buffer._head + upper_count) >= buffer._size;
+                // Do we need to split the lower part of the source buffer ? Only if the upper part of the source
+                // buffer fits neatly in the destination buffer.
+                bool need_lower_split = !need_upper_split && (buffer._head + upper_count) < buffer._size;
+
+                if (need_upper_split && need_lower_split) {
+                    throw std::runtime_error("Shared transfer would require two splits.");
+                }
+
+                if (need_upper_split) {
+                    size_t free_dest_space = buffer._size - 1 - buffer._head;
+                    // Fill the free space in the dest buffer with the lower part of the upper part of the
+                    // source buffer.
+                    memcpy(buffer._data + buffer._head, _data + _tail, free_dest_space * sizeof(T));
+                    // Fill the beginning of the dest buffer with the remaining data in the upper part of
+                    // the source buffer.
+                    // _size - 1 - _tail is the amount of data in the upper part. Remove what was written
+                    // to the dest buffer.
+                    size_t remaining_in_upper = _size - 1 - (_tail + free_dest_space);
+                    memcpy(buffer._data, _data + _tail + free_dest_space, remaining_in_upper * sizeof(T));
+                    // Fill the destination buffer from what was written with the content in the lower part
+                    // of the source buffeR.
+                    memcpy(buffer._data + remaining_in_upper, _data, _head * sizeof(T));
+                } else if (need_lower_split) {
+                    // Start filling the free space in the destination buffer with everything from the upper
+                    // part of the source buffer.
+                    size_t upper_part_size = _size - 1 - _tail;
+                    memcpy(buffer._data + buffer._head, _data + _tail, upper_part_size * sizeof(T));
+                    // Continue filling the free space in the destination buffer with some of the lower
+                    // part of the source buffer.
+                    size_t remaining_space = buffer._size - 1 - (buffer._head + _size - 1 - _tail);
+                    memcpy(buffer._data + buffer._head + upper_part_size, _data, remaining_space * sizeof(T));
+                    // Write the remaining of the lower part of the source buffer at the beginning of the
+                    // destination buffer.
+                    memcpy(buffer._data, _data + remaining_space, (_head - remaining_space) * sizeof(T));
+                } else {
+                    memcpy(buffer._data + buffer._head, _data + _tail, upper_count * sizeof(T));
+                    memcpy(buffer._data, _data, _head * sizeof(T));
+                }
+            } else {
+                memcpy(buffer._data + buffer._head, _data + _tail, sizeof(T) * (buffer._size - 1 - buffer._head));
+                memcpy(buffer._data, _data + _tail + (buffer._size - 1 - buffer._head), sizeof(T) * (hard_limit - (buffer._size - 1 - buffer._head)));
+            }
+
+            buffer._head = hard_limit - (buffer._size - 1 - buffer._head);
+        }
+
+        if (need_source_split) {
+            _tail = hard_limit - upper_count;
+        } else {
+            _tail += hard_limit;
+        }
+    }
+
+    buffer._n_elements += hard_limit;
+}
+
+template<typename T>
 inline int NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
     std::unique_lock<std::mutex> lck(_mutex);
     while (_buf.empty() && !terminated()) {
@@ -692,9 +835,10 @@ inline int NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     }
 
     int i = 0;
-    for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
+    /* for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
         _buf.push(*queue->pop_local());
-    }
+    } */
+    queue->shared_transfer(_buf, limit);
 
     if (i > 0) {
         _not_empty.notify_all();

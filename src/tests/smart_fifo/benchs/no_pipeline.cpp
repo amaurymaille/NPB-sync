@@ -86,6 +86,9 @@ void consumer(NaiveQueueImpl<StupidObject>*, int, int);
 void producer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 void consumer(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
 
+void producer(NaiveQueueImpl<int>*, Observer<int>*, int, int, int);
+void consumer(NaiveQueueImpl<int>*, Observer<int>*, int, int, int);
+
 static int second_sync_size = 50;
 
 class LuaRun {
@@ -271,30 +274,32 @@ class LuaRun {
                 throw std::runtime_error("Must have at least one producer and one consumer");
             }
 
-            using fn = void(*)(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
+            // using fn = void(*)(NaiveQueueImpl<StupidObject>*, Observer<StupidObject>*, int, int, int);
+            using fn = void(*)(NaiveQueueImpl<int>*, Observer<int>*, int, int, int);
 
             std::vector<std::packaged_task<void()>> tasks;
-            NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
+            /* NaiveQueueMaster<StupidObject> queue(100000000ULL, _producers_loops.size());
             Observer<StupidObject> observer(400, std::get<0>(_producers_loops[0]), _producers_loops.size() + _consumers_loops.size());
-            // std::vector<NaiveQueueImpl<int>*> queues;
-            std::vector<NaiveQueueImpl<StupidObject>*> queues;
+            std::vector<NaiveQueueImpl<StupidObject>*> queues; */
+
+            NaiveQueueMaster<int> queue(100000000ULL, _producers_loops.size());
+            Observer<int> observer(400, std::get<0>(_producers_loops[0]), _producers_loops.size() + _consumers_loops.size());
+            std::vector<NaiveQueueImpl<int>*> queues;
 
             TP begin = SteadyClock::now();
             for (auto const& [glob_loops, work_loops, config]: _producers_loops) {
-                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
-                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                // NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_producer(impl);
                 tasks.push_back(std::packaged_task<void()>(std::bind((fn)producer, impl, &observer, glob_loops, work_loops, _n_samples)));
-                // _threads.push_back(std::thread((fn)producer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
 
             for (auto const& [glob_loops, work_loops, config]: _consumers_loops) {
-                // NaiveQueueImpl<int>* impl = queue.view(config._start_step, true, config._change_after, config._new_step);
-                NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                // NaiveQueueImpl<StupidObject>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
+                NaiveQueueImpl<int>* impl = queue.view(config._start_step, false, config._change_after, config._new_step);
                 observer.add_consumer(impl);
                 tasks.push_back(std::packaged_task<void()>(std::bind((fn)consumer, impl, &observer, glob_loops, work_loops, _n_samples)));
-                // _threads.push_back(std::thread((fn)consumer, impl, &observer, glob_loops, work_loops, 10));
                 queues.push_back(impl);
             }
 
@@ -313,8 +318,7 @@ class LuaRun {
 
             TP end = SteadyClock::now();
 
-            // for (NaiveQueueImpl<int>* impl: queues) {
-            for (NaiveQueueImpl<StupidObject>* impl: queues) {
+            for (auto impl: queues) {
                 delete impl;
             }
 
@@ -831,5 +835,83 @@ void consumer(NaiveQueueImpl<StupidObject>* queue, Observer<StupidObject>* obser
     } */
     // int cpu_id2 = sched_getcpu();
     // printf("Consumer: cpu_id = %d, cpu_id2 = %d\n", cpu_id, cpu_id2);
+}
+
+void producer(NaiveQueueImpl<int>* queue, Observer<int>* observer, int glob_loops, int work_loops, int timed_loops) {
+    int i = 0;
+
+    // First batch
+    int limit = queue->get_step() * timed_loops;
+    for (; i < limit && i < glob_loops; ++i) {
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        auto d = diff(begin, SteadyClock::now());
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        auto [push_time, enqueue_time] = queue->timed_push(i);
+        if (enqueue_time) {
+            observer->add_cost_p_cost_s_time(queue, push_time, enqueue_time); 
+            observer->add_producer_time(queue, d);
+        }
+    }
+
+    bool reconfigured = false;
+    int j = 0;
+    while (!reconfigured && i < glob_loops) {
+        for (volatile int k = 0; k < work_loops; ++k) {
+            ;
+        }
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        auto [push_time, enqueue_time] = queue->timed_push(i);
+        if (enqueue_time) {
+            reconfigured = observer->add_cost_s_time(queue, enqueue_time);
+        }
+        ++i;
+    }
+
+    for (; i < glob_loops; ++i) {
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        queue->push(i);
+    }
+
+    queue->terminate();
+}
+
+void consumer(NaiveQueueImpl<int>* queue, Observer<int>* observer, int glob_loops, int work_loops, int timed_loops) {
+    int i = 0;
+    int limit = queue->get_step() * timed_loops ;
+    for (; i < limit && i < glob_loops; ++i) {
+        std::optional<int> result = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        observer->add_consumer_time(queue, diff(begin, SteadyClock::now()));
+    }
+
+    while (true) {
+        std::optional<int> result = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+    }
 }
 
