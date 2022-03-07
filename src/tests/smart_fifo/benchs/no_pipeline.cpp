@@ -27,8 +27,6 @@
 namespace po = boost::program_options;
 
 using json = nlohmann::json;
-using SteadyClock = std::chrono::steady_clock;
-using TP = std::chrono::time_point<SteadyClock>;
 
 static std::atomic<unsigned int> CPU_ID;
 
@@ -37,10 +35,6 @@ void consumer(SmartFIFO<int>*, int, int);
 
 void producer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
 void consumer(NaiveQueue<int>*, Ringbuffer<int>*, int, int);
-
-unsigned long long diff(TP const& begin, TP const& end) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
-}
 
 enum RunType {
     SMART_FIFO,

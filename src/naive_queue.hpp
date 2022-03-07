@@ -13,6 +13,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <tuple>
 #include <type_traits>
 
 #include <semaphore.h>
@@ -20,6 +21,13 @@
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
+
+using SteadyClock = std::chrono::steady_clock;
+using TP = std::chrono::time_point<SteadyClock>;
+
+unsigned long long diff(TP const& begin, TP const& end) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
+}
 
 template<typename T>
 class NaiveQueueImpl;
@@ -530,8 +538,10 @@ class NaiveQueueMaster {
             }
         }
 
-        inline int dequeue(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
-        inline int enqueue(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
+        inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
+            dequeue(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
+        inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
+            enqueue(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
 
         unsigned int size() {
             return _buf._n_elements;
@@ -558,7 +568,7 @@ template<typename T>
 inline std::optional<T> NaiveQueueImpl<T>::pop() {
     if (empty()) {
         // std::cout << "[Pop] Empty" << std::endl;
-        int result = _master->dequeue(this, _size - 1);
+        auto [result, lock, critical, unlock] = _master->dequeue(this, _size - 1);
         if (result < 0) {
             return std::nullopt;
         }
@@ -603,7 +613,7 @@ inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& dat
         enqueued = true;
         unsigned int amount = n_elements();
         begin_enqueue = std::chrono::steady_clock::now();
-        _master->enqueue(this, _size - 1);
+        auto [count, lock, critical, unlock] = _master->enqueue(this, _size - 1);
         end_enqueue = std::chrono::steady_clock::now();
 
         if (_reconfigure && !_changed) {
@@ -809,14 +819,21 @@ inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit)
 }
 
 template<typename T>
-inline int NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
-    std::unique_lock<std::mutex> lck(_mutex);
+inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
+NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
+    // std::unique_lock<std::mutex> lck(_mutex);
+    TP begin_lock, begin_sc, begin_unlock, end_unlock;
+    begin_lock = SteadyClock::now();
+    _mutex.lock();
+    std::unique_lock<std::mutex> lck(_mutex, std::adopt_lock);
+    begin_sc = SteadyClock::now();
     while (_buf.empty() && !terminated()) {
         _not_empty.wait(lck);
     }
 
     if (_buf.empty() && terminated()) {
-        return -1;
+        _mutex.unlock();
+        return { -1, 0, 0, 0 };
     }
 
     int i = 0;
@@ -828,28 +845,43 @@ inline int NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
         _not_full.notify_all();
     }
 
-    return i;
+    begin_unlock = SteadyClock::now();
+    _mutex.unlock();
+    end_unlock = SteadyClock::now();
+    lck.release();
+    return { i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
 }
 
 template<typename T>
-inline int NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
-    std::unique_lock<std::mutex> lck(_mutex);
+inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
+NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
+    TP begin_lock, begin_unlock, end_unlock, begin_sc;
+    begin_lock = SteadyClock::now();
+    // std::unique_lock<std::mutex> lck(_mutex);
+    _mutex.lock();
+    std::unique_lock<std::mutex> lck(_mutex, std::adopt_lock);
+    begin_sc = SteadyClock::now();
+
     // printf("_buf._n_elements = %d\n", _buf.n_elements());
     while (_buf.full()) {
         _not_full.wait(lck);
     }
 
     int i = 0;
-    /* for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
+    for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
         _buf.push(*queue->pop_local());
-    } */
-    queue->shared_transfer(_buf, limit);
+    }
+    // queue->shared_transfer(_buf, limit);
 
     if (i > 0) {
         _not_empty.notify_all();
     }
 
-    return i;
+    begin_unlock = SteadyClock::now();
+    _mutex.unlock();
+    end_unlock = SteadyClock::now();
+    lck.release();
+    return { i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
 }
 
 template<typename T>
