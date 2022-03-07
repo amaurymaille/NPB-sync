@@ -701,17 +701,20 @@ inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit)
         if (buffer._head + hard_limit < buffer._size) {
             memcpy(buffer._data + buffer._head, _data + _tail, hard_limit * sizeof(T));
             buffer._head += hard_limit;
+            buffer._head %= buffer._size;
         } else {
             // Need to wrap around. There is only one situation in which this can arise,
             // which is buffer._tail < buffer._head. We cannot have buffer._head < buffer._tail
             // and need to wrap around as this would implu we wrap around twice, which is not
             // authorized.
-            memcpy(buffer._data + buffer._head, _data + _tail, sizeof(T) * (buffer._size - 1 - buffer._head));
-            memcpy(buffer._data, _data + _tail + (buffer._size - 1 - buffer._head), sizeof(T) * (hard_limit - (buffer._size - 1 - buffer._head)));
-            buffer._head = hard_limit - (buffer._size - 1 - buffer._head);
+            size_t free_space = buffer._size - 1 - buffer._head;
+            memcpy(buffer._data + buffer._head, _data + _tail, sizeof(T) * free_space);
+            memcpy(buffer._data, _data + _tail + free_space, sizeof(T) * (hard_limit - free_space));
+            buffer._head = hard_limit - free_space;
         }
 
         _tail += hard_limit;
+        _tail %= _size;
     } else {
         // Annoying case, the buffer wraps around at the end.
         // Split the present ringbuffer into its two parts (tail -> end (upper part), begin -> head (lower part)).
@@ -738,6 +741,7 @@ inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit)
             }
 
             buffer._head += hard_limit;
+            buffer._head %= buffer._size;
         } else {
             if (need_source_split) {
                 // We may have to perform a second split. When attempting to copy either the upper
@@ -797,6 +801,7 @@ inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit)
             _tail = hard_limit - upper_count;
         } else {
             _tail += hard_limit;
+            _tail %= _size;
         }
     }
 
