@@ -241,7 +241,8 @@ class NaiveQueueImpl {
 
         inline void shared_transfer(Ringbuffer<T>& _buf, int limit) __attribute__((always_inline));
 
-        inline std::optional<T> pop() __attribute__((always_inline));
+        inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> 
+            pop() __attribute__((always_inline));
 
         inline std::optional<T> pop_local() __attribute__((always_inline)) {
             if (empty()) {
@@ -261,7 +262,7 @@ class NaiveQueueImpl {
         }
 
         inline void push(T const& data) __attribute__((always_inline));
-        inline std::tuple<uint64_t, uint64_t> timed_push(T const& data) __attribute__((always_inline));
+        inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> timed_push(T const& data) __attribute__((always_inline));
 
         inline bool push_local(T const& data) __attribute__((always_inline)) {
             if (full()) {
@@ -565,12 +566,14 @@ class NaiveQueueMaster {
 };
 
 template<typename T>
-inline std::optional<T> NaiveQueueImpl<T>::pop() {
+inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::pop() {
+    int result;
+    uint64_t lock = 0, critical = 0, unlock = 0;
     if (empty()) {
         // std::cout << "[Pop] Empty" << std::endl;
-        auto [result, lock, critical, unlock] = _master->dequeue(this, _size - 1);
+        std::tie(result, lock, critical, unlock) = _master->dequeue(this, _size - 1);
         if (result < 0) {
-            return std::nullopt;
+            return { std::nullopt, lock, critical, unlock };
         }
 
         if (_reconfigure && !_changed) {
@@ -594,16 +597,17 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
         }
     }
 
-    return pop_local();
+    return { pop_local(), lock, critical, unlock };
 }
 
 template<typename T>
-inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& data) {
+inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& data) {
     std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
     push_local(data);
     std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
     std::chrono::time_point<std::chrono::steady_clock> begin_enqueue; 
     std::chrono::time_point<std::chrono::steady_clock> end_enqueue;
+    uint64_t lock, critical, unlock;
     bool enqueued = false;
 
     if (full()) {
@@ -613,7 +617,8 @@ inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& dat
         enqueued = true;
         unsigned int amount = n_elements();
         begin_enqueue = std::chrono::steady_clock::now();
-        auto [count, lock, critical, unlock] = _master->enqueue(this, _size - 1);
+        auto [count, _lock, _critical, _unlock] = _master->enqueue(this, _size - 1);
+        lock = _lock; critical = _critical; unlock = _unlock;
         end_enqueue = std::chrono::steady_clock::now();
 
         if (_reconfigure && !_changed) {
@@ -647,8 +652,12 @@ inline std::tuple<uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& dat
         }
     }
 
-    return { std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count(),
-        enqueued ? std::chrono::duration_cast<std::chrono::nanoseconds>(end_enqueue - begin_enqueue).count() : 0 };
+    uint64_t cost_p = diff(begin, end);
+    if (enqueued) {
+        return { cost_p, diff(begin_enqueue, end_enqueue), lock, critical, unlock };
+    } else {
+        return { cost_p, 0, 0, 0, 0 };
+    }
 }
 
 template<typename T>
@@ -832,6 +841,7 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
     }
 
     if (_buf.empty() && terminated()) {
+        lck.release();
         _mutex.unlock();
         return { -1, 0, 0, 0 };
     }
@@ -845,10 +855,10 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
         _not_full.notify_all();
     }
 
+    lck.release();
     begin_unlock = SteadyClock::now();
     _mutex.unlock();
     end_unlock = SteadyClock::now();
-    lck.release();
     return { i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
 }
 
@@ -877,30 +887,39 @@ NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
         _not_empty.notify_all();
     }
 
+    lck.release();
     begin_unlock = SteadyClock::now();
     _mutex.unlock();
     end_unlock = SteadyClock::now();
-    lck.release();
     return { i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
 }
 
 template<typename T>
 class Observer {
     struct Data {
-        uint64_t _cost_p;
-        uint64_t _cost_s;
+        uint64_t _cost_p = 0;
+        // uint64_t _cost_s;
+        uint64_t _cost_wl = 0;
+        uint64_t _cost_cc = 0;
+        uint64_t _cost_u = 0;
         uint64_t _iter;
-        uint64_t _wi;
+        uint64_t _wi = 0;
     };
 
     struct MapData {
         bool _producer;
         uint64_t* _work_times;
-        size_t _n_work;
+        size_t _n_work = 0;
         uint64_t* _push_times;
-        size_t _n_push;
-        uint64_t* _sync_times;
-        uint64_t _n_sync;
+        size_t _n_push = 0;
+        // uint64_t* _sync_times;
+        uint64_t* _lock_times, *_copy_times, *_unlock_times;
+        uint64_t _n_sync = 0;
+    };
+
+    struct CSData {
+        bool _producer;
+        std::vector<std::array<uint64_t, 3>> _data;
     };
 
     public:
@@ -919,10 +938,12 @@ class Observer {
 
         void add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time);
         void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
-        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t sync_time);
+        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time);
 
         void set_cost_s_size(size_t cost_s_size);
-        bool add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t sync_time);
+        bool add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
+
+        void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock);
 
         json serialize() const;
 
@@ -937,7 +958,8 @@ class Observer {
         uint64_t* _cost_p_times; */
 
         std::map<NaiveQueueImpl<T>*, MapData> _times;
-        std::map<NaiveQueueImpl<T>*, std::vector<uint64_t>> _cost_s;
+        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 3>>> _cost_s;
+        std::map<NaiveQueueImpl<T>*, CSData> _cs_data;
         /* std::chrono::time_point<std::chrono::steady_clock> _begin;
         unsigned long long _time;
         sem_t _reconfigure_sem; */
