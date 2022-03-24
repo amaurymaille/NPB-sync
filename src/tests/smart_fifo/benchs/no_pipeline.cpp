@@ -851,7 +851,7 @@ void producer(NaiveQueueImpl<int>* queue, Observer<int>* observer, int glob_loop
             // stream << push_time << "," << enqueue_time << "," << lock << "," << critical << "," << unlock << std::endl;
             observer->add_cost_p_cost_s_time(queue, push_time, lock, critical, unlock);
             observer->add_producer_time(queue, d);
-            observer->add_critical_section_data(queue, lock, critical, unlock);
+            // observer->add_critical_section_data(queue, lock, critical, unlock);
         }
     }
 
@@ -889,6 +889,95 @@ void producer(NaiveQueueImpl<int>* queue, Observer<int>* observer, int glob_loop
 }
 
 void consumer(NaiveQueueImpl<int>* queue, Observer<int>* observer, int glob_loops, int work_loops, int timed_loops) {
+    int i = 0;
+    int limit = queue->get_step() * timed_loops ;
+    for (; i < limit && i < glob_loops; ++i) {
+        auto [result, lock, critical, unlock] = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        if (critical) {
+            observer->add_critical_section_data(queue, lock, critical, unlock);
+        }
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        observer->add_consumer_time(queue, diff(begin, SteadyClock::now()));
+    }
+
+    // printf("Producer: first part OK\n");
+    while (true) {
+        auto [result, lock, critical, unlock] = queue->pop();
+        if (!result) {
+            break;
+        }
+
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+    }
+}
+
+void producer(NaiveQueueImpl<int64_t>* queue, Observer<int64_t>* observer, int glob_loops, int work_loops, int timed_loops) {
+    int i = 0;
+    // std::ostringstream stream;
+
+    // First batch
+    int limit = queue->get_step() * timed_loops;
+    for (; i < limit && i < glob_loops; ++i) {
+        TP begin = SteadyClock::now();
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+        auto d = diff(begin, SteadyClock::now());
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        auto [push_time, enqueue_time, lock, critical, unlock] = queue->timed_push((int64_t)i);
+        if (enqueue_time) {
+            // stream << push_time << "," << enqueue_time << "," << lock << "," << critical << "," << unlock << std::endl;
+            observer->add_cost_p_cost_s_time(queue, push_time, lock, critical, unlock);
+            observer->add_producer_time(queue, d);
+            // observer->add_critical_section_data(queue, lock, critical, unlock);
+        }
+    }
+
+    // stream << std::endl;
+
+    bool reconfigured = false;
+    int j = 0;
+    while (!reconfigured && i < glob_loops) {
+        for (volatile int k = 0; k < work_loops; ++k) {
+            ;
+        }
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        auto [push_time, enqueue_time, lock, critical, unlock] = queue->timed_push(i);
+        if (enqueue_time) {
+            // stream << push_time << "," << enqueue_time << "," << lock << "," << critical << "," << unlock << std::endl;
+            reconfigured = observer->add_cost_s_time(queue, lock, critical, unlock);
+        }
+        ++i;
+    }
+
+    for (; i < glob_loops; ++i) {
+        for (volatile int j = 0; j < work_loops; ++j) {
+            ;
+        }
+
+        /* StupidObject obj;
+        MakeStupidObject(obj); */
+        queue->push((int64_t)i);
+    }
+
+    // std::cout << stream.str() << std::endl;
+    queue->terminate();
+}
+
+void consumer(NaiveQueueImpl<int64_t>* queue, Observer<int64_t>* observer, int glob_loops, int work_loops, int timed_loops) {
     int i = 0;
     int limit = queue->get_step() * timed_loops ;
     for (; i < limit && i < glob_loops; ++i) {

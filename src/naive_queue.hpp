@@ -855,10 +855,10 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
         _not_full.notify_all();
     }
 
-    lck.release();
     begin_unlock = SteadyClock::now();
     _mutex.unlock();
     end_unlock = SteadyClock::now();
+    lck.release();
     return { i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
 }
 
@@ -974,6 +974,7 @@ class Observer {
         size_t _cost_s_size;
 
         unsigned int _best_step = 0;
+        unsigned int _second_best_step = 0;
         unsigned int _worst_avg = 0;
         std::vector<uint64_t> _cost_p;
         std::vector<uint64_t> _averages;

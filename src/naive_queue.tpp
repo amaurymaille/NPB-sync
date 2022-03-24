@@ -186,7 +186,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // auto select_avg = std::max(cons_avg, prod_avg);
             // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s) / (select_avg + _data._cost_p));
             // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s * _n_threads) / (worst_avg + _data._cost_p));
-            unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p + _data._wi));
+            unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
 
             for (auto& [queue, _]: _times) {
                 queue->prepare_reconfigure(best_step);
@@ -242,8 +242,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             std::cout << stream.str(); */
 
             uint64_t avg_cost_s = avg(cost_s.data(), cost_s.size());
-            unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p /* * _times.size() */ + _data._wi));
+            unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
             printf("Old = %d, new = %d\n", _best_step, best_step);
+            _second_best_step = best_step;
 
             /* for (auto& [queue, _]: _times) {
                 queue->prepare_reconfigure(best_step);
@@ -299,50 +300,68 @@ template<typename T>
 json Observer<T>::serialize() const {
     json result;
     result["best_step"] = _best_step;
+    result["best_step_p2"] = _second_best_step;
     result["worst_avg"] = _worst_avg;
     result["cost_p"] = _data._cost_p;
 
     json extra;
     extra["cost_p"] = _cost_p;
     extra["average"] = _averages;
-    
-    json cost_s = json::array();
-    json cost_s_p2 = json::array();
+
+    json cs_data = json::array();
     for (auto const& [queue, data]: _times) {
         if (data._producer) {
             json this_producer = json::array();
-            json this_producer_p2 = json::array();
-            /* for (int i = 0; i < data._n_sync; ++i) {
-                this_producer.push_back(data._sync_times[i]);
-            } */
-
-            /* for (uint64_t v_cost_s: _cost_s.find(queue)->second) {
-                this_producer_p2.push_back(v_cost_s);
-            } */
-            cost_s.push_back(this_producer);
-            cost_s_p2.push_back(this_producer_p2);
+            for (int i = 0; i < data._n_sync; ++i) {
+                json cs;
+                cs["lock"] = data._lock_times[i];
+                cs["cs"] = data._copy_times[i];
+                cs["unlock"] = data._unlock_times[i];
+                this_producer.push_back(cs);
+            }
+            cs_data.push_back(this_producer);
         }
     }
 
-    json cs_data = json::array();
+    json cs_data_p2 = json::array();
+    for (auto const& [queue, data]: _cost_s) {
+        json this_producer = json::array();
+        for (int i = 0; i < data.size(); ++i) {
+            for (auto [lock, copy, unlock]: data) {
+                json cs;
+                cs["lock"] = lock;
+                cs["cs"] = copy;
+                cs["unlock"] = unlock;
+                this_producer.push_back(cs);
+            }
+        }
+        cs_data_p2.push_back(this_producer);
+    }
+
+    json consumer_cs_data = json::array();
     for (auto const& [queue, data]: _cs_data) {
-        json this_producer;
-        this_producer["content"] = json::array();
-        this_producer["type"] = data._producer ? "producer":"consumer";
+        if (data._producer) {
+            continue;
+        }
+
+        json this_consumer;
+        this_consumer["content"] = json::array();
+        // this_consumer["type"] = data._producer ? "producer":"consumer";
         for (auto [lock, cs, unlock]: data._data) {
             json content;
             content["lock"] = lock;
             content["cs"] = cs;
             content["unlock"] = unlock;
-            this_producer["content"].push_back(content);
+            this_consumer["content"].push_back(content);
         }
 
-        cs_data.push_back(this_producer);
+        consumer_cs_data.push_back(this_consumer);
     }
+
+    extra["cs_data"] = cs_data;
+    extra["cs_data_p2"] = cs_data_p2;
+    extra["consumer_cs_daa"] = consumer_cs_data;
     
-    extra["cost_s"] = cost_s;
-    extra["cost_s_p2"] = cost_s_p2;
-    extra["critical"] = cs_data;
     result["extra"] = extra;
     return result;
 }

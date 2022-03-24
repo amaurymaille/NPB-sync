@@ -3,7 +3,7 @@
 #include "naive_queue.hpp"
 
 int main() {
-    {
+    /* {
         NaiveQueueImpl<int> queue(nullptr, 10, false, 0, 0);
         for (int i = 0; i < 10; ++i) {
             queue.push_local(i);
@@ -54,6 +54,12 @@ int main() {
         queue.dump();
         std::cout << "Resize 5: " << queue.resize(5) << std::endl;
         queue.dump();
+    } */
+
+    {
+        NaiveQueueImpl<int> queue(nullptr, 10, false, 0, 0);
+        
     }
+
     return 0;
 }
