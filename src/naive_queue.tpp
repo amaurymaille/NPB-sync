@@ -125,6 +125,23 @@ void Observer<T>::trigger_reconfigure(bool first) {
         return std::accumulate(arr + int(s * ignore), arr + int(s * (1 - ignore)), 0) / int(s * (1 - 2 * ignore));
     };
 
+    auto sorted_median = [](uint64_t* arr, size_t s) {
+        if (s % 2 == 0) {
+            return (arr[s / 2 - 1] + arr[s / 2]) / 2;
+        } else {
+            return arr[s / 2];
+        }
+    };
+
+    auto unsorted_median = [=](uint64_t* arr, size_t s) {
+        std::sort(arr, arr + s);
+        return sorted_median(arr, s);
+    };
+
+    auto quart = [=](uint64_t* arr, size_t s) {
+        return unsorted_median(arr, s / 2);
+    };
+
     /* auto avg_cost_s_fix = [](uint64_t* arr, size_t s, NaiveQueueImpl<T>* queue, uint64_t cost_p) {
         uint64_t sum = 0;
         for (int i = 0; i < s; ++i) {
@@ -174,9 +191,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             for (auto& [queue, data]: _times) {
                 if (data._producer) {
                     // costs_s.push_back(avg_cost_s_fix(data._sync_times, data._n_sync, queue, _data._cost_p));
-                    locks.push_back(avg(data._lock_times, data._n_sync, 0.1));
-                    unlocks.push_back(avg(data._unlock_times, data._n_sync, 0.1));
-                    copies.push_back(avg(data._copy_times, data._n_sync, 0.1));
+                    locks.push_back(quart(data._lock_times, data._n_sync));
+                    unlocks.push_back(quart(data._unlock_times, data._n_sync));
+                    copies.push_back(quart(data._copy_times, data._n_sync));
                 }
             }
 
