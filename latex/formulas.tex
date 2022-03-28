@@ -1,0 +1,90 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{fullpage}
+\usepackage{eufrak}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\tt\footnotesize,
+  frame=single
+}
+
+\begin{document}
+
+\pagenumbering{arabic}
+
+\paragraph{Code structure} MWE.
+
+\begin{lstlisting}[language=c,numbers=left,tabsize=2]
+void producer(NaiveQueueImpl<int64_t>* queue, Observer<int64_t>* observer) {
+  for (uint64_t i = 0; i < I; ++i) {
+    int64_t value = 0;
+    for (volatile int j = 0; j < work_limit(); ++j)
+      ;
+    queue->push(value);
+  }
+
+  queue->terminate();
+}
+
+void consumer(NaiveQueueImpl<int64_t>* queue) {
+  while (true) {
+    std::optional<int64_t> value = queue->pop();
+    if (!value)
+      break;
+
+    for (volatile int j = 0; j < work_limit(); ++j)
+      ;
+  }
+}
+\end{lstlisting}
+
+\paragraph{Notations}
+
+\begin{itemize}
+    \item $ I $ is the total number of iterations
+    \item $ CostP $ is the time required to perform a local push / a local pull
+    \item $ W_i $ is the amount of work performed by thread $ i $
+    \item $ S $ is a given step
+    \item $ N_p $ is the amount of producers
+    \item $ N_c $ is the amount of consumers
+    \item $ N $ is the total number of threads ($ N = N_p + N_c $)
+    \item $ CostS $ is the time taken to perform a synchronization, minus the time spent in the critical section itself
+    \item $ CostCC $ is the time spent in the critical section itself
+\end{itemize}
+
+\paragraph{Execution time}
+Execution time is roughly:
+
+    $ time(S) = W_i * I + CostP * I + \frac{I}{S} * (CostCC + CostS) + S * (W_i + CostP) + (N - 1) * (CostS + CostP * S) $
+\medskip
+
+\paragraph{Validity of previous formula}
+The above formula is valid under the assumption that $ W_i $ respects the following inequation : 
+
+    $ valid(S) = W_i \geq \frac{(N - 1) * (CostCC + CostS)}{S} - CostP $
+
+\paragraph{CostCC estimation}
+
+CostCC may be estimated based on the value of $ S $. In general :
+
+$ CostCC(S) = \alpha * \frac{S}{ln(S) + \beta} $
+
+First approximation : $ \alpha \approx 6.5 $.
+
+\subparagraph{Alpha estimation}
+
+\begin{enumerate}
+    \item Fixate a value for $ \beta $
+    \item Select a step $ S $
+    \item $ \alpha = \frac{CostCC(S) * ln(S) + \beta}{S} $
+\end{enumerate}
+
+\end{document}
