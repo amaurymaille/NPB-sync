@@ -19,7 +19,7 @@ Observer<T>::Observer(uint64_t cost_sync, uint64_t iter, int n_threads) :
 
 template<typename T>
 Observer<T>::~Observer() {
-    std::cout << "Found best step = " << _best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
+    std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
 }
 
 /* template<typename T>
@@ -120,8 +120,9 @@ void Observer<T>::measure() {
 template<typename T>
 void Observer<T>::trigger_reconfigure(bool first) {
     std::unique_lock<std::mutex> lck(_m);
-    auto avg = [](uint64_t* arr, size_t s) {
-        return std::accumulate(arr, arr + s, 0) / s;
+    auto avg = [](uint64_t* arr, size_t s, float ignore = 0) {
+        std::sort(arr, arr + s);
+        return std::accumulate(arr + int(s * ignore), arr + int(s * (1 - ignore)), 0) / int(s * (1 - 2 * ignore));
     };
 
     /* auto avg_cost_s_fix = [](uint64_t* arr, size_t s, NaiveQueueImpl<T>* queue, uint64_t cost_p) {
@@ -146,7 +147,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
                 return result;
             }
         })) {
-            printf("Reconfiguration (first)\n");
+            // printf("Reconfiguration (first)\n");
             // sem_post(&_reconfigure_sem);
             std::vector<uint64_t> cost_p;
             cost_p.reserve(_times.size());
@@ -173,9 +174,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             for (auto& [queue, data]: _times) {
                 if (data._producer) {
                     // costs_s.push_back(avg_cost_s_fix(data._sync_times, data._n_sync, queue, _data._cost_p));
-                    locks.push_back(avg(data._lock_times, data._n_sync));
-                    unlocks.push_back(avg(data._unlock_times, data._n_sync));
-                    copies.push_back(avg(data._copy_times, data._n_sync));
+                    locks.push_back(avg(data._lock_times, data._n_sync, 0.1));
+                    unlocks.push_back(avg(data._unlock_times, data._n_sync, 0.1));
+                    copies.push_back(avg(data._copy_times, data._n_sync, 0.1));
                 }
             }
 
@@ -194,7 +195,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // _consumer->prepare_reconfigure(best_step);
             // _producer->prepare_reconfigure(best_step);
 
-            printf("Iter = %lu, CostS = (%lu, %lu, %lu), CostP = %lu, Times.size() = %lu, Wi = %lu, Step = %lu\n", _data._iter, _data._cost_wl, _data._cost_cc, _data._cost_u, _data._cost_p, _times.size(), _data._wi, best_step);
+            // printf("Iter = %lu, CostS = (%lu, %lu, %lu), CostP = %lu, Times.size() = %lu, Wi = %lu, Step = %lu\n", _data._iter, _data._cost_wl, _data._cost_cc, _data._cost_u, _data._cost_p, _times.size(), _data._wi, best_step);
             _best_step = best_step;
             _worst_avg = worst_avg;
 
@@ -214,7 +215,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             return true;
         })) {
-            printf("Reconfiguration (second)\n");
+            // printf("Reconfiguration (second)\n");
             _reconfigured_twice = true;
             std::vector<uint64_t> cost_s(_cost_s.size());
             // std::ostringstream stream;
@@ -243,7 +244,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             uint64_t avg_cost_s = avg(cost_s.data(), cost_s.size());
             unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
-            printf("Old = %d, new = %d\n", _best_step, best_step);
+            // printf("Old = %d, new = %d\n", _best_step, best_step);
             _second_best_step = best_step;
 
             /* for (auto& [queue, _]: _times) {
@@ -312,7 +313,7 @@ json Observer<T>::serialize() const {
     for (auto const& [queue, data]: _times) {
         if (data._producer) {
             json this_producer = json::array();
-            for (int i = 0; i < data._n_sync; ++i) {
+            for (int i = int(data._n_sync * 0.1); i < int(data._n_sync * 0.9); ++i) {
                 json cs;
                 cs["lock"] = data._lock_times[i];
                 cs["cs"] = data._copy_times[i];
