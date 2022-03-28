@@ -87,4 +87,10 @@ First approximation : $ \alpha \approx 6.5 $.
     \item $ \alpha = \frac{CostCC(S) * ln(S) + \beta}{S} $
 \end{enumerate}
 
+\paragraph{Finding the optimal step}
+
+$ time'(S) = W_i + N * CostP - \frac{I * CostS}{S^2} $
+
+$ time'(S) = 0 \equiv S = \sqrt{\frac{I * CostS}{N * CostP + Wi}} $
+
 \end{document}
