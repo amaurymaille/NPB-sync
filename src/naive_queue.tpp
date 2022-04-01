@@ -250,11 +250,13 @@ void Observer<T>::trigger_reconfigure(bool first) {
                 // cost_s.push_back(average);
                 // stream << average << std::endl;
 
-                uint64_t averg = 0;
+                std::vector<uint64_t> s;
                 for (auto [lock, critical, unlock]: v) {
-                    averg += lock + unlock;
+                    // averg += lock + unlock;
+                    s.push_back(lock + unlock);
                 }
-                cost_s.push_back(averg / v.size());
+                // cost_s.push_back(averg / v.size());
+                cost_s.push_back(unsorted_median(s.data(), s.size()));
             }
             /* stream << std::endl;
             std::cout << stream.str(); */
@@ -264,9 +266,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // printf("Old = %d, new = %d\n", _best_step, best_step);
             _second_best_step = best_step;
 
-            /* for (auto& [queue, _]: _times) {
+            for (auto& [queue, _]: _times) {
                 queue->prepare_reconfigure(best_step);
-            } */
+            }
         }
     }
 }
