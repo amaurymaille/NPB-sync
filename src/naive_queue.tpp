@@ -23,6 +23,14 @@ Observer<T>::Observer(uint64_t iter, int n_threads) :
 template<typename T>
 Observer<T>::~Observer() {
     std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
+
+    for (auto& [queue, data]: _times) {
+        free(data._work_times);
+        free(data._push_times);
+        free(data._lock_times);
+        free(data._unlock_times);
+        free(data._copy_times);
+    }
 }
 
 template<typename T>

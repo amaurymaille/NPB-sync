@@ -321,6 +321,7 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 
     //shutdown
     args._output_fifos[0]->terminate();
+    printf("%d\n", push_count);
 }
 
 void DeduplicateNaiveQueue(thread_args_naive const& args) {
@@ -738,8 +739,12 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     };
 
     auto coarse_fine = [&data]() -> std::tuple<int, int> {
-        std::ifstream stream(data._input_filename, std::ios::in | std::ios::binary);
-        return { 0, 0 };
+        /* std::ifstream stream(data._input_filename, std::ios::in | std::ios::binary);
+        return { 0, 0 }; */
+        struct stat sb;
+        stat(data._input_filename.c_str(), &sb);
+        return { sb.st_size / MAXBUF, 190000 };
+        // return { sb.st_size / MAXBUF, sb.st_size / MAXBUF * 
     };
 
     auto [coarse, fine] = coarse_fine();
