@@ -589,7 +589,7 @@ class NaiveQueueMaster {
 
         void delayed_init(size_t size, int n_producers) {
             _buf.delayed_init(size);
-            _n_producers = _n_producers;
+            _n_producers = n_producers;
             _n_terminated = 0;
         }
 

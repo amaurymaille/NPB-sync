@@ -167,6 +167,10 @@ unsigned int LayerData::get_producing_threads(int thread_id) const {
         if (thread_data._outputs.find(thread_id) != thread_data._outputs.end()) {
             ++total;
         }
+
+        if (thread_data._extras.find(thread_id) != thread_data._extras.end()) {
+            ++total;
+        }
     }
 
     return total;

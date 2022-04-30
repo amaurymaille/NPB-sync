@@ -763,6 +763,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
             dedupcompress_to_reorder[i].delayed_init(500000, data.get_producing_threads(*iter));
             compress_observers[i].delayed_init(500000, data.get_interacting_threads(*iter));
+            all_observers.push_back(compress_observers + i);
         }
 
         iter = sreorder.begin();
@@ -904,6 +905,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         obs->set_cost_s_size(50);
     }
 
+    std::cout << "Starting runners" << std::endl;
     for (Runner& runner: runners) {
         runner();
     }
@@ -941,7 +943,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         delete[] args;
     };
 
-    // pthread_barrier_wait(&barrier);
+    pthread_barrier_wait(&barrier);
 
     begin = sc::now();
 
