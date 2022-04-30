@@ -30,14 +30,26 @@ unsigned long long diff(TP const& begin, TP const& end) {
 }
 
 template<typename T>
+class NaiveQueueMaster;
+
+template<typename T>
 class NaiveQueueImpl;
+
+template<typename T>
+class Observer;
 
 template<typename T>
 class Ringbuffer {
     public:
         friend NaiveQueueImpl<T>;
 
+        Ringbuffer() { }
+
         Ringbuffer(size_t size) {
+            init(size);
+        }
+
+        void delayed_init(size_t size) {
             init(size);
         }
 
@@ -165,7 +177,7 @@ class NaiveQueue {
 
         inline int enqueue(Ringbuffer<T>* buf, int limit) __attribute__ ((always_inline)) {
             std::unique_lock<std::mutex> lck(_mutex);
-            printf("_buf._n_elements = %d\n", _buf.n_elements());
+            printf("_buf._n_elements = %lu\n", _buf.n_elements());
             while (_buf.full()) {
                 _not_full.wait(lck);
             }
@@ -215,14 +227,23 @@ class NaiveQueueMaster;
  */
 template<typename T>
 class NaiveQueueImpl {
+    friend class Observer<T>;
+    friend class NaiveQueueMaster<T>;
+
     public:
         NaiveQueueImpl(NaiveQueueMaster<T>* master, size_t size, bool reconfigure, 
-                unsigned int threshold, unsigned int new_step) : 
-            _master(master), _reconfigure(reconfigure), 
-            _threshold(threshold), _new_step(new_step) {
+                unsigned int threshold, unsigned int new_step, unsigned int samples_first, 
+                unsigned int samples_second) {
+            _master = master; 
+            _reconfigure = reconfigure;
+            _threshold = threshold;
+            _new_step = new_step;
+            _samples_second = samples_second;
+            _sync_limit = samples_first;
             _reconfigured.store(false, std::memory_order_relaxed);
             _need_reconfigure.store(false, std::memory_order_relaxed);
             _begin = std::chrono::steady_clock::now();
+            _observer_fn = &NaiveQueueImpl<T>::add_observer_time_first_reconfiguration;
             init(size, new_step);
         }
 
@@ -239,10 +260,130 @@ class NaiveQueueImpl {
             return _head == (_tail - 1 + _size) % _size;
         }
 
-        inline void shared_transfer(Ringbuffer<T>& _buf, int limit) __attribute__((always_inline));
-
         inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> 
             pop() __attribute__((always_inline));
+
+        typedef std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> TimingData;
+
+        // Do not time anything
+        inline void push(T const& data) __attribute__((always_inline));
+        // Time everything
+        inline TimingData timed_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
+        // Time only if there are still observable synchronizations to be
+        // performed.
+        inline std::optional<TimingData> generic_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
+
+        size_t n_elements() const {
+            return _n_elements;
+        }
+
+        void terminate() {
+            while (!empty()) {
+                _master->enqueue(this, _size - 1);
+            }
+            _master->terminate();
+        }
+
+        void dump() {
+            for (int i = _tail; i != _head; ) {
+                std::cout << i << " => " << _data[i] << std::endl;
+                ++i;
+                if (i == _size) {
+                    i = 0;
+                }
+            }
+            std::cout << "_head = " << _head << ", _tail = " << _tail << std::endl;
+        }
+
+        size_t get_step() const {
+            return _size - 1;
+        }
+
+        void set_sync_limit(unsigned int limit) {
+            _sync_limit = limit;
+        }
+
+        void reset_sync_count() {
+            _sync_count = 0;
+        }
+
+        const void* const get_master() const {
+            return _master;
+        }
+
+    private:
+        T* _data;
+        size_t _n_elements;
+        size_t _size;
+        int _head, _tail;
+        NaiveQueueMaster<T>* _master;
+        std::chrono::time_point<std::chrono::steady_clock> _begin;
+
+        // New step. Used both in manual and automatic reconfiguration.
+        // Not atomic, but needs to be written before _need_reconfigure is set to true, 
+        // in order for memory_order_acquire to cause the new value to be visible.
+        unsigned int _new_step;
+
+        /// Automatic reconfiguration
+
+        // Do we need to perform a reconfiguration ?
+        std::atomic<bool> _need_reconfigure;
+        // Was the reconfiguration done ?
+        std::atomic<bool> _reconfigured;
+        // How many synchronization must be observed ?
+        unsigned int _sync_limit = 0;
+        // How many synchronization have been observed ?
+        unsigned int _sync_count = 0;
+        // How many synchronizations for the second reconfiguration ?
+        unsigned int _samples_second;
+
+        typedef void (NaiveQueueImpl<T>::*AddObserverTimeFn)(Observer<T>*, uint64_t, uint64_t, uint64_t, uint64_t);
+
+        AddObserverTimeFn _observer_fn;
+
+        void add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t);
+        void add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t);
+
+        /// Manual reconfiguration
+
+        // Do we trigger a manually configured reconfiguration ?
+        bool _reconfigure;
+        // If so, when?
+        unsigned int _threshold;
+        // How many items have been extracted from / inserted into the shared FIFO
+        // Must be used in a single direction (in other word, a NaiveQueue cannot 
+        // be used both as a producer and a consumer).
+        unsigned int _processed = 0;
+        // Whether the size has been changed (threshold reached) or not.
+        bool _changed = false;
+
+        void init(size_t size, size_t new_size) {
+            // _data = static_cast<T*>(malloc(sizeof(T) * (std::max(size, new_size) + 1)));
+            _data = static_cast<T*>(malloc(sizeof(T) * 1000000));
+            // printf("data = %p\n", _data);
+            _size = size + 1;
+            _head = _tail = _n_elements = 0;
+
+            if (_data == nullptr) {
+                throw std::runtime_error("Not enough memory");
+            }
+        }
+
+        inline bool push_local(T const& data) __attribute__((always_inline)) {
+            if (full()) {
+                // std::cout << "[Push local] Full" << std::endl;
+                return false;
+            }
+
+            _data[_head] = data;
+            _head++;
+            if (_head == _size) {
+                _head = 0;
+            }
+
+            ++_n_elements;
+            return true;
+        }
 
         inline std::optional<T> pop_local() __attribute__((always_inline)) {
             if (empty()) {
@@ -261,28 +402,7 @@ class NaiveQueueImpl {
 
         }
 
-        inline void push(T const& data) __attribute__((always_inline));
-        inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> timed_push(T const& data) __attribute__((always_inline));
-
-        inline bool push_local(T const& data) __attribute__((always_inline)) {
-            if (full()) {
-                // std::cout << "[Push local] Full" << std::endl;
-                return false;
-            }
-
-            _data[_head] = data;
-            _head++;
-            if (_head == _size) {
-                _head = 0;
-            }
-
-            ++_n_elements;
-            return true;
-        }
-
-        size_t n_elements() const {
-            return _n_elements;
-        }
+        inline void shared_transfer(Ringbuffer<T>& _buf, int limit) __attribute__((always_inline));
 
         void reinit(size_t size) {
             free(_data);
@@ -440,87 +560,24 @@ class NaiveQueueImpl {
             return true;
         }
 
-        void terminate() {
-            while (!empty()) {
-                _master->enqueue(this, _size - 1);
-            }
-            _master->terminate();
-        }
-
-        void dump() {
-            for (int i = _tail; i != _head; ) {
-                std::cout << i << " => " << _data[i] << std::endl;
-                ++i;
-                if (i == _size) {
-                    i = 0;
-                }
-            }
-            std::cout << "_head = " << _head << ", _tail = " << _tail << std::endl;
+        bool was_reconfigured() const {
+            return _reconfigured.load(std::memory_order_acquire);
         }
 
         void prepare_reconfigure(size_t size) {
             _new_step = size;
             _need_reconfigure.store(true, std::memory_order_release);
         }
-
-        size_t get_step() const {
-            return _size - 1;
-        }
-
-        bool was_reconfigured() const {
-            return _reconfigured.load(std::memory_order_acquire);
-        }
-
-    private:
-        T* _data;
-        size_t _n_elements;
-        size_t _size;
-        int _head, _tail;
-        NaiveQueueMaster<T>* _master;
-        std::chrono::time_point<std::chrono::steady_clock> _begin;
-
-        // New step. Used both in manual and automatic reconfiguration.
-        // Not atomic, but needs to be written before _need_reconfigure is set to true, 
-        // in order for memory_order_acquire to cause the new value to be visible.
-        unsigned int _new_step;
-
-        /// Automatic reconfiguration
-
-        // Do we need to perform a reconfiguration ?
-        std::atomic<bool> _need_reconfigure;
-        // Was the reconfiguration done ?
-        std::atomic<bool> _reconfigured;
-
-
-        /// Manual reconfiguration
-
-        // Do we trigger a manually configured reconfiguration ?
-        bool _reconfigure;
-        // If so, when?
-        unsigned int _threshold;
-        // How many items have been extracted from / inserted into the shared FIFO
-        // Must be used in a single direction (in other word, a NaiveQueue cannot 
-        // be used both as a producer and a consumer).
-        unsigned int _processed = 0;
-        // Whether the size has been changed (threshold reached) or not.
-        bool _changed = false;
-
-        void init(size_t size, size_t new_size) {
-            // _data = static_cast<T*>(malloc(sizeof(T) * (std::max(size, new_size) + 1)));
-            _data = static_cast<T*>(malloc(sizeof(T) * 1000000));
-            // printf("data = %p\n", _data);
-            _size = size + 1;
-            _head = _tail = _n_elements = 0;
-
-            if (_data == nullptr) {
-                throw std::runtime_error("Not enough memory");
-            }
-        }
 };
+
+template<typename T>
+using TimingData = typename NaiveQueueImpl<T>::TimingData;
 
 template<typename T>
 class NaiveQueueMaster {
     public:
+        NaiveQueueMaster() { }
+
         NaiveQueueMaster(size_t size, int n_producers) : _buf(size) {
             _n_producers = n_producers;
             _n_terminated = 0;
@@ -528,6 +585,12 @@ class NaiveQueueMaster {
 
         ~NaiveQueueMaster() {
 
+        }
+
+        void delayed_init(size_t size, int n_producers) {
+            _buf.delayed_init(size);
+            _n_producers = _n_producers;
+            _n_terminated = 0;
         }
 
         void terminate() {
@@ -601,12 +664,13 @@ inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl
 }
 
 template<typename T>
-inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(T const& data) {
+inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) {
     std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
     push_local(data);
     std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
     std::chrono::time_point<std::chrono::steady_clock> begin_enqueue; 
     std::chrono::time_point<std::chrono::steady_clock> end_enqueue;
+    uint64_t cost_p = diff(begin, end);
     uint64_t lock, critical, unlock;
     bool enqueued = false;
 
@@ -620,6 +684,8 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
         auto [count, _lock, _critical, _unlock] = _master->enqueue(this, _size - 1);
         lock = _lock; critical = _critical; unlock = _unlock;
         end_enqueue = std::chrono::steady_clock::now();
+
+        (this->*_observer_fn)(observer, cost_p, lock, critical, unlock);
 
         if (_reconfigure && !_changed) {
             unsigned int consumed = amount - n_elements();
@@ -638,6 +704,14 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
                 }
             }
         }
+
+        if (_sync_count == _sync_limit) {
+            if (!_reconfigured.load(std::memory_order_relaxed)) {
+                _observer_fn = &NaiveQueueImpl<T>::add_observer_time_second_reconfiguration;
+                _sync_count = 0;
+                _sync_limit = _samples_second;
+            }
+        }
     }
 
     if (_need_reconfigure.load(std::memory_order_acquire)) {
@@ -652,7 +726,6 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
         }
     }
 
-    uint64_t cost_p = diff(begin, end);
     if (enqueued) {
         return { cost_p, diff(begin_enqueue, end_enqueue), lock, critical, unlock };
     } else {
@@ -699,6 +772,16 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
         } else {
             // printf("Error while resizing %p\n", this);
         }
+    }
+}
+
+template<typename T>
+inline std::optional<TimingData<T>> NaiveQueueImpl<T>::generic_push(Observer<T>* observer, T const& data) {
+    if (_sync_count < _sync_limit) {
+        return std::make_optional<TimingData>(timed_push(observer, data));
+    } else {
+        push(data);
+        return std::nullopt;
     }
 }
 
@@ -827,6 +910,7 @@ inline void NaiveQueueImpl<T>::shared_transfer(Ringbuffer<T>& buffer, int limit)
     buffer._n_elements += hard_limit;
 }
 
+
 template<typename T>
 inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
 NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
@@ -923,8 +1007,17 @@ class Observer {
     };
 
     public:
-        Observer(uint64_t cost_sync, uint64_t iter_prod, int n_threads);
+        enum class CostSState {
+            NOT_RECONFIGURED,
+            RECONFIGURED,
+            TRIGGERED
+        };
+
+        Observer();
+        Observer(uint64_t iter_prod, int n_threads);
         ~Observer();
+
+        void delayed_init(uint64_t iter_prod, int n_threads);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -936,13 +1029,23 @@ class Observer {
         void set_cons_size(size_t cons_size);
         void set_cost_p_cost_s_size(size_t cost_p_cost_s_size);
 
+        // Time required to produce one element
         void add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time);
+        // Time required to consume one element
         void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
+        // Time required to insert an element in the local buffer (cost_p) and 
+        // times required to perform the synchronization. lock_time = time 
+        // spent waiting on the lock + locking, copy_time = time necessary to
+        // transfer from local buffer to shared buffer, unlock_time = time
+        // spent unlocking the mutex.
         void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time);
 
         void set_cost_s_size(size_t cost_s_size);
-        bool add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
+        // Time required to perform the synchronization, only used during the
+        // second reconfiguration.
+        CostSState add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
 
+        // Debug data about synchronization. Serialization outputs this.
         void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock);
 
         json serialize() const;
@@ -990,5 +1093,26 @@ class Observer {
 
         int _n_threads;
 };
+
+template<typename T>
+void NaiveQueueImpl<T>::add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t cost_p, uint64_t lock, uint64_t critical, uint64_t unlock) {
+    ++_sync_count;
+    observer->add_cost_p_cost_s_time(this, cost_p, lock, critical, unlock);
+}
+
+template<typename T>
+void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t lock, uint64_t critical, uint64_t unlock) {
+    switch (observer->add_cost_s_time(this, lock, critical, unlock)) {
+        case Observer<T>::CostSState::NOT_RECONFIGURED:
+        case Observer<T>::CostSState::RECONFIGURED:
+            return;
+
+        case Observer<T>::CostSState::TRIGGERED:
+            // printf("FIFO ready for second reconfiguration\n");
+            _sync_count = _sync_limit;
+            return;
+    }
+}
+
 
 #include "naive_queue.tpp"

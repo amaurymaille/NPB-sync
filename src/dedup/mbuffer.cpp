@@ -287,7 +287,7 @@ int mbuffer_split(mbuffer_t *m1, mbuffer_t *m2, size_t split) {
 #endif //ENABLE_PTHREADS
 
   //split buffer
-  m2->ptr = m1->ptr+split;
+  m2->ptr = (char*)m1->ptr + split;
   m2->n = m1->n-split;
   m2->mcb = m1->mcb;
   m1->n = split;

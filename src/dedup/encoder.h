@@ -12,5 +12,6 @@ struct DedupData;
 // std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData&);
 unsigned long long EncodeSmart(DedupData&);
 unsigned long long EncodeDefault(DedupData&);
+unsigned long long EncodeNaiveQueue(DedupData&);
 
 #endif /* !_ENCODER_H_ */

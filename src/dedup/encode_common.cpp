@@ -341,8 +341,8 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, in
         exit(1);
     }
     
-    int init_res = mbuffer_system_init();
-    assert(!init_res);
+    /* int init_res = */ mbuffer_system_init();
+    // assert(!init_res);
 
     /* src file stat */
     if (stat(data._input_filename.c_str(), &filestat) < 0)
@@ -405,14 +405,16 @@ unsigned long long EncodeBase(DedupData& data, std::function<void(DedupData&, in
     if (!data._input_filename.empty())
         close(fd);
 
-    int des_res = mbuffer_system_destroy();
-    assert(!des_res);
+    /* int des_res = */ mbuffer_system_destroy();
+    // assert(!des_res);
 
     hashtable_destroy(cache, TRUE);
 
     return diff;
 }
 
+// Given the informations on a Layer, uniquify the ids of the output FIFOs
+// in the result set.
 void compute_fifo_ids_for_layer(std::set<int>& fifo_ids, LayerData const& data) {
     for (ThreadData const& thread_data: data._thread_data) {
         for (auto const& [fifo_id, fifo_data]: thread_data._outputs) {

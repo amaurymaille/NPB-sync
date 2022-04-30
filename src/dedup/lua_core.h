@@ -23,6 +23,8 @@ enum Compressions {
 enum class FIFORole;
 enum class FIFOReconfigure;
 
+// General data regarding a FIFO, set on the shared buffer and 
+// replicated on local buffers.
 struct FIFOData {
     unsigned int _min = 1;
     unsigned int _n = 1;
@@ -44,6 +46,11 @@ struct FIFOData {
     FIFOData duplicate();
 };
 
+// The input, output and extra FIFOs of a thread. Internal IDs used are those 
+// of the shared buffers, i.e. an input FIFO of 1 refers to a shared FIFO with
+// an ID of 1.
+//
+// Push functions operate on shared FIFOs IDs.
 struct ThreadData {
     std::map<int, FIFOData> _inputs;
     std::map<int, FIFOData> _outputs;
@@ -56,10 +63,14 @@ struct ThreadData {
     void push_extra(int fifo_id, FIFOData const& data);
 };
 
+// The input, output and extra FIFOs on a layer. Stores the data for each thread that 
+// will run on this layer.
 struct LayerData {
     std::vector<ThreadData> _thread_data;
     void push(ThreadData const& data);
     unsigned int get_total_threads() const;
+    unsigned int get_producing_threads(int fifo_id) const;
+    unsigned int get_interacting_threads(int fifo_id) const;
 };
 
 class DedupData {
@@ -74,14 +85,18 @@ public:
     unsigned long long run_orig();
     // unsigned long long run_mutex();
     unsigned long long run_smart();
+    unsigned long long run_auto();
     void push_layer_data(Layers layer, LayerData const& data);
     void dump(); 
     void validate();
 
     unsigned int get_total_threads() const;
+    unsigned int get_producing_threads(int fifo_id) const;
+    unsigned int get_interacting_threads(int fifo_id) const;
 
     unsigned int new_fifo();
 
+    // Maps each Layer to its input / output / extra FIFOs 
     std::map<Layers, LayerData> _layers_data;
     std::map<unsigned int, FIFOData> _fifo_data;
 private:

@@ -78,6 +78,7 @@ struct CLIArgs {
     char _lua_output_file_mode;
     bool _orig;
     bool _smart;
+    bool _auto;
     std::optional<std::string> _output;
 };
 
@@ -88,6 +89,7 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         ("file,f", po::value<std::string>(), "Name of the Lua file to run")
         ("orig,o",  "Run the original algorithm")
         ("smart,s", "Run the smart FIFO algorithm")
+        ("auto,a", "Run the auto reconfiguration algorithm")
         ("lua-output-file", po::value<std::string>(), "Output file in which the Lua script can write its information")
         ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')")
         ("output", po::value<std::string>(), "Output file in which the program will write the compressed output");
@@ -120,6 +122,12 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         args._smart = true;
     } else {
         args._smart = false;
+    }
+
+    if (vm.count("auto")) {
+        args._auto = true;
+    } else {
+        args._auto = false;
     }
 
     if (vm.count("lua-output-file")) {
@@ -179,6 +187,7 @@ void start_sol(CLIArgs const& args) {
     modes["orig"] = args._orig;
     // modes["mutex"] = args._mutex;
     modes["smart"] = args._smart;
+    modes["auto"] = args._auto;
     lua["Modes"] = modes;
 
     sol::table debug_output = lua.create_table_with();
@@ -198,6 +207,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["run_orig"] = &DedupData::run_orig;
     // dedup_data_type["run_mutex"] = &DedupData::run_mutex;
     dedup_data_type["run_smart"] = &DedupData::run_smart;
+    dedup_data_type["run_auto"] = &DedupData::run_auto;
     dedup_data_type["push_layer"] = &DedupData::push_layer_data;
 
     sol::usertype<LayerData> layer_datatype = lua.new_usertype<LayerData>("LayerData");
@@ -228,7 +238,9 @@ void start_sol(CLIArgs const& args) {
         lua["output"] = *args._output;
     }
 
+    std::cout << "Running lua script file" << std::endl;
     lua.script_file(args._lua_file);
+    std::cout << "Done running lua script file" << std::endl;
 }
 
 /* ReorderData* reorder_data;
@@ -441,6 +453,7 @@ int main(int argc, char** argv) {
   __parsec_bench_end();
 #endif
 
+  std::cout << "End" << std::endl;
   return 0;
 }
 

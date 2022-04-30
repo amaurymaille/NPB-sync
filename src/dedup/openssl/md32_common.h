@@ -165,7 +165,7 @@ extern "C" {
    * 					<appro@fy.chalmers.se>
    */
 #  if defined(__i386) || defined(__i386__) || defined(__x86_64) || defined(__x86_64__)
-#   define ROTATE(a,n)	({ register unsigned int ret;	\
+#   define ROTATE(a,n)	({ /* register */ unsigned int ret;	\
 				asm (			\
 				"roll %1,%0"		\
 				: "=r"(ret)		\

@@ -9,7 +9,10 @@
 #include <tuple>
 
 template<typename T>
-Observer<T>::Observer(uint64_t cost_sync, uint64_t iter, int n_threads) : 
+Observer<T>::Observer() { }
+
+template<typename T>
+Observer<T>::Observer(uint64_t iter, int n_threads) : 
     _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads) {
     // _data._cost_p = cost_push;
     // _data._cost_s = cost_sync;
@@ -20,6 +23,13 @@ Observer<T>::Observer(uint64_t cost_sync, uint64_t iter, int n_threads) :
 template<typename T>
 Observer<T>::~Observer() {
     std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
+}
+
+template<typename T>
+void Observer<T>::delayed_init(uint64_t iter, int n_threads) {
+    _prod_size = _cons_size = _cost_p_cost_s_size = 0;
+    _n_threads = n_threads;
+    _data._iter = iter;
 }
 
 /* template<typename T>
@@ -400,7 +410,7 @@ void Observer<T>::set_cost_s_size(size_t cost_s_size) {
 }
 
 template<typename T>
-bool Observer<T>::add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
+typename Observer<T>::CostSState Observer<T>::add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
     if (producer->was_reconfigured()) {
         if (_cost_s.find(producer) == _cost_s.end()) {
             throw std::runtime_error("Non mais là...");
@@ -418,11 +428,13 @@ bool Observer<T>::add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, ui
         if (_cost_s[producer].size() == _cost_s_size) {
             // printf("Producer P2 OK\n");
             trigger_reconfigure(false);
-            return true;
+            return CostSState::TRIGGERED;
         }
+
+        return CostSState::RECONFIGURED;
     }
 
-    return false;
+    return CostSState::NOT_RECONFIGURED;
 }
 
 template<typename T>

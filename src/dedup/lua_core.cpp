@@ -109,6 +109,13 @@ unsigned long long DedupData::run_smart() {
     return duration;
 }
 
+unsigned long long DedupData::run_auto() {
+    std::cout << "Running auto" << std::endl;
+    validate();
+    auto duration = EncodeNaiveQueue(*this);
+    return duration;
+}
+
 /* void DedupData::process_timestamp_data(std::vector<Globals::SmartFIFOTSV> const& data) {
     std::map<SmartFIFOImpl<chunk_t*>*, std::map<Globals::SteadyTP, std::tuple<SmartFIFO<chunk_t*>*, Globals::Action, size_t>>> processed_data;
     for (Globals::SmartFIFOTSV const& vec: data) {
@@ -154,10 +161,58 @@ unsigned int LayerData::get_total_threads() const {
     return _thread_data.size();
 }
 
+unsigned int LayerData::get_producing_threads(int thread_id) const {
+    unsigned int total = 0;
+    for (ThreadData const& thread_data: _thread_data) {
+        if (thread_data._outputs.find(thread_id) != thread_data._outputs.end()) {
+            ++total;
+        }
+    }
+
+    return total;
+}
+
+unsigned int LayerData::get_interacting_threads(int fifo_id) const {
+    unsigned int total = 0;
+    auto count = [&fifo_id](std::map<int, FIFOData> const& m) -> int {
+        if (m.find(fifo_id) != m.end()) {
+            return 1;
+        }
+
+        return 0;
+    };
+
+    for (ThreadData const& thread_data: _thread_data) {
+        total += count(thread_data._inputs);
+        total += count(thread_data._outputs);
+        total += count(thread_data._extras);
+    }
+
+    return total;
+}
+
 unsigned int DedupData::get_total_threads() const {
     unsigned int total = 0;
     for (auto const& [_, data]: _layers_data) {
         total += data.get_total_threads();
+    }
+
+    return total;
+}
+
+unsigned int DedupData::get_producing_threads(int thread_id) const {
+    unsigned int total = 0;
+    for (auto const &[_, layer_data]: _layers_data) {
+        total += layer_data.get_producing_threads(thread_id);
+    }
+
+    return total;
+}
+
+unsigned int DedupData::get_interacting_threads(int fifo_id) const {
+    unsigned int total = 0;
+    for (auto const& [_, layer_data]: _layers_data) {
+        total += layer_data.get_interacting_threads(fifo_id);
     }
 
     return total;
