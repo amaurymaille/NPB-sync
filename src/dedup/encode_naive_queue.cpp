@@ -331,6 +331,8 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
     int reorder_limit = 100;
     int compress_count = 0;
     int reorder_count = 0;
+    int input_count = 0;
+    int input_limit = 100;
     while (1) {
         //if no items available, fetch a group of items from the queue
         auto [value, lock, critical, unlock] = args._input_fifos[0]->pop();
@@ -346,12 +348,13 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
         //Do the processing
         auto [isDuplicate, lock_idx] = sub_Deduplicate(chunk);
 
+        auto d = diff(begin, SteadyClock::now());
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
             ++compress_count;
             if (push_res && compress_count <= compress_limit) {
-                args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
+                args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
             }
         } else {
             auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
@@ -359,6 +362,11 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
             if (push_res && reorder_count <= reorder_limit) {
                 args._extra_output_observers[0]->add_producer_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
             }
+        }
+
+        ++input_count;
+        if (input_count <= input_limit) {
+            args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
     }
 
@@ -387,8 +395,13 @@ void CompressNaiveQueue(thread_args_naive const& args) {
         auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
         ++count;
 
+        auto d = diff(begin, SteadyClock::now());
         if (push_res && count <= limit) {
-            args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
+            args._output_observers[0]->add_producer_time(args._output_fifos[0],  d);
+        }
+
+        if (count <= limit) {
+            args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
     }
 
@@ -430,11 +443,18 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
     fd = create_output_file(_g_data->_output_filename.c_str());
     int qid = 0;
 
+    int obs_count = 0;
+    int obs_limit = 100;
+
     while(1) {
         std::optional<chunk_t*> value;
+        NaiveQueueImpl<chunk_t*>* current_fifo;
+        Observer<chunk_t*>* current_observer;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
             size_t lock, critical, unlock;
             std::tie(value, lock, critical, unlock) = args._input_fifos[qid]->pop();
+            current_fifo = args._input_fifos[qid];
+            current_observer = args._input_observers[qid];
             qid = (qid + 1) % args._input_fifos.size();
             if (value) {
                 break;
@@ -449,6 +469,7 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
         if (chunk == NULL) 
             break;
 
+        TP now = SteadyClock::now();
         //Double size of sequence number array if necessary
         if(chunk->sequence.l1num >= chunks_per_anchor_max) {
             chunks_per_anchor = (sequence_number_t*)realloc(chunks_per_anchor, 2 * chunks_per_anchor_max * sizeof(sequence_number_t));
@@ -476,6 +497,13 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
                 T = TreeInsert(tele, T);
             } else {
                 Insert(chunk, pos->Element.queue);
+            }
+
+            ++obs_count;
+
+            if (obs_count <= obs_limit) {
+                auto d = diff(now, SteadyClock::now());
+                current_observer->add_consumer_time(current_fifo, d);
             }
             continue;
         }
@@ -512,6 +540,11 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
                 chunk = NULL;
             }
         } while(chunk != NULL);
+
+        ++obs_count;
+        if (obs_count <= obs_limit) {
+            current_observer->add_consumer_time(current_fifo, diff(now, SteadyClock::now()));
+        }
     }
 
     //flush the blocks left in the cache to file
