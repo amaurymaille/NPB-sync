@@ -36,6 +36,7 @@ struct thread_args {
 #ifdef ENABLE_PTHREADS
 void *FragmentDefault(void * targs){
     struct thread_args *args = (struct thread_args *)targs;
+    pthread_barrier_wait(args->_barrier);
     size_t preloading_buffer_seek = 0;
     int queue_pos = 0;
     int fd = args->fd;
@@ -238,7 +239,6 @@ void *FragmentDefault(void * targs){
 
     printf("Fragment finished. Inserted %d values\n", count);
 
-    pthread_barrier_wait(args->_barrier);
     return NULL;
 }
 
