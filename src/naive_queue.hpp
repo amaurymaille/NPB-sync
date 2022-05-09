@@ -265,6 +265,9 @@ class NaiveQueueImpl {
 
         typedef std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> TimingData;
 
+        template<typename T2>
+        inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bool> cross_pop(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) __attribute__((always_inline));
+
         // Do not time anything
         inline void push(T const& data) __attribute__((always_inline));
         // Time everything
@@ -307,9 +310,11 @@ class NaiveQueueImpl {
             _sync_count = 0;
         }
 
-        const void* const get_master() const {
+        void* const get_master() const {
             return _master;
         }
+
+        inline void force_push() __attribute__((always_inline));
 
     private:
         T* _data;
@@ -594,7 +599,7 @@ class NaiveQueueMaster {
         }
 
         void terminate() {
-            std::unique_lock<std::mutex> lck(_mutex);
+            std::unique_lock<std::timed_mutex> lck(_mutex);
             ++_n_terminated;
 
             if (terminated()) {
@@ -616,12 +621,15 @@ class NaiveQueueMaster {
             return new NaiveQueueImpl<T>(this, std::forward<Args>(args)...);
         }
 
+        inline std::tuple<bool, int, unsigned long long, unsigned long long, unsigned long long>
+            timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout);
+
     private:
         Ringbuffer<T> _buf;
         int _n_producers;
         int _n_terminated;
-        std::mutex _mutex;
-        std::condition_variable _not_empty, _not_full;
+        std::timed_mutex _mutex;
+        std::condition_variable_any _not_empty, _not_full;
 
         bool terminated() const {
             return _n_producers == _n_terminated;
@@ -662,6 +670,39 @@ inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl
 
     return { pop_local(), lock, critical, unlock };
 }
+
+template<typename T>
+using TimedTimingData = std::tuple<TimingData<T>, bool>;
+
+template<typename T>
+template<typename T2>
+inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bool> NaiveQueueImpl<T>::cross_pop(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) {
+    int result;
+    uint64_t lock = 0, critical = 0, unlock = 0;
+
+    if (empty()) {
+        bool timedout = false;
+        std::tie(timedout, result, lock, critical, unlock) = _master->timed_dequeue(this, _size - 1, timeout);
+        if (timedout) {
+            cross_queue->force_push();
+            return { { std::nullopt, 0, 0, 0 }, false };
+        }
+
+        if (result < 0) {
+            return { { std::nullopt, lock, critical, unlock }, true };
+        }
+
+        if (_reconfigure && !_changed) {
+            _processed += n_elements();
+            if (_processed >= _threshold) {
+                _changed = resize(_new_step);
+            }
+        }
+    }
+    
+    return { pop(), true }; // Yeah, two checks of emptyness, deal with it...
+}
+
 
 template<typename T>
 inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) {
@@ -918,7 +959,7 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
     TP begin_lock, begin_sc, begin_unlock, end_unlock;
     begin_lock = SteadyClock::now();
     _mutex.lock();
-    std::unique_lock<std::mutex> lck(_mutex, std::adopt_lock);
+    std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
     begin_sc = SteadyClock::now();
     while (_buf.empty() && !terminated()) {
         _not_empty.wait(lck);
@@ -947,13 +988,51 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
 }
 
 template<typename T>
+inline std::tuple<bool, int, unsigned long long, unsigned long long, unsigned long long> 
+NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout) {
+    // std::unique_lock<std::mutex> lck(_mutex);
+    TP begin_lock, begin_sc, begin_unlock, end_unlock;
+    begin_lock = SteadyClock::now();
+    bool result = _mutex.try_lock_for(timeout);
+    if (!result) {
+        return { true, 0, 0, 0, 0 };
+    }
+    std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
+    begin_sc = SteadyClock::now();
+    while (_buf.empty() && !terminated()) {
+        _not_empty.wait(lck);
+    }
+
+    if (_buf.empty() && terminated()) {
+        lck.release();
+        _mutex.unlock();
+        return { false, -1, 0, 0, 0 };
+    }
+
+    int i = 0;
+    for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+        queue->push_local(*(_buf.pop()));
+    }
+
+    if (i > 0) {
+        _not_full.notify_all();
+    }
+
+    begin_unlock = SteadyClock::now();
+    _mutex.unlock();
+    end_unlock = SteadyClock::now();
+    lck.release();
+    return { false, i, diff(begin_lock, begin_sc), diff(begin_sc, begin_unlock), diff(begin_unlock, end_unlock) };
+}
+
+template<typename T>
 inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
 NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     TP begin_lock, begin_unlock, end_unlock, begin_sc;
     begin_lock = SteadyClock::now();
     // std::unique_lock<std::mutex> lck(_mutex);
     _mutex.lock();
-    std::unique_lock<std::mutex> lck(_mutex, std::adopt_lock);
+    std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
     begin_sc = SteadyClock::now();
 
     // printf("_buf._n_elements = %d\n", _buf.n_elements());
@@ -1114,5 +1193,11 @@ void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* ob
     }
 }
 
+template<typename T>
+void NaiveQueueImpl<T>::force_push() {
+    if (!empty()) {
+        _master->enqueue(this, n_elements());
+    }
+}
 
 #include "naive_queue.tpp"

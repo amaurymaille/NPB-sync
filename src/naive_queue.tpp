@@ -18,6 +18,7 @@ Observer<T>::Observer(uint64_t iter, int n_threads) :
     // _data._cost_s = cost_sync;
     _data._iter = iter;
     // sem_init(&_reconfigure_sem, 0, 0);
+    // printf("Observer %p\n", this);
 }
 
 template<typename T>
@@ -104,6 +105,13 @@ void Observer<T>::set_cons_size(size_t cons_size) {
 
 template<typename T>
 void Observer<T>::add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time) {
+    if (_times.find(producer) == _times.end()) {
+        for (auto const& [addr, _]: _times) {
+            printf("XXX %p\n", addr);
+        }
+        throw std::runtime_error("Producer not registered\n");
+    }
+
     MapData& data = _times[producer];
     if (data._n_work < _prod_size) {
         data._work_times[data._n_work++] = time;
@@ -116,6 +124,13 @@ void Observer<T>::add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time) 
 
 template<typename T>
 void Observer<T>::add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time) {
+    if (_times.find(consumer) == _times.end()) {
+        for (auto const& [addr, _]: _times) {
+            printf("XXX %p\n", addr);
+        }
+        throw std::runtime_error("Consumer not registered\n");
+    }
+
     MapData& data = _times[consumer];
     if (data._n_work < _cons_size) {
         data._work_times[data._n_work++] = time;
