@@ -36,7 +36,15 @@ struct _queue_t {
 typedef struct _queue_t queue_t;
 
 
-
+static inline int ringbuffer_init(ringbuffer_t *buf, size_t size) __attribute__((always_inline));
+static inline int ringbuffer_destroy(ringbuffer_t *buf) __attribute__((always_inline));
+static inline int ringbuffer_isEmpty(ringbuffer_t *buf) __attribute__((always_inline));
+static inline int ringbuffer_isFull(ringbuffer_t *buf) __attribute__((always_inline));
+static inline void *ringbuffer_remove(ringbuffer_t *buf) __attribute__((always_inline));
+static inline int ringbuffer_insert(ringbuffer_t *buf, void *ptr) __attribute__((always_inline));
+static inline int ringbuffer_nb_elements(ringbuffer_t const* buf) __attribute__((always_inline));
+static inline void ringbuffer_reinit(ringbuffer_t* buf, unsigned int new_size) __attribute__((always_inline));
+static inline unsigned int queue_size(queue_t const* queue) __attribute__((always_inline));
 /*
  * Some simple inline functions to work with ring buffers
  */
