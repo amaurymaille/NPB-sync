@@ -10,8 +10,6 @@
 #include "naive_queue.hpp"
 #include "smart_fifo.h"
 
-#define OBS_LIMIT 100
-
 struct thread_args_naive {
     int fd;
     struct {
