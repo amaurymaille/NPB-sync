@@ -364,7 +364,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
         auto d = diff(begin, SteadyClock::now());
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
-            if (last_was_compressed) {
+            /* if (last_was_compressed) {
                 ++in_a_row;
 
                 if (in_a_row == row_limit) {
@@ -376,7 +376,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 // printf("%p: reset to compress\n", args._extra_output_fifos[0]);
                 last_was_compressed = true;
                 in_a_row = 1;
-            }
+            } */
             last_was_compressed = true;
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
             ++compress_count;
@@ -424,13 +424,13 @@ void CompressNaiveQueue(thread_args_naive const& args) {
     int limit = OBS_LIMIT;
     int pop_count = 0;
     while(1) {
-        auto [timing_data, success] = args._input_fifos[0]->cross_pop(std::chrono::nanoseconds(500), args._output_fifos[0]);
-        // auto timing_data = args._input_fifos[0]->pop();
+        // auto [timing_data, success] = args._input_fifos[0]->cross_pop(std::chrono::nanoseconds(500), args._output_fifos[0]);
+        auto timing_data = args._input_fifos[0]->pop();
         auto [value, lock, critical, unlock] = timing_data;
 
-        if (!success) {
+        /* if (!success) {
             continue;
-        }
+        } */
 
         if (!value) {
             break;
