@@ -8,9 +8,7 @@
 #include <stdexcept>
 #include <tuple>
 
-#define BEST_STEP 100
-#define SECOND_BEST_STEP 100
-#define RECONFIGURE 1
+#include "naive_queue_conf.h"
 
 template<typename T>
 Observer<T>::Observer() { }
