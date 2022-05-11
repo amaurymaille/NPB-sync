@@ -111,6 +111,5 @@ extern int rf_win_dataprocess;
 extern DedupData* _g_data;
 
 #define INITIAL_SEARCH_TREE_SIZE 4096
-#define OBS_LIMIT 100
 
 #endif /* ENCODE_COMMON_H */

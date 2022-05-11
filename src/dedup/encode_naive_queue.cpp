@@ -10,6 +10,12 @@
 #include "naive_queue.hpp"
 #include "smart_fifo.h"
 
+#define DEDUP_TO_REORDER 0
+#define DEDUP_TO_COMPRESS 0
+#define COMPRESS_CROSS_POP 0
+
+#define OBS_LIMIT 100
+
 struct thread_args_naive {
     int fd;
     struct {
@@ -362,6 +368,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
         auto d = diff(begin, SteadyClock::now());
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
+#if DEDUP_TO_REORDER == 1
             if (last_was_compressed) {
                 ++in_a_row;
 
@@ -375,6 +382,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 last_was_compressed = true;
                 in_a_row = 1;
             }
+#endif
             last_was_compressed = true;
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
             ++compress_count;
@@ -382,6 +390,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
             }
         } else {
+#if DEDUP_TO_COMPRESS == 1
             if (!last_was_compressed) {
                 ++in_a_row;
 
@@ -395,6 +404,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 last_was_compressed = false;
                 in_a_row = 1;
             }
+#endif
             auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
             ++reorder_count;
             if (push_res && reorder_count <= reorder_limit) {
@@ -422,13 +432,18 @@ void CompressNaiveQueue(thread_args_naive const& args) {
     int limit = OBS_LIMIT;
     int pop_count = 0;
     while(1) {
+#if COMPRESS_CROSS_POP == 1
         auto [timing_data, success] = args._input_fifos[0]->cross_pop(std::chrono::nanoseconds(500), args._output_fifos[0]);
-        // auto timing_data = args._input_fifos[0]->pop();
+#else
+        auto timing_data = args._input_fifos[0]->pop();
+#endif
         auto [value, lock, critical, unlock] = timing_data;
 
+#if COMPRESS_CROSS_POP == 1
         if (!success) {
             continue;
         }
+#endif
 
         if (!value) {
             break;
