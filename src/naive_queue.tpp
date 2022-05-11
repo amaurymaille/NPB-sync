@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <tuple>
 
+#define BEST_STEP 100
+#define SECOND_BEST_STEP 100
+#define RECONFIGURE 1
+
 template<typename T>
 Observer<T>::Observer() { }
 
@@ -240,7 +244,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
 
             for (auto& [queue, _]: _times) {
-                queue->prepare_reconfigure(best_step);
+#if RECONFIGURE == 1
+                queue->prepare_reconfigure(BEST_STEP);
+#endif
             }
             // _consumer->prepare_reconfigure(best_step);
             // _producer->prepare_reconfigure(best_step);
@@ -300,7 +306,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             _second_best_step = best_step;
 
             for (auto& [queue, _]: _times) {
-                queue->prepare_reconfigure(best_step);
+#if RECONFIGURE == 1
+                queue->prepare_reconfigure(SECOND_BEST_STEP);
+#endif
             }
         }
     }
