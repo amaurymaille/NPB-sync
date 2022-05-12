@@ -10,9 +10,11 @@
 #include "naive_queue.hpp"
 #include "smart_fifo.h"
 
-#define DEDUP_TO_REORDER 0
-#define DEDUP_TO_COMPRESS 0
-#define COMPRESS_CROSS_POP 0
+#define DEDUP_TO_REORDER 1
+#define DEDUP_TO_COMPRESS 1
+#define COMPRESS_CROSS_POP 1
+
+#define TIMED_PUSH 0
 
 #define OBS_LIMIT 100
 
@@ -289,12 +291,18 @@ void RefineNaiveQueue(thread_args_naive const& args) {
                 chcount++;
 
                 //put it into send buffer
+#if TIMED_PUSH == 1
                 auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+                args._output_fifos[0]->push(chunk);
+#endif
                 ++push_count;
 
+#if TIMED_PUSH == 1
                 if (push_count <= limit) {
                     args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
                 }
+#endif
 
                 // Reset begin because we are technically producing another element by performing
                 // a new split from now on.
@@ -311,12 +319,18 @@ void RefineNaiveQueue(thread_args_naive const& args) {
                 chcount++;
 
                 //put it into send buffer
+#if TIMED_PUSH == 1
                 auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+                args._output_fifos[0]->push(chunk);
+#endif
                 ++push_count;
 
+#if TIMED_PUSH == 1
                 if (push_count <= limit) {
                     args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
                 }
+#endif
 
                 //prepare for next iteration
                 chunk = NULL;
@@ -384,11 +398,15 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
             }
 #endif
             last_was_compressed = true;
+#if TIMED_PUSH == 1
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
-            ++compress_count;
             if (push_res && compress_count <= compress_limit) {
+                ++compress_count;
                 args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
             }
+#else
+            args._output_fifos[0]->push(chunk);
+#endif
         } else {
 #if DEDUP_TO_COMPRESS == 1
             if (!last_was_compressed) {
@@ -405,17 +423,25 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 in_a_row = 1;
             }
 #endif
+            last_was_compressed = false;
+
+#if TIMED_PUSH == 1
             auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
-            ++reorder_count;
             if (push_res && reorder_count <= reorder_limit) {
+                ++reorder_count;
                 args._extra_output_observers[0]->add_producer_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
             }
+#else
+            args._extra_output_fifos[0]->push(chunk);
+#endif
         }
 
         ++input_count;
+#if TIMED_PUSH == 1
         if (input_count <= input_limit) {
             args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
+#endif
     }
 
     args._output_fifos[0]->terminate();
@@ -456,10 +482,16 @@ void CompressNaiveQueue(thread_args_naive const& args) {
 
         TP begin = SteadyClock::now();
         sub_Compress(chunk);
+#if TIMED_PUSH == 1
         auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+        args._output_fifos[0]->push(chunk);
+
+#endif
         ++count;
 
         auto d = diff(begin, SteadyClock::now());
+#if TIMED_PUSH == 1
         if (push_res && count <= limit) {
             args._output_observers[0]->add_producer_time(args._output_fifos[0],  d);
         }
@@ -467,6 +499,7 @@ void CompressNaiveQueue(thread_args_naive const& args) {
         if (count <= limit) {
             args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
+#endif
     }
 
     args._output_fifos[0]->terminate();
