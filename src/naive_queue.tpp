@@ -8,14 +8,12 @@
 #include <stdexcept>
 #include <tuple>
 
-#include "naive_queue_conf.h"
-
 template<typename T>
 Observer<T>::Observer() { }
 
 template<typename T>
-Observer<T>::Observer(uint64_t iter, int n_threads) : 
-    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads) {
+Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step) : 
+    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step) {
     // _data._cost_p = cost_push;
     // _data._cost_s = cost_sync;
     _data._iter = iter;
@@ -33,14 +31,16 @@ Observer<T>::~Observer() {
         free(data._lock_times);
         free(data._unlock_times);
         free(data._copy_times);
+        free(data._items);
     }
 }
 
 template<typename T>
-void Observer<T>::delayed_init(uint64_t iter, int n_threads) {
+void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step) {
     _prod_size = _cons_size = _cost_p_cost_s_size = 0;
     _n_threads = n_threads;
     _data._iter = iter;
+    _choice_step = choice_step;
 }
 
 /* template<typename T>
@@ -61,7 +61,7 @@ void Observer<T>::begin() {
 template<typename T>
 void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
     MapData& data = _times[producer];
-    data._work_times = data._push_times = nullptr;
+    data._work_times = data._push_times = data._items = nullptr;
     data._n_work = data._n_push = data._n_sync = 0;
     data._producer = true;
 
@@ -87,6 +87,7 @@ void Observer<T>::set_prod_size(size_t prod_size) {
                 throw std::runtime_error("You cannot change the size of the time");
             }
             data._work_times = (uint64_t*)malloc(sizeof(uint64_t) * prod_size);
+            data._items = (uint64_t*)malloc(sizeof(uint64_t) * prod_size);
         }
     }
     _prod_size = prod_size;
@@ -243,7 +244,11 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             for (auto& [queue, _]: _times) {
 #if RECONFIGURE == 1
-                queue->prepare_reconfigure(BEST_STEP);
+                if (_choice_step == 0) {
+                    queue->prepare_reconfigure(BEST_STEP);
+                } else {
+                    queue->prepare_reconfigure(_choice_step);
+                }
 #endif
             }
             // _consumer->prepare_reconfigure(best_step);
@@ -288,7 +293,7 @@ void Observer<T>::trigger_reconfigure(bool first) {
                 // stream << average << std::endl;
 
                 std::vector<uint64_t> s;
-                for (auto [lock, critical, unlock]: v) {
+                for (auto [lock, critical, unlock, _]: v) {
                     // averg += lock + unlock;
                     s.push_back(lock + unlock);
                 }
@@ -331,7 +336,7 @@ void Observer<T>::set_cost_p_cost_s_size(size_t cost_p_cost_s_size) {
 }
 
 template<typename T>
-void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time) {
+void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t items) {
     // printf("Adding CostP = %llu\n", time);
     MapData& data = _times[producer];
 
@@ -347,6 +352,7 @@ void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t p
             data._lock_times[data._n_sync] = lock_time;
             data._copy_times[data._n_sync] = copy_time;
             data._unlock_times[data._n_sync] = unlock_time;
+            data._items[data._n_sync] = items;
             data._n_sync++;
         }
     }
@@ -360,37 +366,48 @@ json Observer<T>::serialize() const {
     json result;
     result["best_step"] = _best_step;
     result["best_step_p2"] = _second_best_step;
-    result["worst_avg"] = _worst_avg;
-    result["cost_p"] = _data._cost_p;
+    // result["worst_avg"] = _worst_avg;
+    // result["cost_p"] = _data._cost_p;
 
-    json extra;
+    /* json extra;
     extra["cost_p"] = _cost_p;
-    extra["average"] = _averages;
+    extra["average"] = _averages; */
 
-    json cs_data = json::array();
+    json entities = json::array();
     for (auto const& [queue, data]: _times) {
-        if (data._producer) {
-            json this_producer = json::array();
-            for (int i = int(data._n_sync * 0.1); i < int(data._n_sync * 0.9); ++i) {
-                json cs;
-                cs["lock"] = data._lock_times[i];
-                cs["cs"] = data._copy_times[i];
-                cs["unlock"] = data._unlock_times[i];
-                this_producer.push_back(cs);
-            }
-            cs_data.push_back(this_producer);
+        json this_entity;
+        this_entity["producer"] = data._producer;
+
+        json cs_data = json::array();
+
+        for (int i = 0; i < data._n_sync; ++i) {
+            json cs;
+            cs["lock"] = data._lock_times[i];
+            cs["cs"] = data._copy_times[i];
+            cs["unlock"] = data._unlock_times[i];
+            cs["items"] = data._items[i];
+            cs_data.push_back(cs);
         }
+        this_entity["sync"] = cs_data;
+
+        json work_data = json::array();
+        for (int i = 0; i < data._n_work; ++i) {
+            work_data.push_back(data._work_times[i]);
+        }
+        this_entity["work"] = work_data;
+        entities.push_back(this_entity);
     }
 
-    json cs_data_p2 = json::array();
+    /* json cs_data_p2 = json::array();
     for (auto const& [queue, data]: _cost_s) {
         json this_producer = json::array();
         for (int i = 0; i < data.size(); ++i) {
-            for (auto [lock, copy, unlock]: data) {
+            for (auto [lock, copy, unlock, items]: data) {
                 json cs;
                 cs["lock"] = lock;
                 cs["cs"] = copy;
                 cs["unlock"] = unlock;
+                cs["items"] = items;
                 this_producer.push_back(cs);
             }
         }
@@ -419,9 +436,10 @@ json Observer<T>::serialize() const {
 
     extra["cs_data"] = cs_data;
     extra["cs_data_p2"] = cs_data_p2;
-    extra["consumer_cs_daa"] = consumer_cs_data;
+    extra["consumer_cs_daa"] = consumer_cs_data; */
     
-    result["extra"] = extra;
+    // result["extra"] = extra;
+    result["entities"] = entities;
     return result;
 }
 
@@ -467,6 +485,6 @@ typename Observer<T>::CostSState Observer<T>::add_cost_s_time(NaiveQueueImpl<T>*
 }
 
 template<typename T>
-void Observer<T>::add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock) {
-    _cs_data[queue]._data.push_back({lock, cs, unlock});
+void Observer<T>::add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock, uint64_t items) {
+    _cs_data[queue]._data.push_back({lock, cs, unlock, items});
 }
