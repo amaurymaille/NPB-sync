@@ -310,7 +310,11 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             for (auto& [queue, _]: _times) {
 #if RECONFIGURE == 1
-                queue->prepare_reconfigure(SECOND_BEST_STEP);
+                if (_choice_step == 0) {
+                    queue->prepare_reconfigure(SECOND_BEST_STEP);
+                } else {
+                    queue->prepare_reconfigure(_choice_step);
+                }
 #endif
             }
         }
