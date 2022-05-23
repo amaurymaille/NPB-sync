@@ -2,6 +2,7 @@
 #define LUA_CORE_H
 
 #include <map>
+#include <optional>
 #include <string>
 
 #include "dedupdef.h"
@@ -76,6 +77,7 @@ struct LayerData {
 class DedupData {
 public:
     std::string _input_filename;
+    std::optional<std::string> _observers;
     std::string _output_filename;
     Compressions _compression = GZIP;
     bool _preloading = false;
@@ -95,6 +97,10 @@ public:
     unsigned int get_interacting_threads(int fifo_id) const;
 
     unsigned int new_fifo();
+
+    inline void set_observers(std::string const& path) {
+        _observers = std::make_optional(path);
+    }
 
     // Maps each Layer to its input / output / extra FIFOs 
     std::map<Layers, LayerData> _layers_data;
