@@ -12,8 +12,8 @@ template<typename T>
 Observer<T>::Observer() { }
 
 template<typename T>
-Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step) : 
-    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step) {
+Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step, int dephase) : 
+    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase) {
     // _data._cost_p = cost_push;
     // _data._cost_s = cost_sync;
     _data._iter = iter;
@@ -36,11 +36,12 @@ Observer<T>::~Observer() {
 }
 
 template<typename T>
-void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step) {
+void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step, int dephase) {
     _prod_size = _cons_size = _cost_p_cost_s_size = 0;
     _n_threads = n_threads;
     _data._iter = iter;
     _choice_step = choice_step;
+    _dephase = dephase;
 }
 
 /* template<typename T>
@@ -242,12 +243,14 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s * _n_threads) / (worst_avg + _data._cost_p));
             unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
 
-            for (auto& [queue, _]: _times) {
+            int dephase_i = 0;
+            for (auto& [queue, map_data]: _times) {
 #if RECONFIGURE == 1
-                if (_choice_step == 0) {
+                if (_choice_step == 0 || map_data._producer) {
                     queue->prepare_reconfigure(BEST_STEP);
                 } else {
-                    queue->prepare_reconfigure(_choice_step);
+                    queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
+                    ++dephase_i;
                 }
 #endif
             }
@@ -308,12 +311,14 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // printf("Old = %d, new = %d\n", _best_step, best_step);
             _second_best_step = best_step;
 
-            for (auto& [queue, _]: _times) {
+            int dephase_i = 0;
+            for (auto& [queue, map_data]: _times) {
 #if RECONFIGURE == 1
-                if (_choice_step == 0) {
+                if (_choice_step == 0 || map_data._producer) {
                     queue->prepare_reconfigure(SECOND_BEST_STEP);
                 } else {
-                    queue->prepare_reconfigure(_choice_step);
+                    queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
+                    ++dephase_i;
                 }
 #endif
             }

@@ -583,6 +583,7 @@ class NaiveQueueImpl {
         }
 
         void prepare_reconfigure(size_t size) {
+            printf("prepare_reconfigure size = %llu\n", size);
             _new_step = size;
             _need_reconfigure.store(true, std::memory_order_release);
         }
@@ -1263,10 +1264,10 @@ class Observer {
         };
 
         Observer();
-        Observer(uint64_t iter_prod, int n_threads, int choice_step = 0);
+        Observer(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0);
         ~Observer();
 
-        void delayed_init(uint64_t iter_prod, int n_threads, int choice_step = 0);
+        void delayed_init(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -1332,6 +1333,7 @@ class Observer {
         // Average work times for each producer / consumer involved.
         std::vector<uint64_t> _averages;
         int _choice_step = 0;
+        int _dephase = 0;
 
         bool _reconfigured = false;
         bool _reconfigured_twice = false;
