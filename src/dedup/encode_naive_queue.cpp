@@ -14,7 +14,7 @@
 
 #define DEDUP_TO_REORDER 1
 #define DEDUP_TO_COMPRESS 1
-#define COMPRESS_CROSS_POP 1
+#define COMPRESS_CROSS_POP 0
 
 #define TIMED_PUSH 1
 

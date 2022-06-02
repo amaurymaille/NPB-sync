@@ -8,6 +8,10 @@
 #include <stdexcept>
 #include <tuple>
 
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
 template<typename T>
 Observer<T>::Observer() { }
 
@@ -23,7 +27,9 @@ Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step, int dephase
 
 template<typename T>
 Observer<T>::~Observer() {
-    std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
+    // std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
+
+    std::cout << "First prod = " << _data._first_prod_step << ", first cons = " << _data._first_cons_step << ", second prod " << _data._second_prod_step << ", second cons " << _data._second_cons_step << std::endl;
 
     for (auto& [queue, data]: _times) {
         free(data._work_times);
@@ -61,6 +67,7 @@ void Observer<T>::begin() {
 
 template<typename T>
 void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
+    // printf("Producer %p\n", producer);
     MapData& data = _times[producer];
     data._work_times = data._push_times = data._items = nullptr;
     data._n_work = data._n_push = data._n_sync = 0;
@@ -72,6 +79,7 @@ void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
 
 template<typename T>
 void Observer<T>::add_consumer(NaiveQueueImpl<T>* consumer) {
+    // printf("Consumer %p\n", consumer);
     MapData& data = _times[consumer];
     data._work_times = data._push_times = nullptr;
     data._n_work = data._n_push = data._n_sync = 0;
@@ -209,19 +217,26 @@ void Observer<T>::trigger_reconfigure(bool first) {
             std::vector<uint64_t> producers, consumers;
             // std::vector<uint64_t> costs_s;
             std::vector<uint64_t> locks, unlocks, copies;
+            int n_consumers = 0, n_producers = 0;
             
             for (auto& [queue, data]: _times) {
                 unsigned int average = avg(data._work_times, data._n_work);
                 if (data._producer) {
+                    ++n_producers;
                     cost_p.push_back(avg(data._push_times, data._n_push));
                     producers.push_back(average);
                 } else {
+                    ++n_consumers;
                     consumers.push_back(average);
                 }
                 averages.push_back(average);
             }
 
-            auto worst_avg = std::max(avg(producers.data(), producers.size()), avg(consumers.data(), consumers.size()));
+
+            auto consumer_avg = avg(consumers.data(), consumers.size());
+            auto producer_avg = avg(producers.data(), producers.size());
+            auto worst_avg = std::max(producer_avg, consumer_avg);
+
             _data._wi = worst_avg;
             _data._cost_p = *std::min_element(cost_p.begin(), cost_p.end());
 
@@ -241,16 +256,45 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // auto select_avg = std::max(cons_avg, prod_avg);
             // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s) / (select_avg + _data._cost_p));
             // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s * _n_threads) / (worst_avg + _data._cost_p));
-            unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
+
+            // unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
+
+            auto prod_prod = n_producers * consumer_avg;
+            auto prod_cons = n_consumers * producer_avg;
+
+            // unsigned int best_step = 0;
+            unsigned int prod_step = 0, cons_step = 0;
+
+            if (prod_cons > prod_prod) {
+                prod_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_producers * consumer_avg + n_producers * _data._cost_p) / n_consumers) + n_producers * _data._cost_p - _data._cost_p + n_producers * _data._cost_p)));
+                cons_step = prod_step * n_producers / n_consumers;
+            } else {
+                cons_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_consumers * producer_avg + n_consumers * _data._cost_p) / n_producers) + n_consumers * _data._cost_p - _data._cost_p + n_consumers * _data._cost_p)));
+                prod_step = cons_step * n_consumers / n_producers;
+            }
+
+            _data._n_producers = n_producers;
+            _data._n_consumers = n_consumers;
+            _data._producers_avg = producer_avg;
+            _data._consumers_avg = consumer_avg;
+            _data._prod_cons = prod_cons;
+            _data._prod_prod = prod_prod;
+            _data._first_prod_step = prod_step;
+            _data._first_cons_step = cons_step;
 
             int dephase_i = 0;
             for (auto& [queue, map_data]: _times) {
 #if RECONFIGURE == 1
-                if (_choice_step == 0 || map_data._producer) {
+                /* if (_choice_step == 0 || map_data._producer) {
                     queue->prepare_reconfigure(BEST_STEP);
                 } else {
                     queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
                     ++dephase_i;
+                } */
+                if (map_data._producer) {
+                    queue->prepare_reconfigure(BEST_PROD_STEP);
+                } else {
+                    queue->prepare_reconfigure(BEST_CONS_STEP);
                 }
 #endif
             }
@@ -258,7 +302,6 @@ void Observer<T>::trigger_reconfigure(bool first) {
             // _producer->prepare_reconfigure(best_step);
 
             // printf("Iter = %lu, CostS = (%lu, %lu, %lu), CostP = %lu, Times.size() = %lu, Wi = %lu, Step = %lu\n", _data._iter, _data._cost_wl, _data._cost_cc, _data._cost_u, _data._cost_p, _times.size(), _data._wi, best_step);
-            _best_step = best_step;
             _worst_avg = worst_avg;
 
             _cost_p = std::move(cost_p);
@@ -305,20 +348,37 @@ void Observer<T>::trigger_reconfigure(bool first) {
             }
             /* stream << std::endl;
             std::cout << stream.str(); */
-
+            unsigned int prod_step = 0, cons_step = 0;
             uint64_t avg_cost_s = avg(cost_s.data(), cost_s.size());
-            unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
+
+            if (_data._prod_cons > _data._prod_prod) {
+                prod_step = std::sqrt(std::fabs((_data._iter * avg_cost_s) / (((_data._n_producers * _data._consumers_avg + _data._n_producers * _data._cost_p) / _data._n_consumers) + _data._n_producers * _data._cost_p - _data._cost_p + _data._n_producers * _data._cost_p)));
+                cons_step = prod_step * _data._n_producers / _data._n_consumers;
+            } else {
+                cons_step = std::sqrt(std::fabs((_data._iter * avg_cost_s) / (((_data._n_consumers * _data._producers_avg + _data._n_consumers * _data._cost_p) / _data._n_producers) + _data._n_consumers * _data._cost_p - _data._cost_p + _data._n_consumers * _data._cost_p)));
+                prod_step = cons_step * _data._n_consumers / _data._n_producers;
+            }
+
+            _data._second_prod_step = prod_step;
+            _data._second_cons_step = cons_step;
+
+            // unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
             // printf("Old = %d, new = %d\n", _best_step, best_step);
-            _second_best_step = best_step;
+            // _second_best_step = best_step;
 
             int dephase_i = 0;
             for (auto& [queue, map_data]: _times) {
 #if RECONFIGURE == 1
-                if (_choice_step == 0 || map_data._producer) {
+                /* if (_choice_step == 0 || map_data._producer) {
                     queue->prepare_reconfigure(SECOND_BEST_STEP);
                 } else {
                     queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
                     ++dephase_i;
+                } */
+                if (map_data._producer) {
+                    queue->prepare_reconfigure(SECOND_BEST_PROD_STEP);
+                } else {
+                    queue->prepare_reconfigure(SECOND_BEST_CONS_STEP);
                 }
 #endif
             }

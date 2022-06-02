@@ -184,7 +184,7 @@ class NaiveQueue {
 
         inline int enqueue(Ringbuffer<T>* buf, int limit) __attribute__ ((always_inline)) {
             std::unique_lock<std::mutex> lck(_mutex);
-            printf("_buf._n_elements = %lu\n", _buf.n_elements());
+            // printf("_buf._n_elements = %lu\n", _buf.n_elements());
             while (_buf.full()) {
                 _not_full.wait(lck);
             }
@@ -583,7 +583,7 @@ class NaiveQueueImpl {
         }
 
         void prepare_reconfigure(size_t size) {
-            printf("prepare_reconfigure size = %llu\n", size);
+            // printf("prepare_reconfigure size = %llu\n", size);
             _new_step = size;
             _need_reconfigure.store(true, std::memory_order_release);
         }
@@ -599,6 +599,11 @@ class NaiveQueueMaster {
 
         NaiveQueueMaster(size_t size, int n_producers) : _buf(size) {
             _n_producers = n_producers;
+            _n_terminated = 0;
+        }
+
+        NaiveQueueMaster(NaiveQueueMaster<T> const& other) : _buf(other.size) {
+            _n_producers = other.n_producers;
             _n_terminated = 0;
         }
 
@@ -1237,6 +1242,19 @@ class Observer {
         uint64_t _cost_u = 0;
         uint64_t _iter;
         uint64_t _wi = 0;
+        uint32_t _n_producers = 0;
+        uint32_t _n_consumers;
+        float _producers_avg = 0;
+        float _consumers_avg = 0;
+        // Product of consumer work avg with number of consumers;
+        float _prod_cons;
+        float _prod_prod;
+
+        // Computed later
+        uint32_t _first_prod_step = 0;
+        uint32_t _first_cons_step = 0;
+        uint32_t _second_prod_step = 0;
+        uint32_t _second_cons_step = 0;
     };
 
     struct MapData {
@@ -1264,6 +1282,8 @@ class Observer {
         };
 
         Observer();
+        // iter_prod is the amount of iterations performed by a single producer
+        // n_threads is the total nubmer of threads that will interact with this observer
         Observer(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0);
         ~Observer();
 
