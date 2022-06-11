@@ -16,8 +16,8 @@ template<typename T>
 Observer<T>::Observer() { }
 
 template<typename T>
-Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step, int dephase) : 
-    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase) {
+Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) : 
+    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
     // _data._cost_p = cost_push;
     // _data._cost_s = cost_sync;
     _data._iter = iter;
@@ -29,7 +29,7 @@ template<typename T>
 Observer<T>::~Observer() {
     // std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
 
-    std::cout << "First prod = " << _data._first_prod_step << ", first cons = " << _data._first_cons_step << ", second prod " << _data._second_prod_step << ", second cons " << _data._second_cons_step << std::endl;
+    std::cout << "First prod = " << _data._first_prod_step << ", first cons = " << _data._first_cons_step << ", second prod " << _data._second_prod_step << ", second cons " << _data._second_cons_step << ", first prod effective " << _data._first_prod_step_eff << ", first cons effective " << _data._first_cons_step_eff << ", second prod effective " << _data._second_prod_step_eff << ", second cons effective " << _data._second_cons_step_eff << std::endl;
 
     for (auto& [queue, data]: _times) {
         free(data._work_times);
@@ -42,12 +42,14 @@ Observer<T>::~Observer() {
 }
 
 template<typename T>
-void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step, int dephase) {
+void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) {
     _prod_size = _cons_size = _cost_p_cost_s_size = 0;
     _n_threads = n_threads;
     _data._iter = iter;
     _choice_step = choice_step;
     _dephase = dephase;
+    _prod_step = prod_step;
+    _cons_step = cons_step;
 }
 
 /* template<typename T>
@@ -282,6 +284,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
             _data._first_prod_step = prod_step;
             _data._first_cons_step = cons_step;
 
+            _data._first_prod_step_eff = BEST_PROD_STEP;
+            _data._first_cons_step_eff = BEST_CONS_STEP;
+
             int dephase_i = 0;
             for (auto& [queue, map_data]: _times) {
 #if RECONFIGURE == 1
@@ -361,6 +366,9 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             _data._second_prod_step = prod_step;
             _data._second_cons_step = cons_step;
+
+            _data._second_prod_step_eff = SECOND_BEST_PROD_STEP;
+            _data._second_cons_step_eff = SECOND_BEST_CONS_STEP;
 
             // unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
             // printf("Old = %d, new = %d\n", _best_step, best_step);

@@ -2,6 +2,7 @@
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <queue>
 #include <set>
 #include <thread>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "encode_common.h"
 #include "naive_queue.hpp"
 #include "smart_fifo.h"
+#include "hard_steps.h"
 
 #define DEDUP_TO_REORDER 1
 #define DEDUP_TO_COMPRESS 1
@@ -840,7 +842,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     // will work on said FIFO. iter_prod is the amount of elements that will be
     // produced. n_threads is the amount of producers and consumers that will work
     // on the FIFO.
-    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, size_t* nb_observers, uint64_t iter_prod, int choice_step = 0, int dephase = 0) {
+    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, size_t* nb_observers, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0) {
         std::cout << "Queue allocation" << std::endl;
         std::set<int> fifo_ids;
         (void)description;
@@ -872,7 +874,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new ((*fifos) + i) NaiveQueueMaster<chunk_t*>(500000, data.get_producing_threads(*iter));
             // new ((*observers) + i) Observer<chunk_t*>(iter_prod, data.get_interacting_threads(*iter));
             ((*fifos) + i)->delayed_init(1024 * 1024, data.get_producing_threads(*iter));
-            ((*observers) + i)->delayed_init(iter_prod, data.get_interacting_threads(*iter), choice_step, dephase);
+            ((*observers) + i)->delayed_init(iter_prod, data.get_interacting_threads(*iter), choice_step, dephase, prod_step, cons_step);
 
             all_observers.push_back((*observers) + i);
         }
@@ -890,7 +892,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         return { 0, 0 }; */
         struct stat sb;
         stat(data._input_filename.c_str(), &sb);
-        return { sb.st_size / MAXBUF, 190000 };
+        return { int(sb.st_size / ANCHOR_JUMP), int(sb.st_size / ANCHOR_JUMP) * 512 };
         // return { sb.st_size / MAXBUF, sb.st_size / MAXBUF * 
     };
 
@@ -899,8 +901,8 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     std::cout << "Starting to allocate queues" << std::endl;
     NaiveQueueMaster<chunk_t*>* fragment_to_refine, *refine_to_deduplicate, *deduplicate_to_compress, *dedupcompress_to_reorder;
     alloc_queues(&fragment_to_refine, fragment, "fragment to refine", &fragment_observers, &nb_fragment_observers, coarse);
-    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, &nb_refine_observers, fine);
-    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, &nb_deduplicate_observers, fine);
+    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, &nb_refine_observers, fine, 0, 0, REFINE_TO_DEDUP, DEDUP_FROM_REFINE);
+    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, &nb_deduplicate_observers, fine, 0, 0, DEDUP_TO_COMPRESS_STEP, COMPRESS_FROM_DEDUP);
     
     {
         std::set<int> sreorder;
@@ -916,7 +918,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
             dedupcompress_to_reorder[i].delayed_init(1024 * 1024, data.get_producing_threads(*iter));
             std::cout << data.get_interacting_threads(*iter) << std::endl;
-            compress_observers[i].delayed_init(320000, data.get_interacting_threads(*iter));
+            compress_observers[i].delayed_init(320000, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
             all_observers.push_back(compress_observers + i);
         }
 
@@ -1171,6 +1173,329 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             }
         }
     } */
+}
+
+void FragmentNumbers(std::queue<chunk_t*>& out, int fd, size_t filesize, void* buffer) {
+    size_t preloading_buffer_seek = 0;
+    int qid = 0;
+    int r;
+
+    sequence_number_t anchorcount = 0;
+
+    chunk_t *temp = NULL;
+    chunk_t *chunk = NULL;
+    u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);
+    u32int * rabinwintab = (u32int*) malloc(256*sizeof rabintab[0]);
+    if(rabintab == NULL || rabinwintab == NULL) {
+        EXIT_TRACE("Memory allocation failed.\n");
+    }
+
+    rf_win_dataprocess = 0;
+    rabininit(rf_win_dataprocess, rabintab, rabinwintab);
+
+    //Sanity check
+    if(MAXBUF < 8 * ANCHOR_JUMP) {
+        printf("WARNING: I/O buffer size is very small. Performance degraded.\n");
+        fflush(NULL);
+    }
+
+    //read from input file / buffer
+    while (1) {
+        size_t bytes_left; //amount of data left over in last_mbuffer from previous iteration
+
+        //Check how much data left over from previous iteration resp. create an initial chunk
+        if(temp != NULL) {
+            bytes_left = temp->uncompressed_data.n;
+        } else {
+            bytes_left = 0;
+        }
+
+        //Make sure that system supports new buffer size
+        if(MAXBUF+bytes_left > SSIZE_MAX) {
+            EXIT_TRACE("Input buffer size exceeds system maximum.\n");
+        }
+
+        //Allocate a new chunk and create a new memory buffer
+        chunk = (chunk_t *)malloc(sizeof(chunk_t));
+        if(chunk==NULL)
+            EXIT_TRACE("Memory allocation failed.\n");
+
+        r = mbuffer_create(&chunk->uncompressed_data, MAXBUF+bytes_left);
+        if(r!=0) {
+            EXIT_TRACE("Unable to initialize memory buffer.\n");
+        }
+
+        if(bytes_left > 0) {
+            //FIXME: Short-circuit this if no more data available
+
+            //"Extension" of existing buffer, copy sequence number and left over data to beginning of new buffer
+            chunk->header.state = CHUNK_STATE_UNCOMPRESSED;
+            chunk->sequence.l1num = temp->sequence.l1num;
+
+            //NOTE: We cannot safely extend the current memory region because it has already been given to another thread
+            memcpy(chunk->uncompressed_data.ptr, temp->uncompressed_data.ptr, temp->uncompressed_data.n);
+            mbuffer_free(&temp->uncompressed_data);
+            free(temp);
+            temp = NULL;
+        } else {
+            //brand new mbuffer, increment sequence number
+            chunk->header.state = CHUNK_STATE_UNCOMPRESSED;
+            chunk->sequence.l1num = anchorcount;
+            anchorcount++;
+        }
+
+        //Read data until buffer full
+        size_t bytes_read=0;
+        if(_g_data->_preloading) {
+            size_t max_read = MIN(MAXBUF, filesize-preloading_buffer_seek);
+            memcpy((uchar*)chunk->uncompressed_data.ptr+bytes_left, (uchar*)buffer+preloading_buffer_seek, max_read);
+            bytes_read = max_read;
+            preloading_buffer_seek += max_read;
+        } else {
+            while(bytes_read < MAXBUF) {
+                r = read(fd, (uchar*)chunk->uncompressed_data.ptr+bytes_left+bytes_read, MAXBUF-bytes_read);
+                if(r<0) switch(errno) {
+                    case EAGAIN:
+                        EXIT_TRACE("I/O error: No data available\n");break;
+                    case EBADF:
+                        EXIT_TRACE("I/O error: Invalid file descriptor\n");break;
+                    case EFAULT:
+                        EXIT_TRACE("I/O error: Buffer out of range\n");break;
+                    case EINTR:
+                        EXIT_TRACE("I/O error: Interruption\n");break;
+                    case EINVAL:
+                        EXIT_TRACE("I/O error: Unable to read from file descriptor\n");break;
+                    case EIO:
+                        EXIT_TRACE("I/O error: Generic I/O error\n");break;
+                    case EISDIR:
+                        EXIT_TRACE("I/O error: Cannot read from a directory\n");break;
+                    default:
+                        EXIT_TRACE("I/O error: Unrecognized error\n");break;
+                }
+                if(r==0) break;
+                bytes_read += r;
+            }
+        }
+
+        //No data left over from last iteration and also nothing new read in, simply clean up and quit
+        if(bytes_left + bytes_read == 0) {
+            mbuffer_free(&chunk->uncompressed_data);
+            free(chunk);
+            chunk = NULL;
+            break;
+        }
+
+        //Shrink buffer to actual size
+        if(bytes_left+bytes_read < chunk->uncompressed_data.n) {
+            r = mbuffer_realloc(&chunk->uncompressed_data, bytes_left+bytes_read);
+            assert(r == 0);
+        }
+
+        //Check whether any new data was read in, enqueue last chunk if not
+        if(bytes_read == 0) {
+            //put it into send buffer
+            out.push(chunk);
+            break;
+        }
+
+        //partition input block into large, coarse-granular chunks
+        int split;
+        do {
+            split = 0;
+            //Try to split the buffer at least ANCHOR_JUMP bytes away from its beginning
+            if(ANCHOR_JUMP < chunk->uncompressed_data.n) {
+                int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr + ANCHOR_JUMP, chunk->uncompressed_data.n - ANCHOR_JUMP, rf_win_dataprocess, rabintab, rabinwintab);
+                //Did we find a split location?
+                if(offset == 0) {
+                    //Split found at the very beginning of the buffer (should never happen due to technical limitations)
+                    assert(0);
+                    split = 0;
+                } else if(offset + ANCHOR_JUMP < chunk->uncompressed_data.n) {
+                    //Split found somewhere in the middle of the buffer
+                    //Allocate a new chunk and create a new memory buffer
+                    temp = (chunk_t *)malloc(sizeof(chunk_t));
+                    if(temp==NULL) EXIT_TRACE("Memory allocation failed.\n");
+
+                    //split it into two pieces
+                    r = mbuffer_split(&chunk->uncompressed_data, &temp->uncompressed_data, offset + ANCHOR_JUMP);
+                    if(r!=0) EXIT_TRACE("Unable to split memory buffer.\n");
+                    temp->header.state = CHUNK_STATE_UNCOMPRESSED;
+                    temp->sequence.l1num = anchorcount;
+                    anchorcount++;
+
+                    //put it into send buffer
+                    out.push(chunk);
+
+                    //prepare for next iteration
+                    chunk = temp;
+                    temp = NULL;
+                    split = 1;
+                } else {
+                    //Due to technical limitations we can't distinguish the cases "no split" and "split at end of buffer"
+                    //This will result in some unnecessary (and unlikely) work but yields the correct result eventually.
+                    temp = chunk;
+                    chunk = NULL;
+                    split = 0;
+                }
+            } else {
+                //NOTE: We don't process the stub, instead we try to read in more data so we might be able to find a proper split.
+                //        Only once the end of the file is reached do we get a genuine stub which will be enqueued right after the read operation.
+                temp = chunk;
+                chunk = NULL;
+                split = 0;
+            }
+        } while(split);
+    }
+
+    free(rabintab);
+    free(rabinwintab);
+}
+
+unsigned int RefineNumbers(std::queue<chunk_t*>& in, std::queue<chunk_t*>& out) {
+    // fprintf(stderr, "AU SECOURS JE COMPRENDS RIEN\n");
+    int r;
+    int pop = 0;
+
+    chunk_t *temp;
+    chunk_t *chunk;
+    u32int * rabintab = (u32int*)malloc(256*sizeof rabintab[0]);
+    u32int * rabinwintab = (u32int*)malloc(256*sizeof rabintab[0]);
+    if(rabintab == NULL || rabinwintab == NULL) {
+        EXIT_TRACE("Memory allocation failed.\n");
+    }
+
+    r=0;
+    int push_count = 0;
+    int limit = OBS_LIMIT;
+    int pop_count = 0;
+    std::atomic<bool> failed;
+    failed.store(false, std::memory_order_release);
+
+    // Begin clock after poping an element from the queue and upon performing 
+    // a new split.
+    while (!in.empty()) {
+        // fprintf(stderr, "About to pop from FIFO\n");
+        chunk = in.front();
+        // fprintf(stderr, "Fronted from FIFO\n");
+        in.pop();
+        // fprintf(stderr, "Poped from FIFO\n");
+
+        //get one item
+        rabininit(rf_win, rabintab, rabinwintab);
+
+        int split;
+        sequence_number_t chcount = 0;
+        do {
+            // std::cerr << "DO" << std::endl;
+            //Find next anchor with Rabin fingerprint
+            //TP offset_begin = SteadyClock::now();
+            int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win, rabintab, rabinwintab);
+            //auto offset_diff = diff(offset_begin, SteadyClock::now());
+            //Can we split the buffer?
+            if(offset < chunk->uncompressed_data.n) {
+                //Allocate a new chunk and create a new memory buffer
+                temp = (chunk_t *)malloc(sizeof(chunk_t));
+                if(temp==NULL) { EXIT_TRACE("Memory allocation failed.\n"); }
+                temp->header.state = chunk->header.state;
+                temp->sequence.l1num = chunk->sequence.l1num;
+
+                //split it into two pieces
+                //TP split_begin = SteadyClock::now();
+                r = mbuffer_split(&chunk->uncompressed_data, &temp->uncompressed_data, offset);
+                // std::cerr << "Split = " << r << std::endl;
+                //auto split_diff = diff(split_begin, SteadyClock::now());
+                // split_data.push_back(split_diff);
+                if(r!=0) { fprintf(stderr, "FUCKING KILL ME\n"); failed.store(true, std::memory_order_release); EXIT_TRACE("Unable to split memory buffer.\n"); }
+
+                //Set correct state and sequence numbers
+                chunk->sequence.l2num = chcount;
+                chunk->isLastL2Chunk = FALSE;
+                chcount++;
+
+                //put it into send buffer
+
+                // fprintf(stderr, "About to push in FIFO (1)\n");
+                out.push(chunk);
+                // fprintf(stderr, "Pushed in FIFO (1)\n");
+
+                chunk = temp;
+                split = 1;
+            } else {
+                //End of buffer reached, don't split but simply enqueue it
+                //Set correct state and sequence numbers
+                chunk->sequence.l2num = chcount;
+                chunk->isLastL2Chunk = TRUE;
+                chcount++;
+
+                //put it into send buffer
+                // fprintf(stderr, "About to push in FIFO (2)\n");
+                out.push(chunk);
+                // fprintf(stderr, "Pushed in FIFO (2)\n");
+
+                //prepare for next iteration
+                chunk = NULL;
+                split = 0;
+            }
+        } while(split);
+
+        // fprintf(stderr, "Done with chunk\n");
+    }
+
+    // std::cerr << rabintab << ", " << rabinwintab << ", " << failed.load(std::memory_order_acquire) << std::endl;
+    free(rabintab);
+    free(rabinwintab);
+
+    return 0;
+}
+
+std::tuple<unsigned int, unsigned int> DeduplicateNumbers(std::queue<chunk_t*>& in) {
+    chunk_t *chunk;
+    int n_compress = 0, n_deduplicate = 0;
+
+    std::set<chunk_t*> chunks;
+
+    while (!in.empty()) {
+        chunk = in.front();
+        in.pop();
+
+        auto [isDuplicate, lock_idx] = sub_Deduplicate(chunk);
+
+        //Enqueue chunk either into compression queue or into send queue
+        if(!isDuplicate) {
+            n_compress++;
+        } else {
+            n_deduplicate++;
+        }
+
+        chunks.insert(chunk);
+    }
+
+    return { n_deduplicate, n_compress };
+}
+
+void _EncodeForNumbers(DedupData& data, int fd, size_t filesize, void* buffer, tp&, tp&) {
+    std::queue<chunk_t*> fragments;
+    FragmentNumbers(fragments, fd, filesize, buffer);
+    unsigned int n_fragment = fragments.size();
+
+    // std::cout << "Fragment done" << std::endl;
+
+    std::queue<chunk_t*> refined;
+    RefineNumbers(fragments, refined);
+    // std::cerr << "RefineNumbers done" << std::endl;
+    unsigned int n_refine = refined.size();
+
+    // std::cout << "Refine done" << std::endl;
+
+    auto [n_deduplicate, n_compress] = DeduplicateNumbers(refined);
+
+    std::cout << "Fragments = " << n_fragment << std::endl << "Refined = " << n_refine << std::endl << "Deduplicate / Compress = " << n_deduplicate << " " << n_compress << " => " << float(n_deduplicate) / float(n_refine) * 100 << "% of deduplicate" << std::endl;
+}
+
+void EncodeForNumbers(DedupData& data) {
+    EncodeBase(data, [](DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+                _EncodeForNumbers(data, fd, filesize, buffer, begin, end);
+            });
 }
 
 // std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {

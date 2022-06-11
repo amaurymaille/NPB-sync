@@ -79,6 +79,7 @@ struct CLIArgs {
     bool _orig;
     bool _smart;
     bool _auto;
+    bool _numbers;
     std::optional<std::string> _output;
     std::optional<std::string> _observers;
 };
@@ -94,7 +95,8 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         ("lua-output-file", po::value<std::string>(), "Output file in which the Lua script can write its information")
         ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')")
         ("output", po::value<std::string>(), "Output file in which the program will write the compressed output")
-        ("observers", po::value<std::string>(), "Output file in which the observers will write their logs");
+        ("observers", po::value<std::string>(), "Output file in which the observers will write their logs")
+        ("numbers", "Fragment and refine the input file and output the number of chunks");
 
     po::variables_map vm;
     po::command_line_parser parser(argc, argv);
@@ -130,6 +132,12 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         args._auto = true;
     } else {
         args._auto = false;
+    }
+
+    if (vm.count("numbers")) {
+        args._numbers = true;
+    } else {
+        args._numbers = false;
     }
 
     if (vm.count("lua-output-file")) {
@@ -216,6 +224,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["run_auto"] = &DedupData::run_auto;
     dedup_data_type["push_layer"] = &DedupData::push_layer_data;
     dedup_data_type["set_observers"] = &DedupData::set_observers;
+    dedup_data_type["run_numbers"] = &DedupData::run_numbers;
 
     sol::usertype<LayerData> layer_datatype = lua.new_usertype<LayerData>("LayerData");
     layer_datatype["push"] = &LayerData::push;

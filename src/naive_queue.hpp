@@ -1255,6 +1255,12 @@ class Observer {
         uint32_t _first_cons_step = 0;
         uint32_t _second_prod_step = 0;
         uint32_t _second_cons_step = 0;
+
+        // Effective steps
+        uint32_t _first_prod_step_eff = 0;
+        uint32_t _first_cons_step_eff = 0;
+        uint32_t _second_prod_step_eff = 0;
+        uint32_t _second_cons_step_eff = 0;
     };
 
     struct MapData {
@@ -1284,10 +1290,10 @@ class Observer {
         Observer();
         // iter_prod is the amount of iterations performed by a single producer
         // n_threads is the total nubmer of threads that will interact with this observer
-        Observer(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0);
+        Observer(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
         ~Observer();
 
-        void delayed_init(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0);
+        void delayed_init(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -1354,6 +1360,8 @@ class Observer {
         std::vector<uint64_t> _averages;
         int _choice_step = 0;
         int _dephase = 0;
+        int _prod_step = 0;
+        int _cons_step = 0;
 
         bool _reconfigured = false;
         bool _reconfigured_twice = false;

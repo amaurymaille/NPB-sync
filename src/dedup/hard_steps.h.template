@@ -1,0 +1,9 @@
+#pragma once
+
+#define REFINE_TO_DEDUP ::rd::
+#define DEDUP_FROM_REFINE ::dr::
+#define DEDUP_TO_COMPRESS_STEP ::dc::
+#define COMPRESS_FROM_DEDUP ::cd::
+#define DEDUP_TO_REORDER_STEP ::dr2::
+#define REORDER_FROM_DEDUP ::rd2::
+#define REFINE_MULT ::refine_mult::
