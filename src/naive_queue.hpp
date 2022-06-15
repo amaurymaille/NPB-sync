@@ -16,6 +16,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include <pthread.h>
 #include <semaphore.h>
 
 #include "nlohmann/json.hpp"
@@ -136,6 +137,10 @@ class Ringbuffer {
 template<typename T>
 class NaiveQueue {
     public:
+        NaiveQueue() {
+
+        }
+
         NaiveQueue(size_t size, int n_producers) : _buf(size) {
             delayed_init(size, n_producers);
         }
@@ -160,12 +165,14 @@ class NaiveQueue {
         }
 
         inline int dequeue(Ringbuffer<T>* buf, int limit) __attribute__((always_inline)){
+            // printf("Thread %llu locks %p\n", pthread_self(), &_mutex);
             std::unique_lock<std::mutex> lck(_mutex);
             while (_buf.empty() && !terminated()) {
                 _not_empty.wait(lck);
             }
 
             if (_buf.empty() && terminated()) {
+                // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
                 return -1;
             }
 
@@ -179,10 +186,12 @@ class NaiveQueue {
                 _not_full.notify_all();
             }
 
+            // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
             return i;
         }
 
         inline int enqueue(Ringbuffer<T>* buf, int limit) __attribute__ ((always_inline)) {
+            // printf("Thread %llu locks %p\n", pthread_self(), &_mutex);
             std::unique_lock<std::mutex> lck(_mutex);
             // printf("_buf._n_elements = %lu\n", _buf.n_elements());
             while (_buf.full()) {
@@ -199,6 +208,7 @@ class NaiveQueue {
                 _not_empty.notify_all();
             }
 
+            // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
             return i;
         }
 
@@ -639,7 +649,9 @@ class NaiveQueueMaster {
         }
 
         template<typename... Args>
-        NaiveQueueImpl<T>* view(Args&&... args) {
+        NaiveQueueImpl<T>* view(bool producer, Args&&... args) {
+            if (!producer)
+                ++_n_consumers;
             return new NaiveQueueImpl<T>(this, std::forward<Args>(args)...);
         }
 
@@ -651,6 +663,7 @@ class NaiveQueueMaster {
     private:
         Ringbuffer<T> _buf;
         int _n_producers;
+        int _n_consumers;
         int _n_terminated;
         std::timed_mutex _mutex;
         std::condition_variable_any _not_empty, _not_full;
@@ -1072,7 +1085,11 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
     }
 
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    for (; !_buf.empty() && !queue->full(); ++i) {
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+#endif
         queue->push_local(*(_buf.pop()));
     }
 
@@ -1100,7 +1117,11 @@ inline int NaiveQueueMaster<T>::dequeue_no_timing(NaiveQueueImpl<T>* queue, int 
     }
 
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    for (; !_buf.empty() && !queue->full(); ++i) {
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+#endif
         queue->push_local(*(_buf.pop()));
     }
 
@@ -1135,7 +1156,11 @@ NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chr
     begin_sc = SteadyClock::now();
 
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    for (; !_buf.empty() && !queue->full(); ++i) {
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+#endif
         queue->push_local(*(_buf.pop()));
     }
 
@@ -1168,7 +1193,11 @@ inline std::tuple<bool, int>
     }
 
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    for (; !_buf.empty() && !queue->full(); ++i) {
+#else 
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+#endif
         queue->push_local(*(_buf.pop()));
     }
 

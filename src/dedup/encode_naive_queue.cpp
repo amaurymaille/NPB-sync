@@ -958,7 +958,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             for (auto const& [fifo, fifo_data]: fifo_ids) {
                 // FIFOData& fifo_data = data._fifo_data[fifo];
                 // target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
-                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(fifo_data._n, false, 0, 0, 100, 50);
+                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0, 100, 50);
                 target.push_back(impl);
 
                 Observer<chunk_t*>* obs = ids_to_observers[fifo];
