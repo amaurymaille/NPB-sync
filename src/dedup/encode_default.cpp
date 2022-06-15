@@ -47,7 +47,7 @@ void *FragmentDefault(void * targs){
 
     Ringbuffer<chunk_t*> send_buf;
     sequence_number_t anchorcount = 0;
-    int r;
+    int r = 0;
     int count = 0;
 
     chunk_t *temp = NULL;
@@ -826,7 +826,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     auto alloc_queues = [](NaiveQueue<chunk_t*>** q, std::set<int>& fifo_ids, LayerData const& data) {
         compute_fifo_ids_for_layer(fifo_ids, data);
         // *q = (queue_t*)malloc(sizeof(queue_t) * fifo_ids.size());
-        *q = (NaiveQueue<chunk_t*>*)malloc(sizeof(NaiveQueue<chunk_t*>) * fifo_ids.size());
+        *q = new NaiveQueue<chunk_t*>[fifo_ids.size()];
     };
 
     std::set<int> srefines, sdeduplicates, scompress, sreorders;
@@ -838,7 +838,7 @@ static void _Encode(DedupData& data, int fd, size_t filesize, void* buffer, tp& 
     {
         compute_fifo_ids_for_reorder(sreorders, deduplicate, compress);
         // reorder_que = (queue_t*)malloc(sizeof(queue_t) * sreorders.size());
-        reorder_que = (NaiveQueue<chunk_t*>*)malloc(sizeof(NaiveQueue<chunk_t*>) * sreorders.size());
+        reorder_que = new NaiveQueue<chunk_t*>[sreorders.size()];
     }
 
     std::map<int, int> fifo_id_to_position;
