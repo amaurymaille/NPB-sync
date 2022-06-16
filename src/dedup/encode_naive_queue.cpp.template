@@ -918,7 +918,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
             dedupcompress_to_reorder[i].delayed_init(1024 * 1024, data.get_producing_threads(*iter));
             std::cout << data.get_interacting_threads(*iter) << std::endl;
-            compress_observers[i].delayed_init(320000, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
+            compress_observers[i].delayed_init(fine, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
             all_observers.push_back(compress_observers + i);
         }
 
@@ -958,7 +958,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             for (auto const& [fifo, fifo_data]: fifo_ids) {
                 // FIFOData& fifo_data = data._fifo_data[fifo];
                 // target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
-                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0, 100, 50);
+                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0, OBS_LIMIT, 50);
                 target.push_back(impl);
 
                 Observer<chunk_t*>* obs = ids_to_observers[fifo];
