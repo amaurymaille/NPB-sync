@@ -10,6 +10,7 @@
 \usepackage{amsthm}
 \usepackage{amsmath}
 \usepackage{listings}
+\usepackage{xcolor}
 
 \lstset{
   basicstyle=\tt\footnotesize,
@@ -49,21 +50,67 @@ void consumer(NaiveQueueImpl<int64_t>* queue) {
 \paragraph{Notations}
 
 \begin{itemize}
-    \item $ I $ is the total number of iterations
-    \item $ CostP $ is the time required to perform a local push / a local pull
-    \item $ W_i $ is the amount of work performed by thread $ i $
-    \item $ S $ is a given step
+    \item $ I_p $ is the total number of iterations of a producer (\texttt{work\_limit}).
+    \item $ I_c $ is the total number of iterations of a consumer (\texttt{work\_limit}).
+    \item $ CostP_x $ is the time required to perform a local push / a local pull for entity x. \textcolor{red}{We assume that this value is the same for local pulls, local pushs, and for all producers and consumers}.
+    \item $ W_{p_i} $ is the amount of work performed by producer thread $ i $. \textcolor{red}{We assume this value is the same for all producers}.
+    \item $ W_{c_i} $ is the amount of work performed by consumer thread $ i $. \textcolor{red}{We assume this value is the same for all consumers}.
+    \item $ S_p $ is the step of all producers.
+    \item $ S_c $ is the step of all consumers.
     \item $ N_p $ is the amount of producers
     \item $ N_c $ is the amount of consumers
+    \item $ S $ is the total amount of data that is transfered over a FIFO. $ S = N_p * S_p = N_c * S_c $.
     \item $ N $ is the total number of threads ($ N = N_p + N_c $)
-    \item $ CostS $ is the time taken to perform a synchronization, minus the time spent in the critical section itself
-    \item $ CostCC $ is the time spent in the critical section itself
+    \item $ CostS $ is the time taken to perform a synchronization, minus the time spent in the critical section itself. This includes the wait time to lock, the time to lock and the time to unlock the mutex.
+    \item $ CostCC $ is the time spent in the critical section itself. This is basically the time to transfer from/to the local FIFO.
 \end{itemize}
 
 \paragraph{Execution time}
-Execution time is roughly:
+Execution time depends on the amount of work of the consumers / producers and the amount of producers and consumers. First, compute : 
+\medskip
 
-    $ time(S) = W_i * I + CostP * I + \frac{I}{S} * (CostCC + CostS) + S * (W_i + CostP) + (N - 1) * (CostS + CostP * S) $
+    $ CPRatio = N_p * \overline{W_{c_i}} $ and $ PCRatio = N_c * \overline{W_{p_i}} $.
+
+    \medskip
+
+    Our formulas are valid under the following assumptions / runtime rules : 
+
+    \begin{center}
+        \fbox{
+            \parbox{0.4\textwidth}{
+                \begin{align*}
+                    N_c * S_c &= N_p * S_p\\
+                    \forall x, CostCC_x &\equiv 2 * CostP_x * S_x\\
+                    \forall i, j, CostP_i &= CostP_j
+                \end{align*}
+            }
+        }
+    \end{center}
+
+        \medskip
+\noindent \textbf{If} $ CPRatio > PCRatio $ \textbf{then}
+
+    % $ time(S) = S_p * (\overline{W_{p_i}} + CostP) + N_p * (CostCC_{S_p} + CostS) + (N_c - 1) * (CostCC_{S_c} + CostS) + \frac{I_c}{S_c} * (CostCC_{S_c} + CostS + S_c * (\overline{W_{c_i}} + CostP)) $ 
+    $ time(S_p) = I_p * (\overline{W_{p_i}} + CostP) + \frac{I_p}{S_p} * (CostCC_p + CostS) + S_c * (\overline{W_{c_i}} + CostP) + (N_p - 1) * (CostS + CostCC_p * S_p) + N_c * (CostS + CostCC_c) $
+
+    \begin{itemize}
+        \item $ I_p * (\overline{W_{i_p}} + CostP) $ is the amount of time required for a producer to produce all its items and insert them inside its local FIFO. Note that this uses $ \overline{W_{p_i}} $.
+        \item $ \frac{I_p}{S_p} * (CostCC_p + CostS)) $ is the amount of time required to transfer all the elements from the local buffer into the shared buffer, which includes the synchronization time $ CostS $. This synchronization is performed $ \frac{I_p}{S_p} $ times since the step is used to control the amount of synchronization.
+        \item $ (N_p - 1) * (CostS + CostCC_p * S_p) $ is the amount of time required for all other producers to complete their critical sections.
+        \item $ N_c * (CostS + CostCC_c) $ is the amount of time required for all consumers to complete their critical sections.
+        \item $ S_c * (\overline{W_{c_i}} + CostP) $ is the amount of time required by the last consumer to complete its work. Note that his uses $ \overline{W_{c_i}} $.
+    \end{itemize}
+
+    $ time'(S_p) = - \frac{I_p * CostS}{{S_p}^{2}} + \frac{N_p * \overline{W_{c_i}} + N_p * CostP}{N_c} + 2 * (N_p * CostP - CostP + N_p * CostP) \Rightarrow $\\
+    $ time'(S_p) = 0 \equiv S_p = \sqrt{\left | \frac{I_p * Cost_S}{\frac{N_p * W_c + N_p * CostP}{N_C} + 2 * (N_p * CostP - CostP + N_p * CostP)} \right | } $ 
+
+    \medskip
+\noindent \textbf{Else}
+
+    % $ time(S) = S_c * (\overline{W_{c_i}} + CostP) + N_c * (CostCC_{S_c} + CostS) + (N_p - 1) * (CostCC_{S_p} + CostS) + \frac{I_p}{S_p} * (CostCC_{S_p} + CostS + S_p * (\overline{W_{p_i}} + CostP)) $ 
+
+    % $ time(S) = W_i * I + CostP * I + \frac{I}{S} * (CostCC + CostS) + S * (W_i + CostP) + (N - 1) * (CostS + CostP * S) $
+    
 \medskip
 
 \paragraph{Validity of previous formula}
