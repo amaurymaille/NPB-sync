@@ -16,8 +16,8 @@ template<typename T>
 Observer<T>::Observer() { }
 
 template<typename T>
-Observer<T>::Observer(uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) : 
-    _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
+Observer<T>::Observer(std::string const& description, uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) : 
+    _description(description), _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
     // _data._cost_p = cost_push;
     // _data._cost_s = cost_sync;
     _data._iter = iter;
@@ -42,7 +42,7 @@ Observer<T>::~Observer() {
 }
 
 template<typename T>
-void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) {
+void Observer<T>::delayed_init(std::string const& description, uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) {
     _prod_size = _cons_size = _cost_p_cost_s_size = 0;
     _n_threads = n_threads;
     _data._iter = iter;
@@ -50,6 +50,7 @@ void Observer<T>::delayed_init(uint64_t iter, int n_threads, int choice_step, in
     _dephase = dephase;
     _prod_step = prod_step;
     _cons_step = cons_step;
+    _description = description;
 }
 
 /* template<typename T>
@@ -440,83 +441,89 @@ void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t p
 
 template<typename T>
 json Observer<T>::serialize() const {
-    json result;
-    result["best_step"] = _best_step;
-    result["best_step_p2"] = _second_best_step;
-    // result["worst_avg"] = _worst_avg;
-    // result["cost_p"] = _data._cost_p;
+    json fifos = json::array();
 
-    /* json extra;
-    extra["cost_p"] = _cost_p;
-    extra["average"] = _averages; */
+    json steps;
+    steps["first_prod_step"] = _data._first_prod_step;
+    steps["first_cons_step"] = _data._first_cons_step;
+    steps["first_prod_step_effective"] = _data._first_prod_step_eff;
+    steps["first_cons_step_effective"] = _data._first_cons_step_eff;
+    steps["second_prod_step"] = _data._second_prod_step;
+    steps["second_cons_step"] = _data._second_cons_step;
+    steps["second_prod_step_effective"] = _data._second_prod_step_eff;
+    steps["second_cons_step_effective"] = _data._second_cons_step_eff;
 
-    json entities = json::array();
+    json compute;
+    compute["iter"] = _data._iter;
+    compute["n_consumers"] = _data._n_consumers;
+    compute["n_producers"] = _data._n_producers;
+    compute["prod_cons"] = _data._prod_cons;
+    compute["prod_prod"] = _data._prod_prod;
+    compute["producers_avg"] = _data._producers_avg;
+    compute["consumers_avg"] = _data._consumers_avg;
+    compute["cost_wl"] = _data._cost_wl;
+    compute["cost_u"] = _data._cost_u;
+    compute["cost_p"] = _data._cost_p;
+
+    auto copy = [](json& arr, auto src, int n) {
+        for (int i = 0; i < n; ++i) {
+            arr.push_back(src[i]);
+        }
+    };
+
     for (auto const& [queue, data]: _times) {
-        json this_entity;
-        this_entity["producer"] = data._producer;
+        json fifo;
+        fifo["type"] = data._producer ? "producer" : "consumer";
+        json locks = json::array(), transfers = json::array(), unlocks = json::array(), locals = json::array(), work = json::array();
 
-        json cs_data = json::array();
+        copy(work, data._work_times, data._n_work);
+    
+        fifo["work"] = work;
 
-        for (int i = 0; i < data._n_sync; ++i) {
-            json cs;
-            cs["lock"] = data._lock_times[i];
-            cs["cs"] = data._copy_times[i];
-            cs["unlock"] = data._unlock_times[i];
-            cs["items"] = data._items[i];
-            cs_data.push_back(cs);
-        }
-        this_entity["sync"] = cs_data;
-
-        json work_data = json::array();
-        for (int i = 0; i < data._n_work; ++i) {
-            work_data.push_back(data._work_times[i]);
-        }
-        this_entity["work"] = work_data;
-        entities.push_back(this_entity);
-    }
-
-    /* json cs_data_p2 = json::array();
-    for (auto const& [queue, data]: _cost_s) {
-        json this_producer = json::array();
-        for (int i = 0; i < data.size(); ++i) {
-            for (auto [lock, copy, unlock, items]: data) {
-                json cs;
-                cs["lock"] = lock;
-                cs["cs"] = copy;
-                cs["unlock"] = unlock;
-                cs["items"] = items;
-                this_producer.push_back(cs);
-            }
-        }
-        cs_data_p2.push_back(this_producer);
-    }
-
-    json consumer_cs_data = json::array();
-    for (auto const& [queue, data]: _cs_data) {
-        if (data._producer) {
+        if (! data._producer) {
+            fifos.push_back(fifo);
             continue;
         }
 
-        json this_consumer;
-        this_consumer["content"] = json::array();
-        // this_consumer["type"] = data._producer ? "producer":"consumer";
-        for (auto [lock, cs, unlock]: data._data) {
-            json content;
-            content["lock"] = lock;
-            content["cs"] = cs;
-            content["unlock"] = unlock;
-            this_consumer["content"].push_back(content);
-        }
+        copy(locals, data._push_times, data._n_push);
+        copy(locks, data._lock_times, data._n_sync);
+        copy(transfers, data._copy_times, data._n_sync);
+        copy(unlocks, data._unlock_times, data._n_sync);
 
-        consumer_cs_data.push_back(this_consumer);
+        fifo["lock"] = locks;
+        fifo["transfer"] = transfers;
+        fifo["unlock"] = unlocks;
+        fifo["local"] = locals;
+
+        fifos.push_back(fifo);
     }
 
-    extra["cs_data"] = cs_data;
-    extra["cs_data_p2"] = cs_data_p2;
-    extra["consumer_cs_daa"] = consumer_cs_data; */
-    
-    // result["extra"] = extra;
-    result["entities"] = entities;
+    json p2 = json::array();
+    for (auto const& [queue, data]: _cost_s) {
+        json fifo;
+        json locks = json::array(), unlocks = json::array(), transfers = json::array();
+
+        fifo["type"] = queue->_producer ? "producer" : "consumer";
+        for (auto [lock, transfer, unlock, _]: data) {
+            locks.push_back(lock);
+            unlocks.push_back(unlock);
+            transfers.push_back(transfer);
+        }
+
+        fifo["lock"] = locks;
+        fifo["unlock"] = unlocks;
+        fifo["transfer"] = transfers;
+        
+        p2.push_back(fifo);
+    }
+
+    json result;
+    result["description"] = _description;
+    result["compute"] = compute;
+    result["steps"] = steps;
+    result["fifos"] = fifos;
+    result["p2"] = p2;
+
     return result;
 }
 

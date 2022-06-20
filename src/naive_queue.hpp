@@ -248,9 +248,10 @@ class NaiveQueueImpl {
     friend class NaiveQueueMaster<T>;
 
     public:
-        NaiveQueueImpl(NaiveQueueMaster<T>* master, size_t size, bool /* reconfigure */, 
+        NaiveQueueImpl(NaiveQueueMaster<T>* master, bool producer, size_t size, bool /* reconfigure */, 
                 unsigned int threshold, unsigned int new_step, unsigned int samples_first, 
                 unsigned int samples_second) {
+            _producer = producer;
             _master = master; 
             // _reconfigure = reconfigure;
             _threshold = threshold;
@@ -346,6 +347,7 @@ class NaiveQueueImpl {
         size_t _n_elements;
         size_t _size;
         std::chrono::time_point<std::chrono::steady_clock> _begin;
+        bool _producer;
 
         // New step. Used both in manual and automatic reconfiguration.
         // Not atomic, but needs to be written before _need_reconfigure is set to true, 
@@ -652,7 +654,7 @@ class NaiveQueueMaster {
         NaiveQueueImpl<T>* view(bool producer, Args&&... args) {
             if (!producer)
                 ++_n_consumers;
-            return new NaiveQueueImpl<T>(this, std::forward<Args>(args)...);
+            return new NaiveQueueImpl<T>(this, producer, std::forward<Args>(args)...);
         }
 
         inline std::tuple<bool, int, unsigned long long, unsigned long long, unsigned long long>
@@ -1086,12 +1088,20 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
 
     int i = 0;
 #if FAST_ONE_CONSUMER == 1
-    for (; !_buf.empty() && !queue->full(); ++i) {
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
 #else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
-#endif
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -1118,12 +1128,20 @@ inline int NaiveQueueMaster<T>::dequeue_no_timing(NaiveQueueImpl<T>* queue, int 
 
     int i = 0;
 #if FAST_ONE_CONSUMER == 1
-    for (; !_buf.empty() && !queue->full(); ++i) {
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
 #else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
-#endif
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -1157,12 +1175,20 @@ NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chr
 
     int i = 0;
 #if FAST_ONE_CONSUMER == 1
-    for (; !_buf.empty() && !queue->full(); ++i) {
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
 #else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
-#endif
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -1194,12 +1220,20 @@ inline std::tuple<bool, int>
 
     int i = 0;
 #if FAST_ONE_CONSUMER == 1
-    for (; !_buf.empty() && !queue->full(); ++i) {
-#else 
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
-#endif
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -1319,10 +1353,10 @@ class Observer {
         Observer();
         // iter_prod is the amount of iterations performed by a single producer
         // n_threads is the total nubmer of threads that will interact with this observer
-        Observer(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
+        Observer(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
         ~Observer();
 
-        void delayed_init(uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
+        void delayed_init(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -1402,6 +1436,8 @@ class Observer {
         std::mutex _m;
 
         int _n_threads;
+
+        std::string _description;
 };
 
 template<typename T>

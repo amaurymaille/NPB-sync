@@ -836,7 +836,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     // will work on said FIFO. iter_prod is the amount of elements that will be
     // produced. n_threads is the amount of producers and consumers that will work
     // on the FIFO.
-    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, size_t* nb_observers, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0) {
+    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, size_t* nb_observers, std::string const& observer_description, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0) {
         std::cout << "Queue allocation" << std::endl;
         std::set<int> fifo_ids;
         (void)description;
@@ -868,7 +868,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new ((*fifos) + i) NaiveQueueMaster<chunk_t*>(500000, data.get_producing_threads(*iter));
             // new ((*observers) + i) Observer<chunk_t*>(iter_prod, data.get_interacting_threads(*iter));
             ((*fifos) + i)->delayed_init(1024 * 1024, data.get_producing_threads(*iter));
-            ((*observers) + i)->delayed_init(iter_prod, data.get_interacting_threads(*iter), choice_step, dephase, prod_step, cons_step);
+            ((*observers) + i)->delayed_init(observer_description, iter_prod, data.get_interacting_threads(*iter), choice_step, dephase, prod_step, cons_step);
 
             all_observers.push_back((*observers) + i);
         }
@@ -894,9 +894,9 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
     std::cout << "Starting to allocate queues" << std::endl;
     NaiveQueueMaster<chunk_t*>* fragment_to_refine, *refine_to_deduplicate, *deduplicate_to_compress, *dedupcompress_to_reorder;
-    alloc_queues(&fragment_to_refine, fragment, "fragment to refine", &fragment_observers, &nb_fragment_observers, coarse);
-    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, &nb_refine_observers, fine, 0, 0, REFINE_TO_DEDUP, DEDUP_FROM_REFINE);
-    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, &nb_deduplicate_observers, fine, 0, 0, DEDUP_TO_COMPRESS_STEP, COMPRESS_FROM_DEDUP);
+    alloc_queues(&fragment_to_refine, fragment, "fragment to refine", &fragment_observers, &nb_fragment_observers, "Fragment to Refine", coarse);
+    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, &nb_refine_observers, "Refine to Deduplicate", fine, 0, 0, REFINE_TO_DEDUP, DEDUP_FROM_REFINE);
+    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, &nb_deduplicate_observers, "Deduplicate to Compress", fine, 0, 0, DEDUP_TO_COMPRESS_STEP, COMPRESS_FROM_DEDUP);
     
     {
         std::set<int> sreorder;
@@ -912,7 +912,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
             dedupcompress_to_reorder[i].delayed_init(1024 * 1024, data.get_producing_threads(*iter));
             std::cout << data.get_interacting_threads(*iter) << std::endl;
-            compress_observers[i].delayed_init(fine, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
+            compress_observers[i].delayed_init("Dedup / Compress to Reorder", fine, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
             all_observers.push_back(compress_observers + i);
         }
 
