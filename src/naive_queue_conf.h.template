@@ -1,0 +1,8 @@
+/// Values : positive integer, best_step (computed best step)
+#define STEP_MOD ::step_mod:: 
+#define BEST_PROD_STEP ::bp1::
+#define BEST_CONS_STEP ::bc1::
+#define SECOND_BEST_PROD_STEP ::bp2::
+#define SECOND_BEST_CONS_STEP ::bc2::
+#define RECONFIGURE ::reconfigure::
+#define FAST_ONE_CONSUMER ::foc::

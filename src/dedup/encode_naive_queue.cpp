@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <fstream>
 #include <future>
+#include <iterator>
+#include <queue>
 #include <set>
 #include <thread>
 #include <vector>
@@ -9,8 +12,9 @@
 #include "encode_common.h"
 #include "naive_queue.hpp"
 #include "smart_fifo.h"
+#include "hard_steps.h"
 
-#define OBS_LIMIT 100
+#include "encode_naive_queue_conf.h"
 
 struct thread_args_naive {
     int fd;
@@ -226,6 +230,9 @@ void FragmentNaiveQueue(thread_args_naive const& args) {
     printf("Fragment: %d\n", count);
 }
 
+std::mutex _split_mutex;
+std::map<NaiveQueueImpl<chunk_t*>*, std::vector<uint64_t>> _split_data;
+
 void RefineNaiveQueue(thread_args_naive const& args) {
     // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
@@ -240,6 +247,9 @@ void RefineNaiveQueue(thread_args_naive const& args) {
         EXIT_TRACE("Memory allocation failed.\n");
     }
 
+    std::vector<uint64_t> split_data;
+    split_data.reserve(300000);
+
     r=0;
     int push_count = 0;
     int limit = OBS_LIMIT;
@@ -249,7 +259,11 @@ void RefineNaiveQueue(thread_args_naive const& args) {
     // a new split.
     while (TRUE) {
         //if no item for process, get a group of items from the pipeline
-        auto [value, lock, critical, unlock] = args._input_fifos[0]->pop();
+// #if TIMED_PUSH == 1
+//         auto [value, lock, critical, unlock] = args._input_fifos[0]->timed_pop();
+// #else
+        auto value = args._input_fifos[0]->pop();
+// #endif
 
         if (!value) {
             break;
@@ -266,7 +280,9 @@ void RefineNaiveQueue(thread_args_naive const& args) {
         sequence_number_t chcount = 0;
         do {
             //Find next anchor with Rabin fingerprint
+            //TP offset_begin = SteadyClock::now();
             int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win, rabintab, rabinwintab);
+            //auto offset_diff = diff(offset_begin, SteadyClock::now());
             //Can we split the buffer?
             if(offset < chunk->uncompressed_data.n) {
                 //Allocate a new chunk and create a new memory buffer
@@ -276,7 +292,10 @@ void RefineNaiveQueue(thread_args_naive const& args) {
                 temp->sequence.l1num = chunk->sequence.l1num;
 
                 //split it into two pieces
+                //TP split_begin = SteadyClock::now();
                 r = mbuffer_split(&chunk->uncompressed_data, &temp->uncompressed_data, offset);
+                //auto split_diff = diff(split_begin, SteadyClock::now());
+                // split_data.push_back(split_diff);
                 if(r!=0) EXIT_TRACE("Unable to split memory buffer.\n");
 
                 //Set correct state and sequence numbers
@@ -285,12 +304,20 @@ void RefineNaiveQueue(thread_args_naive const& args) {
                 chcount++;
 
                 //put it into send buffer
+#if TIMED_PUSH == 1
                 auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+                args._output_fifos[0]->push(chunk);
+#endif
                 ++push_count;
 
+#if TIMED_PUSH == 1
                 if (push_count <= limit) {
-                    args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
+                    auto d = diff(begin, SteadyClock::now());
+                    // printf("%llu\n", d - offset_diff);
+                    args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
                 }
+#endif
 
                 // Reset begin because we are technically producing another element by performing
                 // a new split from now on.
@@ -307,12 +334,20 @@ void RefineNaiveQueue(thread_args_naive const& args) {
                 chcount++;
 
                 //put it into send buffer
+#if TIMED_PUSH == 1
                 auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+                args._output_fifos[0]->push(chunk);
+#endif
                 ++push_count;
 
+#if TIMED_PUSH == 1
                 if (push_count <= limit) {
-                    args._output_observers[0]->add_producer_time(args._output_fifos[0], diff(begin, SteadyClock::now()));
+                    auto d = diff(begin, SteadyClock::now());
+                    // printf("%llu\n", d);
+                    args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
                 }
+#endif
 
                 //prepare for next iteration
                 chunk = NULL;
@@ -326,6 +361,10 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 
     //shutdown
     args._output_fifos[0]->terminate();
+
+    _split_mutex.lock();
+    _split_data[args._input_fifos[0]] = std::move(split_data);
+    _split_mutex.unlock();
     printf("Refine: pop = %d, push = %d\n", pop_count, push_count);
 }
 
@@ -347,7 +386,11 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
 
     while (1) {
         //if no items available, fetch a group of items from the queue
-        auto [value, lock, critical, unlock] = args._input_fifos[0]->pop();
+// #if TIMED_PUSH == 1
+//         auto [value, lock, critical, unlock] = args._input_fifos[0]->timed_pop();
+// #else
+        auto value = args._input_fifos[0]->pop();
+// #endif
 
         if (!value) {
             break;
@@ -364,6 +407,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
         auto d = diff(begin, SteadyClock::now());
         //Enqueue chunk either into compression queue or into send queue
         if(!isDuplicate) {
+#if DEDUP_TO_REORDER == 1
             if (last_was_compressed) {
                 ++in_a_row;
 
@@ -377,12 +421,19 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 last_was_compressed = true;
                 in_a_row = 1;
             }
+#endif
+            last_was_compressed = true;
+#if TIMED_PUSH == 1
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
-            ++compress_count;
             if (push_res && compress_count <= compress_limit) {
+                ++compress_count;
                 args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
             }
+#else
+            args._output_fifos[0]->push(chunk);
+#endif
         } else {
+#if DEDUP_TO_COMPRESS == 1
             if (!last_was_compressed) {
                 ++in_a_row;
 
@@ -396,17 +447,26 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
                 last_was_compressed = false;
                 in_a_row = 1;
             }
+#endif
+            last_was_compressed = false;
+
+#if TIMED_PUSH == 1
             auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
-            ++reorder_count;
             if (push_res && reorder_count <= reorder_limit) {
+                ++reorder_count;
                 args._extra_output_observers[0]->add_producer_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
             }
+#else
+            args._extra_output_fifos[0]->push(chunk);
+#endif
         }
 
         ++input_count;
+#if TIMED_PUSH == 1
         if (input_count <= input_limit) {
             args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
+#endif
     }
 
     args._output_fifos[0]->terminate();
@@ -423,12 +483,23 @@ void CompressNaiveQueue(thread_args_naive const& args) {
     int limit = OBS_LIMIT;
     int pop_count = 0;
     while(1) {
-        auto [timing_data, success] = args._input_fifos[0]->cross_pop(std::chrono::nanoseconds(500), args._output_fifos[0]);
-        auto [value, lock, critical, unlock] = timing_data;
+#if COMPRESS_CROSS_POP == 1
+        auto [value, success] = args._input_fifos[0]->cross_pop_no_timing(std::chrono::nanoseconds(500), args._output_fifos[0]);
+        // auto [value, lock, critical, unlock] = timing_data;
+#else
+// #if TIMED_PUSH == 1
+//        auto timing_data = args._input_fifos[0]->timed_pop();
+//        auto [value, lock, critical, unlock] = timing_data;
+// #else
+        auto value = args._input_fifos[0]->pop();
+// #endif
+#endif
 
+#if COMPRESS_CROSS_POP == 1
         if (!success) {
             continue;
         }
+#endif
 
         if (!value) {
             break;
@@ -441,10 +512,16 @@ void CompressNaiveQueue(thread_args_naive const& args) {
 
         TP begin = SteadyClock::now();
         sub_Compress(chunk);
+#if TIMED_PUSH == 1
         auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+#else
+        args._output_fifos[0]->push(chunk);
+
+#endif
         ++count;
 
         auto d = diff(begin, SteadyClock::now());
+#if TIMED_PUSH == 1
         if (push_res && count <= limit) {
             args._output_observers[0]->add_producer_time(args._output_fifos[0],  d);
         }
@@ -452,6 +529,7 @@ void CompressNaiveQueue(thread_args_naive const& args) {
         if (count <= limit) {
             args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
         }
+#endif
     }
 
     args._output_fifos[0]->terminate();
@@ -508,7 +586,11 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
         Observer<chunk_t*>* current_observer;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
             size_t lock, critical, unlock;
-            std::tie(value, lock, critical, unlock) = args._input_fifos[qid]->pop();
+// #if TIMED_PUSH == 1
+//            std::tie(value, lock, critical, unlock) = args._input_fifos[qid]->timed_pop();
+// #else
+            value = args._input_fifos[qid]->pop();
+// #endif
             current_fifo = args._input_fifos[qid];
             current_observer = args._input_observers[qid];
             qid = (qid + 1) % args._input_fifos.size();
@@ -556,12 +638,14 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
                 Insert(chunk, pos->Element.queue);
             }
 
+#if TIMED_PUSH == 1
             ++(obs_count[current_fifo]);
 
             if (obs_count[current_fifo] <= obs_limit) {
                 auto d = diff(now, SteadyClock::now());
                 current_observer->add_consumer_time(current_fifo, d);
             }
+#endif
             continue;
         }
 
@@ -742,6 +826,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     // Using pointers instead of vector because fuck type requirements.
     // Not using smart pointers because why should I?
     Observer<chunk_t*>* fragment_observers, *refine_observers, *deduplicate_observers, *compress_observers;
+    size_t nb_fragment_observers, nb_refine_observers, nb_deduplicate_observers, nb_compress_observers;
 
     std::vector<Observer<chunk_t*>*> all_observers;
     
@@ -751,7 +836,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     // will work on said FIFO. iter_prod is the amount of elements that will be
     // produced. n_threads is the amount of producers and consumers that will work
     // on the FIFO.
-    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, uint64_t iter_prod) {
+    auto alloc_queues = [&ids_to_fifos, &ids_to_observers, &data, &all_observers](NaiveQueueMaster<chunk_t*>** fifos, LayerData const& data, std::string&& description, Observer<chunk_t*>** observers, size_t* nb_observers, std::string const& observer_description, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0) {
         std::cout << "Queue allocation" << std::endl;
         std::set<int> fifo_ids;
         (void)description;
@@ -762,6 +847,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         // *observers = (Observer<chunk_t*>*)std::aligned_alloc(fifo_ids.size() * sizeof(Observer<chunk_t*>), alignof(Observer<chunk_t*>));
         *fifos = new NaiveQueueMaster<chunk_t*>[fifo_ids.size()];
         *observers = new Observer<chunk_t*>[fifo_ids.size()];
+        *nb_observers = fifo_ids.size();
 
         if (!*fifos) {
             std::cout << "OOM (fifos)" << std::endl;
@@ -777,12 +863,12 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
         auto iter = fifo_ids.begin();
         for (int i = 0; i < fifo_ids.size(); ++i, ++iter) {
-            fprintf(stderr, "Using hardcoded size of master!\n");
+            // fprintf(stderr, "Using hardcoded size of master!\n");
             // std::cout << i << ", " << (*fifos) + i << ", " << (*observers) + i << std::endl;
             // new ((*fifos) + i) NaiveQueueMaster<chunk_t*>(500000, data.get_producing_threads(*iter));
             // new ((*observers) + i) Observer<chunk_t*>(iter_prod, data.get_interacting_threads(*iter));
-            ((*fifos) + i)->delayed_init(500000, data.get_producing_threads(*iter));
-            ((*observers) + i)->delayed_init(iter_prod, data.get_interacting_threads(*iter));
+            ((*fifos) + i)->delayed_init(1024 * 1024, data.get_producing_threads(*iter));
+            ((*observers) + i)->delayed_init(observer_description, iter_prod, data.get_interacting_threads(*iter), choice_step, dephase, prod_step, cons_step);
 
             all_observers.push_back((*observers) + i);
         }
@@ -800,7 +886,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         return { 0, 0 }; */
         struct stat sb;
         stat(data._input_filename.c_str(), &sb);
-        return { sb.st_size / MAXBUF, 190000 };
+        return { int(sb.st_size / ANCHOR_JUMP), int(sb.st_size / ANCHOR_JUMP) * 512 };
         // return { sb.st_size / MAXBUF, sb.st_size / MAXBUF * 
     };
 
@@ -808,9 +894,9 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
     std::cout << "Starting to allocate queues" << std::endl;
     NaiveQueueMaster<chunk_t*>* fragment_to_refine, *refine_to_deduplicate, *deduplicate_to_compress, *dedupcompress_to_reorder;
-    alloc_queues(&fragment_to_refine, fragment, "fragment to refine", &fragment_observers, coarse);
-    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, fine);
-    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, fine);
+    alloc_queues(&fragment_to_refine, fragment, "fragment to refine", &fragment_observers, &nb_fragment_observers, "Fragment to Refine", coarse);
+    alloc_queues(&refine_to_deduplicate, refine, "refine to deduplicate", &refine_observers, &nb_refine_observers, "Refine to Deduplicate", fine, 0, 0, REFINE_TO_DEDUP, DEDUP_FROM_REFINE);
+    alloc_queues(&deduplicate_to_compress, deduplicate, "deduplicate to compress", &deduplicate_observers, &nb_deduplicate_observers, "Deduplicate to Compress", fine, 0, 0, DEDUP_TO_COMPRESS_STEP, COMPRESS_FROM_DEDUP);
     
     {
         std::set<int> sreorder;
@@ -819,13 +905,14 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         // dedupcompress_to_reorder = (NaiveQueueMaster<chunk_t*>*)std::aligned_alloc(sizeof(NaiveQueueMaster<chunk_t*>) * sreorder.size(), alignof(NaiveQueueMaster<chunk_t*>));
         dedupcompress_to_reorder = new NaiveQueueMaster<chunk_t*>[sreorder.size()];
         compress_observers = new Observer<chunk_t*>[sreorder.size()];
+        nb_compress_observers = sreorder.size();
         auto iter = sreorder.begin();
         for (int i = 0; i < sreorder.size(); ++i, ++iter) {
-            fprintf(stderr, "Using hardcoded size of master!\n");
+            // fprintf(stderr, "Using hardcoded size of master!\n");
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
-            dedupcompress_to_reorder[i].delayed_init(500000, data.get_producing_threads(*iter));
+            dedupcompress_to_reorder[i].delayed_init(1024 * 1024, data.get_producing_threads(*iter));
             std::cout << data.get_interacting_threads(*iter) << std::endl;
-            compress_observers[i].delayed_init(320000, data.get_interacting_threads(*iter));
+            compress_observers[i].delayed_init("Dedup / Compress to Reorder", fine, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
             all_observers.push_back(compress_observers + i);
         }
 
@@ -865,7 +952,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             for (auto const& [fifo, fifo_data]: fifo_ids) {
                 // FIFOData& fifo_data = data._fifo_data[fifo];
                 // target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
-                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(fifo_data._n, false, 0, 0, 100, 50);
+                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0, OBS_LIMIT, 50);
                 target.push_back(impl);
 
                 Observer<chunk_t*>* obs = ids_to_observers[fifo];
@@ -962,9 +1049,9 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     auto reorder_stage = launch_stage(_ReorderNaiveQueue, reorder, false, "reorder");
 
     for (Observer<chunk_t*>* obs: all_observers) {
-        obs->set_prod_size(100);
-        obs->set_cons_size(100);
-        obs->set_cost_p_cost_s_size(100);
+        obs->set_prod_size(OBS_LIMIT);
+        obs->set_cons_size(OBS_LIMIT);
+        obs->set_cost_p_cost_s_size(OBS_LIMIT);
         obs->set_cost_s_size(50);
     }
 
@@ -1028,14 +1115,38 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
         delete addr;
     }
 
+    auto dump_observers = [](Observer<chunk_t*>* observers, size_t n_observers, std::optional<std::string> const& filename_base, std::string const& layer) -> void {
+        if (!filename_base)
+            return;
+
+        for (int i = 0; i < n_observers; ++i) {
+            std::ostringstream filename;
+            filename << *filename_base << "_" << layer << "_" << i << ".txt";
+            std::ofstream stream(filename.str().c_str(), std::ios::out);
+            stream << observers[i].serialize();
+            stream.close();
+        }
+    };
     printf("Fragment\n");
+    dump_observers(fragment_observers, nb_fragment_observers, data._observers, "fragment");
     delete[] fragment_observers;
+
     printf("Refine\n");
+    dump_observers(refine_observers, nb_refine_observers, data._observers, "refine");
     delete[] refine_observers;
+
     printf("Deduplicate\n");
+    dump_observers(deduplicate_observers, nb_deduplicate_observers, data._observers, "deduplicate");
     delete[] deduplicate_observers;
+
     printf("Compress\n");
+    dump_observers(compress_observers, nb_compress_observers, data._observers, "compress");
     delete[] compress_observers;
+
+    for (auto const& [queue, data]: _split_data) {
+        std::cout << queue << ":" << std::endl;
+        std::copy(data.begin(), data.end(), std::ostream_iterator<uint64_t>(std::cout, ","));
+    }
 
     delete[] fragment_to_refine;
     delete[] refine_to_deduplicate;
@@ -1056,6 +1167,329 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             }
         }
     } */
+}
+
+void FragmentNumbers(std::queue<chunk_t*>& out, int fd, size_t filesize, void* buffer) {
+    size_t preloading_buffer_seek = 0;
+    int qid = 0;
+    int r;
+
+    sequence_number_t anchorcount = 0;
+
+    chunk_t *temp = NULL;
+    chunk_t *chunk = NULL;
+    u32int * rabintab = (u32int*) malloc(256*sizeof rabintab[0]);
+    u32int * rabinwintab = (u32int*) malloc(256*sizeof rabintab[0]);
+    if(rabintab == NULL || rabinwintab == NULL) {
+        EXIT_TRACE("Memory allocation failed.\n");
+    }
+
+    rf_win_dataprocess = 0;
+    rabininit(rf_win_dataprocess, rabintab, rabinwintab);
+
+    //Sanity check
+    if(MAXBUF < 8 * ANCHOR_JUMP) {
+        printf("WARNING: I/O buffer size is very small. Performance degraded.\n");
+        fflush(NULL);
+    }
+
+    //read from input file / buffer
+    while (1) {
+        size_t bytes_left; //amount of data left over in last_mbuffer from previous iteration
+
+        //Check how much data left over from previous iteration resp. create an initial chunk
+        if(temp != NULL) {
+            bytes_left = temp->uncompressed_data.n;
+        } else {
+            bytes_left = 0;
+        }
+
+        //Make sure that system supports new buffer size
+        if(MAXBUF+bytes_left > SSIZE_MAX) {
+            EXIT_TRACE("Input buffer size exceeds system maximum.\n");
+        }
+
+        //Allocate a new chunk and create a new memory buffer
+        chunk = (chunk_t *)malloc(sizeof(chunk_t));
+        if(chunk==NULL)
+            EXIT_TRACE("Memory allocation failed.\n");
+
+        r = mbuffer_create(&chunk->uncompressed_data, MAXBUF+bytes_left);
+        if(r!=0) {
+            EXIT_TRACE("Unable to initialize memory buffer.\n");
+        }
+
+        if(bytes_left > 0) {
+            //FIXME: Short-circuit this if no more data available
+
+            //"Extension" of existing buffer, copy sequence number and left over data to beginning of new buffer
+            chunk->header.state = CHUNK_STATE_UNCOMPRESSED;
+            chunk->sequence.l1num = temp->sequence.l1num;
+
+            //NOTE: We cannot safely extend the current memory region because it has already been given to another thread
+            memcpy(chunk->uncompressed_data.ptr, temp->uncompressed_data.ptr, temp->uncompressed_data.n);
+            mbuffer_free(&temp->uncompressed_data);
+            free(temp);
+            temp = NULL;
+        } else {
+            //brand new mbuffer, increment sequence number
+            chunk->header.state = CHUNK_STATE_UNCOMPRESSED;
+            chunk->sequence.l1num = anchorcount;
+            anchorcount++;
+        }
+
+        //Read data until buffer full
+        size_t bytes_read=0;
+        if(_g_data->_preloading) {
+            size_t max_read = MIN(MAXBUF, filesize-preloading_buffer_seek);
+            memcpy((uchar*)chunk->uncompressed_data.ptr+bytes_left, (uchar*)buffer+preloading_buffer_seek, max_read);
+            bytes_read = max_read;
+            preloading_buffer_seek += max_read;
+        } else {
+            while(bytes_read < MAXBUF) {
+                r = read(fd, (uchar*)chunk->uncompressed_data.ptr+bytes_left+bytes_read, MAXBUF-bytes_read);
+                if(r<0) switch(errno) {
+                    case EAGAIN:
+                        EXIT_TRACE("I/O error: No data available\n");break;
+                    case EBADF:
+                        EXIT_TRACE("I/O error: Invalid file descriptor\n");break;
+                    case EFAULT:
+                        EXIT_TRACE("I/O error: Buffer out of range\n");break;
+                    case EINTR:
+                        EXIT_TRACE("I/O error: Interruption\n");break;
+                    case EINVAL:
+                        EXIT_TRACE("I/O error: Unable to read from file descriptor\n");break;
+                    case EIO:
+                        EXIT_TRACE("I/O error: Generic I/O error\n");break;
+                    case EISDIR:
+                        EXIT_TRACE("I/O error: Cannot read from a directory\n");break;
+                    default:
+                        EXIT_TRACE("I/O error: Unrecognized error\n");break;
+                }
+                if(r==0) break;
+                bytes_read += r;
+            }
+        }
+
+        //No data left over from last iteration and also nothing new read in, simply clean up and quit
+        if(bytes_left + bytes_read == 0) {
+            mbuffer_free(&chunk->uncompressed_data);
+            free(chunk);
+            chunk = NULL;
+            break;
+        }
+
+        //Shrink buffer to actual size
+        if(bytes_left+bytes_read < chunk->uncompressed_data.n) {
+            r = mbuffer_realloc(&chunk->uncompressed_data, bytes_left+bytes_read);
+            assert(r == 0);
+        }
+
+        //Check whether any new data was read in, enqueue last chunk if not
+        if(bytes_read == 0) {
+            //put it into send buffer
+            out.push(chunk);
+            break;
+        }
+
+        //partition input block into large, coarse-granular chunks
+        int split;
+        do {
+            split = 0;
+            //Try to split the buffer at least ANCHOR_JUMP bytes away from its beginning
+            if(ANCHOR_JUMP < chunk->uncompressed_data.n) {
+                int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr + ANCHOR_JUMP, chunk->uncompressed_data.n - ANCHOR_JUMP, rf_win_dataprocess, rabintab, rabinwintab);
+                //Did we find a split location?
+                if(offset == 0) {
+                    //Split found at the very beginning of the buffer (should never happen due to technical limitations)
+                    assert(0);
+                    split = 0;
+                } else if(offset + ANCHOR_JUMP < chunk->uncompressed_data.n) {
+                    //Split found somewhere in the middle of the buffer
+                    //Allocate a new chunk and create a new memory buffer
+                    temp = (chunk_t *)malloc(sizeof(chunk_t));
+                    if(temp==NULL) EXIT_TRACE("Memory allocation failed.\n");
+
+                    //split it into two pieces
+                    r = mbuffer_split(&chunk->uncompressed_data, &temp->uncompressed_data, offset + ANCHOR_JUMP);
+                    if(r!=0) EXIT_TRACE("Unable to split memory buffer.\n");
+                    temp->header.state = CHUNK_STATE_UNCOMPRESSED;
+                    temp->sequence.l1num = anchorcount;
+                    anchorcount++;
+
+                    //put it into send buffer
+                    out.push(chunk);
+
+                    //prepare for next iteration
+                    chunk = temp;
+                    temp = NULL;
+                    split = 1;
+                } else {
+                    //Due to technical limitations we can't distinguish the cases "no split" and "split at end of buffer"
+                    //This will result in some unnecessary (and unlikely) work but yields the correct result eventually.
+                    temp = chunk;
+                    chunk = NULL;
+                    split = 0;
+                }
+            } else {
+                //NOTE: We don't process the stub, instead we try to read in more data so we might be able to find a proper split.
+                //        Only once the end of the file is reached do we get a genuine stub which will be enqueued right after the read operation.
+                temp = chunk;
+                chunk = NULL;
+                split = 0;
+            }
+        } while(split);
+    }
+
+    free(rabintab);
+    free(rabinwintab);
+}
+
+unsigned int RefineNumbers(std::queue<chunk_t*>& in, std::queue<chunk_t*>& out) {
+    // fprintf(stderr, "AU SECOURS JE COMPRENDS RIEN\n");
+    int r;
+    int pop = 0;
+
+    chunk_t *temp;
+    chunk_t *chunk;
+    u32int * rabintab = (u32int*)malloc(256*sizeof rabintab[0]);
+    u32int * rabinwintab = (u32int*)malloc(256*sizeof rabintab[0]);
+    if(rabintab == NULL || rabinwintab == NULL) {
+        EXIT_TRACE("Memory allocation failed.\n");
+    }
+
+    r=0;
+    int push_count = 0;
+    int limit = OBS_LIMIT;
+    int pop_count = 0;
+    std::atomic<bool> failed;
+    failed.store(false, std::memory_order_release);
+
+    // Begin clock after poping an element from the queue and upon performing 
+    // a new split.
+    while (!in.empty()) {
+        // fprintf(stderr, "About to pop from FIFO\n");
+        chunk = in.front();
+        // fprintf(stderr, "Fronted from FIFO\n");
+        in.pop();
+        // fprintf(stderr, "Poped from FIFO\n");
+
+        //get one item
+        rabininit(rf_win, rabintab, rabinwintab);
+
+        int split;
+        sequence_number_t chcount = 0;
+        do {
+            // std::cerr << "DO" << std::endl;
+            //Find next anchor with Rabin fingerprint
+            //TP offset_begin = SteadyClock::now();
+            int offset = rabinseg((uchar*)chunk->uncompressed_data.ptr, chunk->uncompressed_data.n, rf_win, rabintab, rabinwintab);
+            //auto offset_diff = diff(offset_begin, SteadyClock::now());
+            //Can we split the buffer?
+            if(offset < chunk->uncompressed_data.n) {
+                //Allocate a new chunk and create a new memory buffer
+                temp = (chunk_t *)malloc(sizeof(chunk_t));
+                if(temp==NULL) { EXIT_TRACE("Memory allocation failed.\n"); }
+                temp->header.state = chunk->header.state;
+                temp->sequence.l1num = chunk->sequence.l1num;
+
+                //split it into two pieces
+                //TP split_begin = SteadyClock::now();
+                r = mbuffer_split(&chunk->uncompressed_data, &temp->uncompressed_data, offset);
+                // std::cerr << "Split = " << r << std::endl;
+                //auto split_diff = diff(split_begin, SteadyClock::now());
+                // split_data.push_back(split_diff);
+                if(r!=0) { fprintf(stderr, "FUCKING KILL ME\n"); failed.store(true, std::memory_order_release); EXIT_TRACE("Unable to split memory buffer.\n"); }
+
+                //Set correct state and sequence numbers
+                chunk->sequence.l2num = chcount;
+                chunk->isLastL2Chunk = FALSE;
+                chcount++;
+
+                //put it into send buffer
+
+                // fprintf(stderr, "About to push in FIFO (1)\n");
+                out.push(chunk);
+                // fprintf(stderr, "Pushed in FIFO (1)\n");
+
+                chunk = temp;
+                split = 1;
+            } else {
+                //End of buffer reached, don't split but simply enqueue it
+                //Set correct state and sequence numbers
+                chunk->sequence.l2num = chcount;
+                chunk->isLastL2Chunk = TRUE;
+                chcount++;
+
+                //put it into send buffer
+                // fprintf(stderr, "About to push in FIFO (2)\n");
+                out.push(chunk);
+                // fprintf(stderr, "Pushed in FIFO (2)\n");
+
+                //prepare for next iteration
+                chunk = NULL;
+                split = 0;
+            }
+        } while(split);
+
+        // fprintf(stderr, "Done with chunk\n");
+    }
+
+    // std::cerr << rabintab << ", " << rabinwintab << ", " << failed.load(std::memory_order_acquire) << std::endl;
+    free(rabintab);
+    free(rabinwintab);
+
+    return 0;
+}
+
+std::tuple<unsigned int, unsigned int> DeduplicateNumbers(std::queue<chunk_t*>& in) {
+    chunk_t *chunk;
+    int n_compress = 0, n_deduplicate = 0;
+
+    std::set<chunk_t*> chunks;
+
+    while (!in.empty()) {
+        chunk = in.front();
+        in.pop();
+
+        auto [isDuplicate, lock_idx] = sub_Deduplicate(chunk);
+
+        //Enqueue chunk either into compression queue or into send queue
+        if(!isDuplicate) {
+            n_compress++;
+        } else {
+            n_deduplicate++;
+        }
+
+        chunks.insert(chunk);
+    }
+
+    return { n_deduplicate, n_compress };
+}
+
+void _EncodeForNumbers(DedupData& data, int fd, size_t filesize, void* buffer, tp&, tp&) {
+    std::queue<chunk_t*> fragments;
+    FragmentNumbers(fragments, fd, filesize, buffer);
+    unsigned int n_fragment = fragments.size();
+
+    // std::cout << "Fragment done" << std::endl;
+
+    std::queue<chunk_t*> refined;
+    RefineNumbers(fragments, refined);
+    // std::cerr << "RefineNumbers done" << std::endl;
+    unsigned int n_refine = refined.size();
+
+    // std::cout << "Refine done" << std::endl;
+
+    auto [n_deduplicate, n_compress] = DeduplicateNumbers(refined);
+
+    std::cout << "Fragments = " << n_fragment << std::endl << "Refined = " << n_refine << std::endl << "Deduplicate / Compress = " << n_deduplicate << " " << n_compress << " => " << float(n_deduplicate) / float(n_refine) * 100 << "% of deduplicate" << std::endl;
+}
+
+void EncodeForNumbers(DedupData& data) {
+    EncodeBase(data, [](DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
+                _EncodeForNumbers(data, fd, filesize, buffer, begin, end);
+            });
 }
 
 // std::tuple<unsigned long long, std::vector<Globals::SmartFIFOTSV>> EncodeSmart(DedupData& data) {

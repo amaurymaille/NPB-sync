@@ -13,5 +13,6 @@ struct DedupData;
 unsigned long long EncodeSmart(DedupData&);
 unsigned long long EncodeDefault(DedupData&);
 unsigned long long EncodeNaiveQueue(DedupData&);
+void EncodeForNumbers(DedupData&);
 
 #endif /* !_ENCODER_H_ */

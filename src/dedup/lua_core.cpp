@@ -225,3 +225,7 @@ unsigned int DedupData::get_interacting_threads(int fifo_id) const {
 unsigned int DedupData::new_fifo() {
     return _fifo_id++;
 }
+
+void DedupData::run_numbers() {
+    EncodeForNumbers(*this);
+}

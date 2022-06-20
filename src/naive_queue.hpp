@@ -16,16 +16,19 @@
 #include <tuple>
 #include <type_traits>
 
+#include <pthread.h>
 #include <semaphore.h>
 
 #include "nlohmann/json.hpp"
+
+#include "naive_queue_conf.h"
 
 using json = nlohmann::json;
 
 using SteadyClock = std::chrono::steady_clock;
 using TP = std::chrono::time_point<SteadyClock>;
 
-unsigned long long diff(TP const& begin, TP const& end) {
+inline unsigned long long diff(TP const& begin, TP const& end) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count();
 }
 
@@ -114,7 +117,7 @@ class Ringbuffer {
         }
 
     private:
-        T* _data;
+        T* _data = nullptr;
         size_t _n_elements;
         size_t _size;
         int _head, _tail;
@@ -134,7 +137,16 @@ class Ringbuffer {
 template<typename T>
 class NaiveQueue {
     public:
+        NaiveQueue() {
+
+        }
+
         NaiveQueue(size_t size, int n_producers) : _buf(size) {
+            delayed_init(size, n_producers);
+        }
+
+        void delayed_init(size_t size, int n_producers) {
+            _buf.delayed_init(size);
             _n_producers = n_producers;
             _n_terminated = 0;
         }
@@ -153,12 +165,14 @@ class NaiveQueue {
         }
 
         inline int dequeue(Ringbuffer<T>* buf, int limit) __attribute__((always_inline)){
+            // printf("Thread %llu locks %p\n", pthread_self(), &_mutex);
             std::unique_lock<std::mutex> lck(_mutex);
             while (_buf.empty() && !terminated()) {
                 _not_empty.wait(lck);
             }
 
             if (_buf.empty() && terminated()) {
+                // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
                 return -1;
             }
 
@@ -172,12 +186,14 @@ class NaiveQueue {
                 _not_full.notify_all();
             }
 
+            // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
             return i;
         }
 
         inline int enqueue(Ringbuffer<T>* buf, int limit) __attribute__ ((always_inline)) {
+            // printf("Thread %llu locks %p\n", pthread_self(), &_mutex);
             std::unique_lock<std::mutex> lck(_mutex);
-            printf("_buf._n_elements = %lu\n", _buf.n_elements());
+            // printf("_buf._n_elements = %lu\n", _buf.n_elements());
             while (_buf.full()) {
                 _not_full.wait(lck);
             }
@@ -192,6 +208,7 @@ class NaiveQueue {
                 _not_empty.notify_all();
             }
 
+            // printf("Thread %llu unlocks %p\n", pthread_self(), &_mutex);
             return i;
         }
 
@@ -231,11 +248,12 @@ class NaiveQueueImpl {
     friend class NaiveQueueMaster<T>;
 
     public:
-        NaiveQueueImpl(NaiveQueueMaster<T>* master, size_t size, bool reconfigure, 
+        NaiveQueueImpl(NaiveQueueMaster<T>* master, bool producer, size_t size, bool /* reconfigure */, 
                 unsigned int threshold, unsigned int new_step, unsigned int samples_first, 
                 unsigned int samples_second) {
+            _producer = producer;
             _master = master; 
-            _reconfigure = reconfigure;
+            // _reconfigure = reconfigure;
             _threshold = threshold;
             _new_step = new_step;
             _samples_second = samples_second;
@@ -261,12 +279,18 @@ class NaiveQueueImpl {
         }
 
         inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> 
-            pop() __attribute__((always_inline));
+            timed_pop() __attribute__((always_inline));
+
+        /* inline std::optional<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>>
+            generic_pop() __attribute__((always_inline)); */
 
         typedef std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> TimingData;
 
+        inline std::optional<T> pop() __attribute__((always_inline));
         template<typename T2>
         inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bool> cross_pop(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) __attribute__((always_inline));
+        template<typename T2>
+        inline std::tuple<std::optional<T>, bool> cross_pop_no_timing(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) __attribute__((always_inline));
 
         // Do not time anything
         inline void push(T const& data) __attribute__((always_inline));
@@ -282,7 +306,7 @@ class NaiveQueueImpl {
 
         void terminate() {
             while (!empty()) {
-                _master->enqueue(this, _size - 1);
+                _master->enqueue_no_timing(this, _size - 1);
             }
             _master->terminate();
         }
@@ -318,11 +342,12 @@ class NaiveQueueImpl {
 
     private:
         T* _data;
-        size_t _n_elements;
-        size_t _size;
         int _head, _tail;
         NaiveQueueMaster<T>* _master;
+        size_t _n_elements;
+        size_t _size;
         std::chrono::time_point<std::chrono::steady_clock> _begin;
+        bool _producer;
 
         // New step. Used both in manual and automatic reconfiguration.
         // Not atomic, but needs to be written before _need_reconfigure is set to true, 
@@ -342,17 +367,17 @@ class NaiveQueueImpl {
         // How many synchronizations for the second reconfiguration ?
         unsigned int _samples_second;
 
-        typedef void (NaiveQueueImpl<T>::*AddObserverTimeFn)(Observer<T>*, uint64_t, uint64_t, uint64_t, uint64_t);
+        typedef void (NaiveQueueImpl<T>::*AddObserverTimeFn)(Observer<T>*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
         AddObserverTimeFn _observer_fn;
 
-        void add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t);
-        void add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t);
+        void add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+        void add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
         /// Manual reconfiguration
 
         // Do we trigger a manually configured reconfiguration ?
-        bool _reconfigure;
+        // bool _reconfigure;
         // If so, when?
         unsigned int _threshold;
         // How many items have been extracted from / inserted into the shared FIFO
@@ -570,6 +595,7 @@ class NaiveQueueImpl {
         }
 
         void prepare_reconfigure(size_t size) {
+            // printf("prepare_reconfigure size = %llu\n", size);
             _new_step = size;
             _need_reconfigure.store(true, std::memory_order_release);
         }
@@ -585,6 +611,11 @@ class NaiveQueueMaster {
 
         NaiveQueueMaster(size_t size, int n_producers) : _buf(size) {
             _n_producers = n_producers;
+            _n_terminated = 0;
+        }
+
+        NaiveQueueMaster(NaiveQueueMaster<T> const& other) : _buf(other.size) {
+            _n_producers = other.n_producers;
             _n_terminated = 0;
         }
 
@@ -612,21 +643,29 @@ class NaiveQueueMaster {
         inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
             enqueue(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
 
+        inline int dequeue_no_timing(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
+        inline int enqueue_no_timing(NaiveQueueImpl<T>* queue, int limit) __attribute__((always_inline));
+
         unsigned int size() {
             return _buf._n_elements;
         }
 
         template<typename... Args>
-        NaiveQueueImpl<T>* view(Args&&... args) {
-            return new NaiveQueueImpl<T>(this, std::forward<Args>(args)...);
+        NaiveQueueImpl<T>* view(bool producer, Args&&... args) {
+            if (!producer)
+                ++_n_consumers;
+            return new NaiveQueueImpl<T>(this, producer, std::forward<Args>(args)...);
         }
 
         inline std::tuple<bool, int, unsigned long long, unsigned long long, unsigned long long>
             timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout);
 
+        inline std::tuple<bool, int>
+            timed_dequeue_no_timing(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout);
     private:
         Ringbuffer<T> _buf;
         int _n_producers;
+        int _n_consumers;
         int _n_terminated;
         std::timed_mutex _mutex;
         std::condition_variable_any _not_empty, _not_full;
@@ -637,7 +676,7 @@ class NaiveQueueMaster {
 };
 
 template<typename T>
-inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::pop() {
+inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_pop() {
     int result;
     uint64_t lock = 0, critical = 0, unlock = 0;
     if (empty()) {
@@ -647,15 +686,16 @@ inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl
             return { std::nullopt, lock, critical, unlock };
         }
 
-        if (_reconfigure && !_changed) {
+        /* if (_reconfigure && !_changed) {
             _processed += n_elements();
             if (_processed >= _threshold) {
                 _changed = resize(_new_step);
             }
-        }
+        } */
 
     }
     
+#if RECONFIGURE == 1
     if (_need_reconfigure.load(std::memory_order_acquire)) {
         // printf("Reconfiguring %p\n", this);
         if (resize(_new_step)) {
@@ -667,10 +707,47 @@ inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl
             // printf("Error while resizing %p\n", this);
         }
     }
+#endif
 
     return { pop_local(), lock, critical, unlock };
 }
 
+template<typename T>
+inline std::optional<T> NaiveQueueImpl<T>::pop() {
+    int result;
+    uint64_t lock = 0, critical = 0, unlock = 0;
+    if (empty()) {
+        // std::cout << "[Pop] Empty" << std::endl;
+        result= _master->dequeue_no_timing(this, _size - 1);
+        if (result < 0) {
+            return std::nullopt;
+        }
+
+        /* if (_reconfigure && !_changed) {
+            _processed += n_elements();
+            if (_processed >= _threshold) {
+                _changed = resize(_new_step);
+            }
+        } */
+
+    }
+    
+#if RECONFIGURE == 1
+    if (_need_reconfigure.load(std::memory_order_acquire)) {
+        // printf("Reconfiguring %p\n", this);
+        if (resize(_new_step)) {
+            // auto now = std::chrono::steady_clock::now();
+            // printf("Reconfigured at %llu\n", std::chrono::duration_cast<std::chrono::nanoseconds>(now - _begin).count());
+            _reconfigured.store(true, std::memory_order_release);
+            _need_reconfigure.store(false, std::memory_order_relaxed);
+        } else {
+            // printf("Error while resizing %p\n", this);
+        }
+    }
+#endif
+
+    return pop_local();
+}
 template<typename T>
 using TimedTimingData = std::tuple<TimingData<T>, bool>;
 
@@ -692,12 +769,40 @@ inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bo
             return { { std::nullopt, lock, critical, unlock }, true };
         }
 
-        if (_reconfigure && !_changed) {
+        /* if (_reconfigure && !_changed) {
             _processed += n_elements();
             if (_processed >= _threshold) {
                 _changed = resize(_new_step);
             }
+        } */
+    }
+    
+    return { timed_pop(), true }; // Yeah, two checks of emptyness, deal with it...
+}
+
+template<typename T>
+template<typename T2>
+inline std::tuple<std::optional<T>, bool> NaiveQueueImpl<T>::cross_pop_no_timing(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) {
+    int result;
+
+    if (empty()) {
+        bool timedout = false;
+        std::tie(timedout, result) = _master->timed_dequeue_no_timing(this, _size - 1, timeout);
+        if (timedout) {
+            cross_queue->force_push();
+            return { std::nullopt, false };
         }
+
+        if (result < 0) {
+            return { std::nullopt, true };
+        }
+
+        /* if (_reconfigure && !_changed) {
+            _processed += n_elements();
+            if (_processed >= _threshold) {
+                _changed = resize(_new_step);
+            }
+        } */
     }
     
     return { pop(), true }; // Yeah, two checks of emptyness, deal with it...
@@ -706,12 +811,18 @@ inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bo
 
 template<typename T>
 inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) {
-    std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
-    push_local(data);
-    std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+    uint64_t cost_p = 0;
+    if (n_elements() == get_step() - 1) {
+        std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
+        push_local(data);
+        std::chrono::time_point<std::chrono::steady_clock> end = std::chrono::steady_clock::now();
+        cost_p = diff(begin, end);
+    } else {
+        push_local(data);
+    }
+
     std::chrono::time_point<std::chrono::steady_clock> begin_enqueue; 
     std::chrono::time_point<std::chrono::steady_clock> end_enqueue;
-    uint64_t cost_p = diff(begin, end);
     uint64_t lock, critical, unlock;
     bool enqueued = false;
 
@@ -720,15 +831,15 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
         // std::cout << "[Push] Full" << std::endl;
         
         enqueued = true;
-        unsigned int amount = n_elements();
+        // unsigned int amount = n_elements();
         begin_enqueue = std::chrono::steady_clock::now();
         auto [count, _lock, _critical, _unlock] = _master->enqueue(this, _size - 1);
         lock = _lock; critical = _critical; unlock = _unlock;
         end_enqueue = std::chrono::steady_clock::now();
 
-        (this->*_observer_fn)(observer, cost_p, lock, critical, unlock);
+        (this->*_observer_fn)(observer, cost_p, lock, critical, unlock, count);
 
-        if (_reconfigure && !_changed) {
+        /* if (_reconfigure && !_changed) {
             unsigned int consumed = amount - n_elements();
             _processed += consumed;
 
@@ -744,7 +855,7 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
                     throw std::runtime_error("Unable to resize producer ringbuffer in 10 tries");
                 }
             }
-        }
+        } */
 
         if (_sync_count == _sync_limit) {
             if (!_reconfigured.load(std::memory_order_relaxed)) {
@@ -755,6 +866,7 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
         }
     }
 
+#if RECONFIGURE == 1
     if (_need_reconfigure.load(std::memory_order_acquire)) {
         if (resize(_new_step)) {
             // printf("Reconfiguring %p\n", this);
@@ -766,6 +878,7 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
             // printf("Error while resizing %p\n", this);
         }
     }
+#endif
 
     if (enqueued) {
         return { cost_p, diff(begin_enqueue, end_enqueue), lock, critical, unlock };
@@ -781,10 +894,10 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
     if (full()) {
         // dump();
         // std::cout << "[Push] Full" << std::endl;
-        unsigned int amount = n_elements();
-        _master->enqueue(this, _size - 1);
+        // unsigned int amount = n_elements();
+        _master->enqueue_no_timing(this, _size - 1);
 
-        if (_reconfigure && !_changed) {
+        /* if (_reconfigure && !_changed) {
             unsigned int consumed = amount - n_elements();
             _processed += consumed;
 
@@ -800,9 +913,10 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
                     throw std::runtime_error("Unable to resize producer ringbuffer in 10 tries");
                 }
             }
-        }
+        } */
     }
 
+#if RECONFIGURE == 1
     if (_need_reconfigure.load(std::memory_order_acquire)) {
         if (resize(_new_step)) {
             // printf("Reconfiguring %p\n", this);
@@ -814,6 +928,7 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
             // printf("Error while resizing %p\n", this);
         }
     }
+#endif
 }
 
 template<typename T>
@@ -972,9 +1087,21 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
     }
 
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -988,6 +1115,42 @@ NaiveQueueMaster<T>::dequeue(NaiveQueueImpl<T>* queue, int limit) {
 }
 
 template<typename T>
+inline int NaiveQueueMaster<T>::dequeue_no_timing(NaiveQueueImpl<T>* queue, int limit) {
+    std::unique_lock<std::timed_mutex> lck(_mutex);
+    
+    while (_buf.empty() && !terminated()) {
+        _not_empty.wait(lck);
+    }
+
+    if (_buf.empty() && terminated()) {
+        return -1;
+    }
+
+    int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
+#else
+    for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+        queue->push_local(*(_buf.pop()));
+    }
+#endif
+
+    if (i > 0) {
+        _not_full.notify_all();
+    }
+
+    return i;
+}
+
+template<typename T>
 inline std::tuple<bool, int, unsigned long long, unsigned long long, unsigned long long> 
 NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout) {
     // std::unique_lock<std::mutex> lck(_mutex);
@@ -998,7 +1161,6 @@ NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chr
         return { true, 0, 0, 0, 0 };
     }
     std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
-    begin_sc = SteadyClock::now();
     while (_buf.empty() && !terminated()) {
         _not_empty.wait(lck);
     }
@@ -1009,10 +1171,24 @@ NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chr
         return { false, -1, 0, 0, 0 };
     }
 
+    begin_sc = SteadyClock::now();
+
     int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
+#else
     for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
         queue->push_local(*(_buf.pop()));
     }
+#endif
 
     if (i > 0) {
         _not_full.notify_all();
@@ -1026,6 +1202,47 @@ NaiveQueueMaster<T>::timed_dequeue(NaiveQueueImpl<T>* queue, int limit, std::chr
 }
 
 template<typename T>
+inline std::tuple<bool, int>
+    NaiveQueueMaster<T>::timed_dequeue_no_timing(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout) {
+    bool result = _mutex.try_lock_for(timeout);
+    if (!result) {
+        return { true, 0 };
+    }
+
+    std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
+    while (_buf.empty() && !terminated()) {
+        _not_empty.wait(lck);
+    }
+
+    if (_buf.empty() && terminated()) {
+        return { false, -1 };
+    }
+
+    int i = 0;
+#if FAST_ONE_CONSUMER == 1
+    if (_n_consumers == 1) {
+        for (; !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    } else {
+        for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+            queue->push_local(*(_buf.pop()));
+        }
+    }
+#else
+    for (; i < limit && !_buf.empty() && !queue->full(); ++i) {
+        queue->push_local(*(_buf.pop()));
+    }
+#endif
+
+    if (i > 0) {
+        _not_full.notify_all();
+    }
+
+    return { false, i };
+}
+
+template<typename T>
 inline std::tuple<int, unsigned long long, unsigned long long, unsigned long long> 
 NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     TP begin_lock, begin_unlock, end_unlock, begin_sc;
@@ -1033,12 +1250,13 @@ NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
     // std::unique_lock<std::mutex> lck(_mutex);
     _mutex.lock();
     std::unique_lock<std::timed_mutex> lck(_mutex, std::adopt_lock);
-    begin_sc = SteadyClock::now();
 
     // printf("_buf._n_elements = %d\n", _buf.n_elements());
     while (_buf.full()) {
         _not_full.wait(lck);
     }
+
+    begin_sc = SteadyClock::now();
 
     int i = 0;
     for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
@@ -1058,6 +1276,26 @@ NaiveQueueMaster<T>::enqueue(NaiveQueueImpl<T>* queue, int limit) {
 }
 
 template<typename T>
+inline int NaiveQueueMaster<T>::enqueue_no_timing(NaiveQueueImpl<T>* queue, int limit) {
+    std::unique_lock<std::timed_mutex> lck(_mutex);
+
+    while (_buf.full()) {
+        _not_full.wait(lck);
+    }
+
+    int i = 0;
+    for (; i < limit && !_buf.full() && !queue->empty(); ++i) {
+        _buf.push(*queue->pop_local());
+    }
+
+    if (i > 0) {
+        _not_empty.notify_all();
+    }
+
+    return i;
+}
+
+template<typename T>
 class Observer {
     struct Data {
         uint64_t _cost_p = 0;
@@ -1067,6 +1305,25 @@ class Observer {
         uint64_t _cost_u = 0;
         uint64_t _iter;
         uint64_t _wi = 0;
+        uint32_t _n_producers = 0;
+        uint32_t _n_consumers;
+        float _producers_avg = 0;
+        float _consumers_avg = 0;
+        // Product of consumer work avg with number of consumers;
+        float _prod_cons;
+        float _prod_prod;
+
+        // Computed later
+        uint32_t _first_prod_step = 0;
+        uint32_t _first_cons_step = 0;
+        uint32_t _second_prod_step = 0;
+        uint32_t _second_cons_step = 0;
+
+        // Effective steps
+        uint32_t _first_prod_step_eff = 0;
+        uint32_t _first_cons_step_eff = 0;
+        uint32_t _second_prod_step_eff = 0;
+        uint32_t _second_cons_step_eff = 0;
     };
 
     struct MapData {
@@ -1077,6 +1334,7 @@ class Observer {
         size_t _n_push = 0;
         // uint64_t* _sync_times;
         uint64_t* _lock_times, *_copy_times, *_unlock_times;
+        uint64_t* _items;
         uint64_t _n_sync = 0;
     };
 
@@ -1093,10 +1351,12 @@ class Observer {
         };
 
         Observer();
-        Observer(uint64_t iter_prod, int n_threads);
+        // iter_prod is the amount of iterations performed by a single producer
+        // n_threads is the total nubmer of threads that will interact with this observer
+        Observer(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
         ~Observer();
 
-        void delayed_init(uint64_t iter_prod, int n_threads);
+        void delayed_init(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -1117,7 +1377,7 @@ class Observer {
         // spent waiting on the lock + locking, copy_time = time necessary to
         // transfer from local buffer to shared buffer, unlock_time = time
         // spent unlocking the mutex.
-        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time);
+        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t items);
 
         void set_cost_s_size(size_t cost_s_size);
         // Time required to perform the synchronization, only used during the
@@ -1125,7 +1385,7 @@ class Observer {
         CostSState add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
 
         // Debug data about synchronization. Serialization outputs this.
-        void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock);
+        void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock, uint64_t items);
 
         json serialize() const;
 
@@ -1140,7 +1400,7 @@ class Observer {
         uint64_t* _cost_p_times; */
 
         std::map<NaiveQueueImpl<T>*, MapData> _times;
-        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 3>>> _cost_s;
+        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 4>>> _cost_s;
         std::map<NaiveQueueImpl<T>*, CSData> _cs_data;
         /* std::chrono::time_point<std::chrono::steady_clock> _begin;
         unsigned long long _time;
@@ -1159,7 +1419,12 @@ class Observer {
         unsigned int _second_best_step = 0;
         unsigned int _worst_avg = 0;
         std::vector<uint64_t> _cost_p;
+        // Average work times for each producer / consumer involved.
         std::vector<uint64_t> _averages;
+        int _choice_step = 0;
+        int _dephase = 0;
+        int _prod_step = 0;
+        int _cons_step = 0;
 
         bool _reconfigured = false;
         bool _reconfigured_twice = false;
@@ -1171,16 +1436,18 @@ class Observer {
         std::mutex _m;
 
         int _n_threads;
+
+        std::string _description;
 };
 
 template<typename T>
-void NaiveQueueImpl<T>::add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t cost_p, uint64_t lock, uint64_t critical, uint64_t unlock) {
+void NaiveQueueImpl<T>::add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t cost_p, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t items) {
     ++_sync_count;
-    observer->add_cost_p_cost_s_time(this, cost_p, lock, critical, unlock);
+    observer->add_cost_p_cost_s_time(this, cost_p, lock, critical, unlock, items);
 }
 
 template<typename T>
-void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t lock, uint64_t critical, uint64_t unlock) {
+void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t) {
     switch (observer->add_cost_s_time(this, lock, critical, unlock)) {
         case Observer<T>::CostSState::NOT_RECONFIGURED:
         case Observer<T>::CostSState::RECONFIGURED:
@@ -1196,7 +1463,7 @@ void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* ob
 template<typename T>
 void NaiveQueueImpl<T>::force_push() {
     if (!empty()) {
-        _master->enqueue(this, n_elements());
+        _master->enqueue_no_timing(this, n_elements());
     }
 }
 
