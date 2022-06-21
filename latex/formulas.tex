@@ -88,7 +88,7 @@ Execution time depends on the amount of work of the consumers / producers and th
     \end{center}
 
         \medskip
-\noindent \textbf{If} $ CPRatio > PCRatio $ \textbf{then}
+\noindent \textbf{If} $ PCRatio > CPRatio $ \textbf{then}
 
     % $ time(S) = S_p * (\overline{W_{p_i}} + CostP) + N_p * (CostCC_{S_p} + CostS) + (N_c - 1) * (CostCC_{S_c} + CostS) + \frac{I_c}{S_c} * (CostCC_{S_c} + CostS + S_c * (\overline{W_{c_i}} + CostP)) $ 
     $ time(S_p) = I_p * (\overline{W_{p_i}} + CostP) + \frac{I_p}{S_p} * (CostCC_p + CostS) + S_c * (\overline{W_{c_i}} + CostP) + (N_p - 1) * (CostS + CostCC_p * S_p) + N_c * (CostS + CostCC_c) $
