@@ -169,7 +169,9 @@ template<typename T>
 void Observer<T>::trigger_reconfigure(bool first) {
     std::unique_lock<std::mutex> lck(_m);
     auto avg = [](uint64_t* arr, size_t s, float ignore = 0) {
-        std::sort(arr, arr + s);
+        if (ignore != 0) {
+            std::sort(arr, arr + s);
+        }
         return std::accumulate(arr + int(s * ignore), arr + int(s * (1 - ignore)), 0) / int(s * (1 - 2 * ignore));
     };
 
@@ -187,7 +189,8 @@ void Observer<T>::trigger_reconfigure(bool first) {
     };
 
     auto quart = [=](uint64_t* arr, size_t s) {
-        return unsorted_median(arr, s / 2);
+        std::sort(arr, arr + s);
+        return sorted_median(arr, s / 2);
     };
 
     /* auto avg_cost_s_fix = [](uint64_t* arr, size_t s, NaiveQueueImpl<T>* queue, uint64_t cost_p) {
@@ -269,10 +272,10 @@ void Observer<T>::trigger_reconfigure(bool first) {
             unsigned int prod_step = 0, cons_step = 0;
 
             if (prod_cons > prod_prod) {
-                prod_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_producers * consumer_avg + n_producers * _data._cost_p) / n_consumers) + n_producers * _data._cost_p - _data._cost_p + n_producers * _data._cost_p)));
+                prod_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_producers * consumer_avg + n_producers * _data._cost_p) / n_consumers) + 2 * (n_producers * _data._cost_p - _data._cost_p + n_producers * _data._cost_p))));
                 cons_step = prod_step * n_producers / n_consumers;
             } else {
-                cons_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_consumers * producer_avg + n_consumers * _data._cost_p) / n_producers) + n_consumers * _data._cost_p - _data._cost_p + n_consumers * _data._cost_p)));
+                cons_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_consumers * producer_avg + n_consumers * _data._cost_p) / n_producers) + 2 * (n_consumers * _data._cost_p - _data._cost_p + n_consumers * _data._cost_p))));
                 prod_step = cons_step * n_consumers / n_producers;
             }
 
