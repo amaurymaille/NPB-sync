@@ -220,7 +220,7 @@ void start_sol(CLIArgs const& args) {
     dedup_data_type["dump"] = &DedupData::dump;
     dedup_data_type["run_orig"] = &DedupData::run_orig;
     // dedup_data_type["run_mutex"] = &DedupData::run_mutex;
-    dedup_data_type["run_smart"] = &DedupData::run_smart;
+    // dedup_data_type["run_smart"] = &DedupData::run_smart;
     dedup_data_type["run_auto"] = &DedupData::run_auto;
     dedup_data_type["push_layer"] = &DedupData::push_layer_data;
     dedup_data_type["set_observers"] = &DedupData::set_observers;

@@ -227,7 +227,7 @@ void FragmentNaiveQueue(thread_args_naive const& args) {
     free(rabintab);
     free(rabinwintab);
 
-    printf("Fragment: %d\n", count);
+    // printf("Fragment: %d\n", count);
 }
 
 std::mutex _split_mutex;
@@ -237,7 +237,6 @@ void RefineNaiveQueue(thread_args_naive const& args) {
     // Globals::SmartFIFOTSV& data = *args._timestamp_data;
     pthread_barrier_wait(args._barrier);
     int r;
-    int pop = 0;
 
     chunk_t *temp;
     chunk_t *chunk;
@@ -250,10 +249,9 @@ void RefineNaiveQueue(thread_args_naive const& args) {
     std::vector<uint64_t> split_data;
     split_data.reserve(300000);
 
+    bool push_work_output = true;
+
     r=0;
-    int push_count = 0;
-    int limit = OBS_LIMIT;
-    int pop_count = 0;
 
     // Begin clock after poping an element from the queue and upon performing 
     // a new split.
@@ -269,7 +267,6 @@ void RefineNaiveQueue(thread_args_naive const& args) {
             break;
         }
 
-        ++pop_count;
         chunk = *value;
         TP begin = SteadyClock::now();
 
@@ -309,13 +306,12 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 #else
                 args._output_fifos[0]->push(chunk);
 #endif
-                ++push_count;
 
 #if TIMED_PUSH == 1
-                if (push_count <= limit) {
+                if (push_result && push_work_output) {
                     auto d = diff(begin, SteadyClock::now());
                     // printf("%llu\n", d - offset_diff);
-                    args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
+                    push_work_output = args._output_observers[0]->add_work_time(args._output_fifos[0], d);
                 }
 #endif
 
@@ -339,13 +335,12 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 #else
                 args._output_fifos[0]->push(chunk);
 #endif
-                ++push_count;
 
 #if TIMED_PUSH == 1
-                if (push_count <= limit) {
+                if (push_result && push_work_output) {
                     auto d = diff(begin, SteadyClock::now());
                     // printf("%llu\n", d);
-                    args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
+                    push_work_output = args._output_observers[0]->add_work_time(args._output_fifos[0], d);
                 }
 #endif
 
@@ -365,24 +360,20 @@ void RefineNaiveQueue(thread_args_naive const& args) {
     _split_mutex.lock();
     _split_data[args._input_fifos[0]] = std::move(split_data);
     _split_mutex.unlock();
-    printf("Refine: pop = %d, push = %d\n", pop_count, push_count);
+    // printf("Refine: pop = %d, push = %d\n", pop_count, push_count);
 }
 
 void DeduplicateNaiveQueue(thread_args_naive const& args) {
     pthread_barrier_wait(args._barrier);
     chunk_t *chunk;
 
-    int compress_limit = OBS_LIMIT;
-    int reorder_limit = OBS_LIMIT;
-    int compress_count = 0;
-    int reorder_count = 0;
-    int input_count = 0;
-    int input_limit = OBS_LIMIT;
-    int pop_count = 0;
-
     int in_a_row = 0;
     bool last_was_compressed = false;
     constexpr const int row_limit = 100;
+
+    bool push_work_input = true;
+    bool push_work_output = true;
+    bool push_work_extra = true;
 
     while (1) {
         //if no items available, fetch a group of items from the queue
@@ -395,7 +386,6 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
         if (!value) {
             break;
         }
-        ++pop_count;
 
         //get one chunk
         chunk = *value;
@@ -425,9 +415,8 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
             last_was_compressed = true;
 #if TIMED_PUSH == 1
             auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
-            if (push_res && compress_count <= compress_limit) {
-                ++compress_count;
-                args._output_observers[0]->add_producer_time(args._output_fifos[0], d);
+            if (push_res && push_work_output) {
+                push_work_output = args._output_observers[0]->add_work_time(args._output_fifos[0], d);
             }
 #else
             args._output_fifos[0]->push(chunk);
@@ -452,36 +441,35 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
 
 #if TIMED_PUSH == 1
             auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
-            if (push_res && reorder_count <= reorder_limit) {
-                ++reorder_count;
-                args._extra_output_observers[0]->add_producer_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
+            if (push_res && push_work_extra) {
+                push_work_extra = args._extra_output_observers[0]->add_work_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
             }
 #else
             args._extra_output_fifos[0]->push(chunk);
 #endif
         }
 
-        ++input_count;
 #if TIMED_PUSH == 1
-        if (input_count <= input_limit) {
-            args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
+        if (push_work_input) {
+            push_work_input = args._input_observers[0]->add_work_time(args._input_fifos[0], d);
         }
 #endif
     }
 
     args._output_fifos[0]->terminate();
     args._extra_output_fifos[0]->terminate();
-
-    printf("Deduplicate: pop = %d, push compress = %d, push reorder = %d\n", pop_count, compress_count, reorder_count);
 }
 
 void CompressNaiveQueue(thread_args_naive const& args) {
     pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
 
+    bool push_work_input = false;
+    bool push_work_output = false;
+
     int count = 0;
-    int limit = OBS_LIMIT;
     int pop_count = 0;
+
     while(1) {
 #if COMPRESS_CROSS_POP == 1
         auto [value, success] = args._input_fifos[0]->cross_pop_no_timing(std::chrono::nanoseconds(500), args._output_fifos[0]);
@@ -522,18 +510,17 @@ void CompressNaiveQueue(thread_args_naive const& args) {
 
         auto d = diff(begin, SteadyClock::now());
 #if TIMED_PUSH == 1
-        if (push_res && count <= limit) {
-            args._output_observers[0]->add_producer_time(args._output_fifos[0],  d);
+        if (push_res && push_work_output) {
+            push_work_output = args._output_observers[0]->add_work_time(args._output_fifos[0],  d);
         }
 
-        if (count <= limit) {
-            args._input_observers[0]->add_consumer_time(args._input_fifos[0], d);
+        if (push_work_input) {
+            push_work_input = args._input_observers[0]->add_work_time(args._input_fifos[0], d);
         }
 #endif
     }
 
     args._output_fifos[0]->terminate();
-    printf("Compress: pop = %d, push = %d\n", pop_count, count);
 }
 
 struct ReorderComputeData {
@@ -541,7 +528,7 @@ struct ReorderComputeData {
     sequence_number_t* chunks_per_anchor;
 };
 
-static ReorderComputeData c_data;
+// static ReorderComputeData c_data;
 
 void ReorderNaiveQueue(thread_args_naive const& args) {
     pthread_barrier_wait(args._barrier);
@@ -569,23 +556,19 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
     memset(chunks_per_anchor, 0, chunks_per_anchor_max * sizeof(sequence_number_t));
 
     fd = create_output_file(_g_data->_output_filename.c_str());
-    printf("fd = %d\n", fd);
     int qid = 0;
 
-    std::map<NaiveQueueImpl<chunk_t*>*, int> obs_count;
+    std::map<NaiveQueueImpl<chunk_t*>*, bool> push_work_inputs;
     for (NaiveQueueImpl<chunk_t*>* queue: args._input_fifos) {
-        obs_count[queue] = 0;
+        push_work_inputs[queue] = true;
     }
-
-    int obs_limit = OBS_LIMIT;
-    int pop_count = 0;
 
     while(1) {
         std::optional<chunk_t*> value;
         NaiveQueueImpl<chunk_t*>* current_fifo;
         Observer<chunk_t*>* current_observer;
         for (int i = 0; i < args._input_fifos.size(); ++i) {
-            size_t lock, critical, unlock;
+            // size_t lock, critical, unlock;
 // #if TIMED_PUSH == 1
 //            std::tie(value, lock, critical, unlock) = args._input_fifos[qid]->timed_pop();
 // #else
@@ -602,7 +585,6 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
         if (!value) {
             break;
         }
-        ++pop_count;
 
         chunk = *value;
         if (chunk == NULL) 
@@ -639,11 +621,9 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
             }
 
 #if TIMED_PUSH == 1
-            ++(obs_count[current_fifo]);
-
-            if (obs_count[current_fifo] <= obs_limit) {
+            if (push_work_inputs[current_fifo]) {
                 auto d = diff(now, SteadyClock::now());
-                current_observer->add_consumer_time(current_fifo, d);
+                push_work_inputs[current_fifo] = current_observer->add_work_time(current_fifo, d);
             }
 #endif
             continue;
@@ -682,9 +662,8 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
             }
         } while(chunk != NULL);
 
-        ++(obs_count[current_fifo]);
-        if (obs_count[current_fifo] <= obs_limit) {
-            current_observer->add_consumer_time(current_fifo, diff(now, SteadyClock::now()));
+        if (push_work_inputs[current_fifo]) {
+            push_work_inputs[current_fifo] = current_observer->add_work_time(current_fifo, diff(now, SteadyClock::now()));
         }
     }
 
@@ -724,7 +703,6 @@ void ReorderNaiveQueue(thread_args_naive const& args) {
     close(fd);
 
     free(chunks_per_anchor);
-    printf("Reorder: %d\n", pop_count);
 }
 
 std::vector<std::unique_ptr<thread_args_naive>> _thread_args_naive_vector;
@@ -759,48 +737,6 @@ void* _CompressNaiveQueue(void* args) {
 void* _ReorderNaiveQueue(void* args) {
     ReorderNaiveQueue(*static_cast<thread_args_naive*>(args));
     return nullptr;
-}
-
-static void Write() {
-    sequence_t next;
-    sequence_reset(&next);
-
-    int fd = create_output_file(_g_data->_output_filename.c_str());
-
-    Position pos = TreeFindMin(c_data.T);
-    chunk_t* chunk;
-    while(pos !=NULL) {
-        if(pos->Element.l1num == next.l1num) {
-            chunk = FindMin(pos->Element.queue);
-            if(sequence_eq(chunk->sequence, next)) {
-                //Remove chunk from cache, update position for next iteration
-                DeleteMin(pos->Element.queue);
-                if(IsEmpty(pos->Element.queue)) {
-                    Destroy(pos->Element.queue);
-                    c_data.T = TreeDelete(pos->Element, c_data.T);
-                    pos = TreeFindMin(c_data.T);
-                }
-            } else {
-                //level 2 sequence number does not match
-                throw std::runtime_error("L2 sequence number mismatch");
-                EXIT_TRACE("L2 sequence number mismatch.\n");
-            }
-        } else {
-            //level 1 sequence number does not match
-            throw std::runtime_error("L1 sequence number mismatch");
-            EXIT_TRACE("L1 sequence number mismatch.\n");
-        }
-        write_chunk_to_file(fd, chunk);
-        if(chunk->header.isDuplicate) {
-            free(chunk);
-            chunk=NULL;
-        }
-        sequence_inc_l2(&next);
-        if(c_data.chunks_per_anchor[next.l1num]!=0 && next.l2num==c_data.chunks_per_anchor[next.l1num]) sequence_inc_l1(&next);
-    } 
-
-    close(fd);
-    free(c_data.chunks_per_anchor);
 }
 
 static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ DedupData& data, int fd, size_t filesize, void* buffer, tp& begin, tp& end) {
@@ -868,7 +804,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // new ((*fifos) + i) NaiveQueueMaster<chunk_t*>(500000, data.get_producing_threads(*iter));
             // new ((*observers) + i) Observer<chunk_t*>(iter_prod, data.get_interacting_threads(*iter));
             ((*fifos) + i)->delayed_init(1024 * 1024, data.get_producing_threads(*iter));
-            ((*observers) + i)->delayed_init(observer_description, iter_prod, data.get_interacting_threads(*iter), choice_step, dephase, prod_step, cons_step);
+            ((*observers) + i)->delayed_init(observer_description, iter_prod, choice_step, dephase, prod_step, cons_step);
 
             all_observers.push_back((*observers) + i);
         }
@@ -911,8 +847,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             // fprintf(stderr, "Using hardcoded size of master!\n");
             // new (dedupcompress_to_reorder + i) NaiveQueueMaster<chunk_t*>(500000, 10);
             dedupcompress_to_reorder[i].delayed_init(1024 * 1024, data.get_producing_threads(*iter));
-            std::cout << data.get_interacting_threads(*iter) << std::endl;
-            compress_observers[i].delayed_init("Dedup / Compress to Reorder", fine, data.get_interacting_threads(*iter), 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
+            compress_observers[i].delayed_init("Dedup / Compress to Reorder", fine, 0, 0, DEDUP_TO_REORDER_STEP, REORDER_FROM_DEDUP);
             all_observers.push_back(compress_observers + i);
         }
 
@@ -1049,10 +984,8 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     auto reorder_stage = launch_stage(_ReorderNaiveQueue, reorder, false, "reorder");
 
     for (Observer<chunk_t*>* obs: all_observers) {
-        obs->set_prod_size(OBS_LIMIT);
-        obs->set_cons_size(OBS_LIMIT);
-        obs->set_cost_p_cost_s_size(OBS_LIMIT);
-        obs->set_cost_s_size(50);
+        obs->set_first_reconfiguration_n(OBS_LIMIT);
+        obs->set_second_reconfiguration_n(50);
     }
 
     std::cout << "Starting runners" << std::endl;
@@ -1156,7 +1089,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     // Write();
 #endif
 
-    int pos = 0;
+    // int pos = 0;
     /* for (auto& v: dedup_data) {
         for (auto const& time: v) {
             unsigned long long int diff = std::chrono::duration_cast<std::chrono::nanoseconds>(time._tp - Globals::_start_time).count();
@@ -1171,7 +1104,6 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
 void FragmentNumbers(std::queue<chunk_t*>& out, int fd, size_t filesize, void* buffer) {
     size_t preloading_buffer_seek = 0;
-    int qid = 0;
     int r;
 
     sequence_number_t anchorcount = 0;
@@ -1348,7 +1280,6 @@ void FragmentNumbers(std::queue<chunk_t*>& out, int fd, size_t filesize, void* b
 unsigned int RefineNumbers(std::queue<chunk_t*>& in, std::queue<chunk_t*>& out) {
     // fprintf(stderr, "AU SECOURS JE COMPRENDS RIEN\n");
     int r;
-    int pop = 0;
 
     chunk_t *temp;
     chunk_t *chunk;
@@ -1359,9 +1290,6 @@ unsigned int RefineNumbers(std::queue<chunk_t*>& in, std::queue<chunk_t*>& out) 
     }
 
     r=0;
-    int push_count = 0;
-    int limit = OBS_LIMIT;
-    int pop_count = 0;
     std::atomic<bool> failed;
     failed.store(false, std::memory_order_release);
 
@@ -1467,7 +1395,7 @@ std::tuple<unsigned int, unsigned int> DeduplicateNumbers(std::queue<chunk_t*>& 
     return { n_deduplicate, n_compress };
 }
 
-void _EncodeForNumbers(DedupData& data, int fd, size_t filesize, void* buffer, tp&, tp&) {
+void _EncodeForNumbers(DedupData&, int fd, size_t filesize, void* buffer, tp&, tp&) {
     std::queue<chunk_t*> fragments;
     FragmentNumbers(fragments, fd, filesize, buffer);
     unsigned int n_fragment = fragments.size();

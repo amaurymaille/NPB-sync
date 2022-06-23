@@ -334,7 +334,7 @@ class NaiveQueueImpl {
             _sync_count = 0;
         }
 
-        void* const get_master() const {
+        void* get_master() const {
             return _master;
         }
 
@@ -715,7 +715,6 @@ inline std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t> NaiveQueueImpl
 template<typename T>
 inline std::optional<T> NaiveQueueImpl<T>::pop() {
     int result;
-    uint64_t lock = 0, critical = 0, unlock = 0;
     if (empty()) {
         // std::cout << "[Pop] Empty" << std::endl;
         result= _master->dequeue_no_timing(this, _size - 1);
@@ -1297,6 +1296,7 @@ inline int NaiveQueueMaster<T>::enqueue_no_timing(NaiveQueueImpl<T>* queue, int 
 
 template<typename T>
 class Observer {
+private:
     struct Data {
         uint64_t _cost_p = 0;
         // uint64_t _cost_s;
@@ -1305,8 +1305,6 @@ class Observer {
         uint64_t _cost_u = 0;
         uint64_t _iter;
         uint64_t _wi = 0;
-        uint32_t _n_producers = 0;
-        uint32_t _n_consumers;
         float _producers_avg = 0;
         float _consumers_avg = 0;
         // Product of consumer work avg with number of consumers;
@@ -1326,22 +1324,18 @@ class Observer {
         uint32_t _second_cons_step_eff = 0;
     };
 
-    struct MapData {
+    struct FirstReconfigurationData {
         bool _producer;
-        uint64_t* _work_times;
-        size_t _n_work = 0;
-        uint64_t* _push_times;
-        size_t _n_push = 0;
-        // uint64_t* _sync_times;
-        uint64_t* _lock_times, *_copy_times, *_unlock_times;
-        uint64_t* _items;
-        uint64_t _n_sync = 0;
+        std::vector<uint64_t> _work_times;
+        std::vector<uint64_t> _push_times;
+        std::vector<uint64_t> _lock_times, _copy_times, _unlock_times;
+        // uint64_t* _items;
     };
 
-    struct CSData {
+    /* struct CSData {
         bool _producer;
         std::vector<std::array<uint64_t, 3>> _data;
-    };
+    }; */
 
     public:
         enum class CostSState {
@@ -1353,10 +1347,10 @@ class Observer {
         Observer();
         // iter_prod is the amount of iterations performed by a single producer
         // n_threads is the total nubmer of threads that will interact with this observer
-        Observer(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
+        Observer(std::string const& description, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
         ~Observer();
 
-        void delayed_init(std::string const& description, uint64_t iter_prod, int n_threads, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
+        void delayed_init(std::string const& description, uint64_t iter_prod, int choice_step = 0, int dephase = 0, int prod_step = 0, int cons_step = 0);
 
         /* void set_consumer(NaiveQueueImpl<T>* consumer);
         void set_producer(NaiveQueueImpl<T>* producer); */
@@ -1364,28 +1358,23 @@ class Observer {
         void add_producer(NaiveQueueImpl<T>* producer);
         void add_consumer(NaiveQueueImpl<T>* consumer);
 
-        void set_prod_size(size_t prod_size);
-        void set_cons_size(size_t cons_size);
-        void set_cost_p_cost_s_size(size_t cost_p_cost_s_size);
-
-        // Time required to produce one element
-        void add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time);
-        // Time required to consume one element
-        void add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time);
+        void set_first_reconfiguration_n(uint32_t n);
+        // Time required to process an element (produce or consume)
+        bool add_work_time(NaiveQueueImpl<T>* client, uint64_t time);
         // Time required to insert an element in the local buffer (cost_p) and 
         // times required to perform the synchronization. lock_time = time 
         // spent waiting on the lock + locking, copy_time = time necessary to
         // transfer from local buffer to shared buffer, unlock_time = time
         // spent unlocking the mutex.
-        void add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t items);
+        bool add_producer_synchronization_time_first(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t items);
 
-        void set_cost_s_size(size_t cost_s_size);
+        void set_second_reconfiguration_n(uint32_t n);
         // Time required to perform the synchronization, only used during the
         // second reconfiguration.
-        CostSState add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
+        CostSState add_producer_synchronization_time_second(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock);
 
         // Debug data about synchronization. Serialization outputs this.
-        void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock, uint64_t items);
+        // void add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock /* , uint64_t items */);
 
         json serialize() const;
 
@@ -1394,33 +1383,27 @@ class Observer {
 
     private:
         void trigger_reconfigure(bool first);
+        std::tuple<uint32_t, uint32_t> compute_steps(uint64_t producer_avg, uint64_t consumer_avg, 
+                uint64_t cost_s); 
+        uint32_t get_add_operations_first_phase();
+        uint32_t get_add_operations_second_phase();
 
-        /* uint64_t* _prod_times;
-        uint64_t* _cons_times;
-        uint64_t* _cost_p_times; */
+        uint32_t get_max_operations_first_phase();
+        uint32_t get_max_operations_second_phase();
 
-        std::map<NaiveQueueImpl<T>*, MapData> _times;
-        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 4>>> _cost_s;
-        std::map<NaiveQueueImpl<T>*, CSData> _cs_data;
-        /* std::chrono::time_point<std::chrono::steady_clock> _begin;
-        unsigned long long _time;
-        sem_t _reconfigure_sem; */
+        std::map<NaiveQueueImpl<T>*, FirstReconfigurationData> _times;
+        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 3>>> _cost_s;
+        // std::map<NaiveQueueImpl<T>*, CSData> _cs_data;
 
-        /* size_t _n_prod;
-        size_t _n_cons;
-        size_t _n_cost_p; */
+        uint32_t _n_first_reconf = 0;
+        uint32_t _n_second_reconf = 0;
 
-        size_t _prod_size;
-        size_t _cons_size;
-        size_t _cost_p_cost_s_size;
-        size_t _cost_s_size;
+        uint32_t _n_producers = 0;
+        uint32_t _n_consumers = 0;
 
         unsigned int _best_step = 0;
         unsigned int _second_best_step = 0;
-        unsigned int _worst_avg = 0;
-        std::vector<uint64_t> _cost_p;
-        // Average work times for each producer / consumer involved.
-        std::vector<uint64_t> _averages;
+
         int _choice_step = 0;
         int _dephase = 0;
         int _prod_step = 0;
@@ -1429,26 +1412,23 @@ class Observer {
         bool _reconfigured = false;
         bool _reconfigured_twice = false;
 
-        /* NaiveQueueImpl<T>* _consumer;
-        NaiveQueueImpl<T>* _producer; */
-
         Data _data;
         std::mutex _m;
 
-        int _n_threads;
-
         std::string _description;
+
+        std::atomic<uint32_t> _count, _count_second_phase;
 };
 
 template<typename T>
 void NaiveQueueImpl<T>::add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t cost_p, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t items) {
     ++_sync_count;
-    observer->add_cost_p_cost_s_time(this, cost_p, lock, critical, unlock, items);
+    observer->add_producer_synchronization_time_first(this, cost_p, lock, critical, unlock, items);
 }
 
 template<typename T>
 void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t) {
-    switch (observer->add_cost_s_time(this, lock, critical, unlock)) {
+    switch (observer->add_producer_synchronization_time_second(this, lock, critical, unlock)) {
         case Observer<T>::CostSState::NOT_RECONFIGURED:
         case Observer<T>::CostSState::RECONFIGURED:
             return;

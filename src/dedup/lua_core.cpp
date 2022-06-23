@@ -101,13 +101,13 @@ unsigned long long DedupData::run_orig() {
     return EncodeMutex(*this);
 } */
 
-unsigned long long DedupData::run_smart() {
+/* unsigned long long DedupData::run_smart() {
     validate();
     // auto [duration, datas] = EncodeSmart(*this);
     auto duration = EncodeSmart(*this);
     // process_timestamp_data(datas);
     return duration;
-}
+} */
 
 unsigned long long DedupData::run_auto() {
     std::cout << "Running auto" << std::endl;

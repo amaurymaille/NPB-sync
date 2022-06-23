@@ -582,7 +582,7 @@ struct ReorderComputeData {
     sequence_number_t* chunks_per_anchor;
 };
 
-static ReorderComputeData c_data;
+// static ReorderComputeData c_data;
 
 void *ReorderDefault(void * targs) {
     struct thread_args *args = (struct thread_args *)targs;
@@ -736,48 +736,6 @@ void *ReorderDefault(void * targs) {
     free(chunks_per_anchor);
 
     return NULL;
-}
-
-static void Write() {
-    sequence_t next;
-    sequence_reset(&next);
-
-    int fd = create_output_file(_g_data->_output_filename.c_str());
-
-    Position pos = TreeFindMin(c_data.T);
-    chunk_t* chunk;
-    while(pos !=NULL) {
-        if(pos->Element.l1num == next.l1num) {
-            chunk = FindMin(pos->Element.queue);
-            if(sequence_eq(chunk->sequence, next)) {
-                //Remove chunk from cache, update position for next iteration
-                DeleteMin(pos->Element.queue);
-                if(IsEmpty(pos->Element.queue)) {
-                    Destroy(pos->Element.queue);
-                    c_data.T = TreeDelete(pos->Element, c_data.T);
-                    pos = TreeFindMin(c_data.T);
-                }
-            } else {
-                //level 2 sequence number does not match
-                throw std::runtime_error("L2 sequence number mismatch");
-                EXIT_TRACE("L2 sequence number mismatch.\n");
-            }
-        } else {
-            //level 1 sequence number does not match
-            throw std::runtime_error("L1 sequence number mismatch");
-            EXIT_TRACE("L1 sequence number mismatch.\n");
-        }
-        write_chunk_to_file(fd, chunk);
-        if(chunk->header.isDuplicate) {
-            free(chunk);
-            chunk=NULL;
-        }
-        sequence_inc_l2(&next);
-        if(c_data.chunks_per_anchor[next.l1num]!=0 && next.l2num==c_data.chunks_per_anchor[next.l1num]) sequence_inc_l1(&next);
-    } 
-
-    close(fd);
-    free(c_data.chunks_per_anchor);
 }
 
 #endif // ENABLE_PTHREADS

@@ -13,38 +13,27 @@
 using json = nlohmann::json;
 
 template<typename T>
-Observer<T>::Observer() { }
+Observer<T>::Observer() { 
+    _count.store(0, std::memory_order_relaxed); 
+    _count_second_phase.store(0, std::memory_order_relaxed);
+}
 
 template<typename T>
-Observer<T>::Observer(std::string const& description, uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) : 
-    _description(description), _prod_size(0), _cons_size(0), _cost_p_cost_s_size(0), _n_threads(n_threads), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
-    // _data._cost_p = cost_push;
-    // _data._cost_s = cost_sync;
+Observer<T>::Observer(std::string const& description, uint64_t iter, int choice_step, int dephase, int prod_step, int cons_step) : 
+    _description(description), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
     _data._iter = iter;
-    // sem_init(&_reconfigure_sem, 0, 0);
-    // printf("Observer %p\n", this);
+
+    _count.store(0, std::memory_order_relaxed);
+    _count_second_phase.store(0, std::memory_order_relaxed);
 }
 
 template<typename T>
 Observer<T>::~Observer() {
-    // std::cout << "Found best step = " << _best_step << ", second best step = " << _second_best_step << ", push cost = " << _data._cost_p << ", worst average Wi = " << _worst_avg << ", sync cost = (" << _data._cost_wl << ", " << _data._cost_cc << ", " << _data._cost_u << ")" << std::endl;
-
     std::cout << "First prod = " << _data._first_prod_step << ", first cons = " << _data._first_cons_step << ", second prod " << _data._second_prod_step << ", second cons " << _data._second_cons_step << ", first prod effective " << _data._first_prod_step_eff << ", first cons effective " << _data._first_cons_step_eff << ", second prod effective " << _data._second_prod_step_eff << ", second cons effective " << _data._second_cons_step_eff << std::endl;
-
-    for (auto& [queue, data]: _times) {
-        free(data._work_times);
-        free(data._push_times);
-        free(data._lock_times);
-        free(data._unlock_times);
-        free(data._copy_times);
-        free(data._items);
-    }
 }
 
 template<typename T>
-void Observer<T>::delayed_init(std::string const& description, uint64_t iter, int n_threads, int choice_step, int dephase, int prod_step, int cons_step) {
-    _prod_size = _cons_size = _cost_p_cost_s_size = 0;
-    _n_threads = n_threads;
+void Observer<T>::delayed_init(std::string const& description, uint64_t iter, int choice_step, int dephase, int prod_step, int cons_step) {
     _data._iter = iter;
     _choice_step = choice_step;
     _dephase = dephase;
@@ -53,121 +42,51 @@ void Observer<T>::delayed_init(std::string const& description, uint64_t iter, in
     _description = description;
 }
 
-/* template<typename T>
-void Observer<T>::set_consumer(NaiveQueueImpl<T>* consumer) {
-    _consumer = consumer;
-}
-
-template<typename T>
-void Observer<T>::set_producer(NaiveQueueImpl<T>* producer) {
-    _producer = producer;
-} */
-
-/* template<typename T>
-void Observer<T>::begin() {
-    _begin = std::chrono::steady_clock::now();
-} */
-
 template<typename T>
 void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
-    // printf("Producer %p\n", producer);
-    MapData& data = _times[producer];
-    data._work_times = data._push_times = data._items = nullptr;
-    data._n_work = data._n_push = data._n_sync = 0;
+    FirstReconfigurationData& data = _times[producer];
     data._producer = true;
 
+    ++_n_producers;
     _cost_s[producer];
-    _cs_data[producer]._producer = true;
+    // _cs_data[producer]._producer = true;
 }
 
 template<typename T>
 void Observer<T>::add_consumer(NaiveQueueImpl<T>* consumer) {
-    // printf("Consumer %p\n", consumer);
-    MapData& data = _times[consumer];
-    data._work_times = data._push_times = nullptr;
-    data._n_work = data._n_push = data._n_sync = 0;
+    FirstReconfigurationData& data = _times[consumer];
     data._producer = false;
-    _cs_data[consumer]._producer = false;
+    
+    ++_n_consumers;
+    // _cs_data[consumer]._producer = false;
 }
 
 template<typename T>
-void Observer<T>::set_prod_size(size_t prod_size) {
-    // _prod_times = (uint64_t*)malloc(prod_size * sizeof(uint64_t));
-    for (auto& [_, data]: _times) {
-        if (data._producer) {
-            if (data._work_times) {
-                throw std::runtime_error("You cannot change the size of the time");
-            }
-            data._work_times = (uint64_t*)malloc(sizeof(uint64_t) * prod_size);
-            data._items = (uint64_t*)malloc(sizeof(uint64_t) * prod_size);
-        }
-    }
-    _prod_size = prod_size;
-}
-
-template<typename T>
-void Observer<T>::set_cons_size(size_t cons_size) {
-    for (auto& [_, data]: _times) {
-        if (!data._producer) {
-            if (data._work_times) {
-                throw std::runtime_error("You cannot change the size of the time");
-            }
-            data._work_times = (uint64_t*)malloc(sizeof(uint64_t) * cons_size);
-        }
-    }
-    _cons_size = cons_size;
-}
-
-template<typename T>
-void Observer<T>::add_producer_time(NaiveQueueImpl<T>* producer, uint64_t time) {
-    if (_times.find(producer) == _times.end()) {
-        for (auto const& [addr, _]: _times) {
-            printf("XXX %p\n", addr);
-        }
-        throw std::runtime_error("Producer not registered\n");
+bool Observer<T>::add_work_time(NaiveQueueImpl<T>* client, uint64_t time) {
+    if (_times.find(client) == _times.end()) {
+        throw std::runtime_error("Client not registered\n");
     }
 
-    MapData& data = _times[producer];
-    if (data._n_work < _prod_size) {
-        data._work_times[data._n_work++] = time;
+    uint32_t operations = get_add_operations_first_phase();
+    uint32_t max = get_max_operations_first_phase();
+
+    if (operations > max) {
+        return false;
     }
 
-    if (data._n_work == _prod_size) {
+    FirstReconfigurationData& data = _times[client];
+    data._work_times.push_back(time);
+
+    if (operations == max) {
         trigger_reconfigure(true);
+        return false;
     }
+
+    return true;
 }
-
-template<typename T>
-void Observer<T>::add_consumer_time(NaiveQueueImpl<T>* consumer, uint64_t time) {
-    if (_times.find(consumer) == _times.end()) {
-        for (auto const& [addr, _]: _times) {
-            printf("XXX %p\n", addr);
-        }
-        throw std::runtime_error("Consumer not registered\n");
-    }
-
-    MapData& data = _times[consumer];
-    if (data._n_work < _cons_size) {
-        data._work_times[data._n_work++] = time;
-    }
-
-    if (data._n_work == _cons_size) {
-        trigger_reconfigure(true);
-    }
-}
-
-/* template<typename T>
-void Observer<T>::measure() {
-    while (!_reconfigured) {
-        sem_wait(&_reconfigure_sem);
-    }
-    _time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - _begin).count();
-    std::cout << _time << std::endl;
-} */
 
 template<typename T>
 void Observer<T>::trigger_reconfigure(bool first) {
-    std::unique_lock<std::mutex> lck(_m);
     auto avg = [](uint64_t* arr, size_t s, float ignore = 0) {
         if (ignore != 0) {
             std::sort(arr, arr + s);
@@ -193,19 +112,8 @@ void Observer<T>::trigger_reconfigure(bool first) {
         return sorted_median(arr, s / 2);
     };
 
-    /* auto avg_cost_s_fix = [](uint64_t* arr, size_t s, NaiveQueueImpl<T>* queue, uint64_t cost_p) {
-        uint64_t sum = 0;
-        for (int i = 0; i < s; ++i) {
-            if (arr[i] >= queue->get_step() * cost_p)
-                arr[i] -= queue->get_step() * cost_p;
-            sum += arr[i];
-        }
-
-        return sum / s;
-    }; */
-
     if (first) {
-        if (!_reconfigured && std::all_of(_times.begin(), _times.end(), [this](auto const& value) {
+        /* if (!_reconfigured && std::all_of(_times.begin(), _times.end(), [this](auto const& value) {
             auto const& [_, data] = value;
             if (data._producer) {
                 bool result = data._n_work == this->_prod_size && data._n_push == this->_cost_p_cost_s_size;
@@ -214,232 +122,234 @@ void Observer<T>::trigger_reconfigure(bool first) {
                 bool result = data._n_work == this->_cons_size;
                 return result;
             }
-        })) {
-            // printf("Reconfiguration (first)\n");
-            // sem_post(&_reconfigure_sem);
-            std::vector<uint64_t> cost_p;
-            cost_p.reserve(_times.size());
-            std::vector<uint64_t> averages(_times.size());
-            std::vector<uint64_t> producers, consumers;
-            // std::vector<uint64_t> costs_s;
-            std::vector<uint64_t> locks, unlocks, copies;
-            int n_consumers = 0, n_producers = 0;
-            
-            for (auto& [queue, data]: _times) {
-                unsigned int average = avg(data._work_times, data._n_work);
-                if (data._producer) {
-                    ++n_producers;
-                    cost_p.push_back(avg(data._push_times, data._n_push));
-                    producers.push_back(average);
-                } else {
-                    ++n_consumers;
-                    consumers.push_back(average);
-                }
-                averages.push_back(average);
-            }
+        })) { */
+        std::vector<uint64_t> cost_p;
+        cost_p.reserve(_times.size());
+        
+        std::vector<uint64_t> producers, consumers;
+        producers.reserve(_n_producers);
+        consumers.reserve(_n_consumers);
 
-
-            auto consumer_avg = avg(consumers.data(), consumers.size());
-            auto producer_avg = avg(producers.data(), producers.size());
-            auto worst_avg = std::max(producer_avg, consumer_avg);
-
-            _data._wi = worst_avg;
-            _data._cost_p = *std::min_element(cost_p.begin(), cost_p.end());
-
-            for (auto& [queue, data]: _times) {
-                if (data._producer) {
-                    // costs_s.push_back(avg_cost_s_fix(data._sync_times, data._n_sync, queue, _data._cost_p));
-                    locks.push_back(quart(data._lock_times, data._n_sync));
-                    unlocks.push_back(quart(data._unlock_times, data._n_sync));
-                    copies.push_back(quart(data._copy_times, data._n_sync));
-                }
-            }
-
-            _data._cost_wl = avg(locks.data(), locks.size());
-            _data._cost_cc = avg(copies.data(), copies.size());
-            _data._cost_u = avg(unlocks.data(), unlocks.size());
-            //_data._cost_s = avg(costs_s.data(), costs_s.size());
-            // auto select_avg = std::max(cons_avg, prod_avg);
-            // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s) / (select_avg + _data._cost_p));
-            // unsigned int best_step = std::sqrt((_data._iter * _data._cost_s * _n_threads) / (worst_avg + _data._cost_p));
-
-            // unsigned int best_step = std::sqrt((_data._iter * (_data._cost_wl + /* _data._cost_cc + */ _data._cost_u)) / (_data._cost_p * _times.size() + _data._wi));
-
-            auto prod_prod = n_producers * consumer_avg;
-            auto prod_cons = n_consumers * producer_avg;
-
-            // unsigned int best_step = 0;
-            unsigned int prod_step = 0, cons_step = 0;
-
-            if (prod_cons > prod_prod) {
-                prod_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_producers * consumer_avg + n_producers * _data._cost_p) / n_consumers) + 2 * (n_producers * _data._cost_p - _data._cost_p + n_producers * _data._cost_p))));
-                cons_step = prod_step * n_producers / n_consumers;
+        std::vector<uint64_t> locks, unlocks, copies;
+        locks.reserve(_n_producers);
+        unlocks.reserve(_n_producers);
+        copies.reserve(_n_producers);
+        
+        for (auto& [queue, data]: _times) {
+            unsigned int average = avg(data._work_times.data(), data._work_times.size());
+            if (data._producer) {
+                cost_p.push_back(avg(data._push_times.data(), data._push_times.size()));
+                producers.push_back(average);
             } else {
-                cons_step = std::sqrt(std::fabs((_data._iter * (_data._cost_wl + _data._cost_u)) / (((n_consumers * producer_avg + n_consumers * _data._cost_p) / n_producers) + 2 * (n_consumers * _data._cost_p - _data._cost_p + n_consumers * _data._cost_p))));
-                prod_step = cons_step * n_consumers / n_producers;
+                consumers.push_back(average);
             }
-
-            _data._n_producers = n_producers;
-            _data._n_consumers = n_consumers;
-            _data._producers_avg = producer_avg;
-            _data._consumers_avg = consumer_avg;
-            _data._prod_cons = prod_cons;
-            _data._prod_prod = prod_prod;
-            _data._first_prod_step = prod_step;
-            _data._first_cons_step = cons_step;
-
-            _data._first_prod_step_eff = BEST_PROD_STEP;
-            _data._first_cons_step_eff = BEST_CONS_STEP;
-
-            int dephase_i = 0;
-            for (auto& [queue, map_data]: _times) {
-#if RECONFIGURE == 1
-                /* if (_choice_step == 0 || map_data._producer) {
-                    queue->prepare_reconfigure(BEST_STEP);
-                } else {
-                    queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
-                    ++dephase_i;
-                } */
-                if (map_data._producer) {
-                    queue->prepare_reconfigure(BEST_PROD_STEP);
-                } else {
-                    queue->prepare_reconfigure(BEST_CONS_STEP);
-                }
-#endif
-            }
-            // _consumer->prepare_reconfigure(best_step);
-            // _producer->prepare_reconfigure(best_step);
-
-            // printf("Iter = %lu, CostS = (%lu, %lu, %lu), CostP = %lu, Times.size() = %lu, Wi = %lu, Step = %lu\n", _data._iter, _data._cost_wl, _data._cost_cc, _data._cost_u, _data._cost_p, _times.size(), _data._wi, best_step);
-            _worst_avg = worst_avg;
-
-            _cost_p = std::move(cost_p);
-            _averages = std::move(averages);
-
-            // _time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - _begin).count();
-            // printf("Reconfiguring producer and consumer to %d\n", best_step);
-            _reconfigured = true;
         }
+
+        auto consumer_avg = avg(consumers.data(), consumers.size());
+        auto producer_avg = avg(producers.data(), producers.size());
+        _data._cost_p = *std::min_element(cost_p.begin(), cost_p.end());
+
+        for (auto& [queue, data]: _times) {
+            if (data._producer) {
+                locks.push_back(quart(data._lock_times.data(), data._lock_times.size()));
+                unlocks.push_back(quart(data._unlock_times.data(), data._unlock_times.size()));
+                copies.push_back(quart(data._copy_times.data(), data._copy_times.size()));
+            }
+        }
+
+        _data._cost_wl = avg(locks.data(), locks.size());
+        _data._cost_cc = avg(copies.data(), copies.size());
+        _data._cost_u = avg(unlocks.data(), unlocks.size());
+
+        auto [prod_step, cons_step] = compute_steps(producer_avg, consumer_avg, _data._cost_wl + _data._cost_u);
+
+        // int dephase_i = 0;
+        for (auto& [queue, map_data]: _times) {
+#if RECONFIGURE == 1
+            /* if (_choice_step == 0 || map_data._producer) {
+                queue->prepare_reconfigure(BEST_STEP);
+            } else {
+                queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
+                ++dephase_i;
+            } */
+            if (map_data._producer) {
+                queue->prepare_reconfigure(BEST_PROD_STEP);
+            } else {
+                queue->prepare_reconfigure(BEST_CONS_STEP);
+            }
+#endif
+        }
+
+        _data._producers_avg = producer_avg;
+        _data._consumers_avg = consumer_avg;
+        _data._prod_cons = _n_producers * consumer_avg;
+        _data._prod_prod = _n_consumers * producer_avg;
+        _data._first_prod_step = prod_step;
+        _data._first_cons_step = cons_step;
+
+        _data._first_prod_step_eff = BEST_PROD_STEP;
+        _data._first_cons_step_eff = BEST_CONS_STEP;
+
+
+        _reconfigured = true;
+        // }
     } else {
-        if (!_reconfigured_twice && std::all_of(_cost_s.begin(), _cost_s.end(), [this](auto const& value) {
+        /* if (!_reconfigured_twice && std::all_of(_cost_s.begin(), _cost_s.end(), [this](auto const& value) {
             auto const& [_, costs] = value;
             if (costs.size() != this->_cost_s_size) {
                 return false;
             }
 
             return true;
-        })) {
-            // printf("Reconfiguration (second)\n");
-            _reconfigured_twice = true;
-            std::vector<uint64_t> cost_s(_cost_s.size());
-            // std::ostringstream stream;
+        })) { */
+        _reconfigured_twice = true;
+        std::vector<uint64_t> cost_s(_cost_s.size());
 
-            for (auto& data: _cost_s) {
-                auto& v = data.second;
-                /* stream << data.first << " => ";
-                for (uint64_t value: v) {
-                    stream << value << " ";
-                }
-                stream << ": "; */
-                // std::cout << v[0] << std::endl;
-                // auto average = avg(v.data(), v.size());
-                // std::cout << v[0] << std::endl;
-                // cost_s.push_back(average);
-                // stream << average << std::endl;
+        for (auto& data: _cost_s) {
+            auto& v = data.second;
 
-                std::vector<uint64_t> s;
-                for (auto [lock, critical, unlock, _]: v) {
-                    // averg += lock + unlock;
-                    s.push_back(lock + unlock);
-                }
-                // cost_s.push_back(averg / v.size());
-                cost_s.push_back(unsorted_median(s.data(), s.size()));
+            std::vector<uint64_t> s;
+            for (auto [lock, critical, unlock]: v) {
+                // averg += lock + unlock;
+                s.push_back(lock + unlock);
             }
-            /* stream << std::endl;
-            std::cout << stream.str(); */
-            unsigned int prod_step = 0, cons_step = 0;
-            uint64_t avg_cost_s = avg(cost_s.data(), cost_s.size());
-
-            if (_data._prod_cons > _data._prod_prod) {
-                prod_step = std::sqrt(std::fabs((_data._iter * avg_cost_s) / (((_data._n_producers * _data._consumers_avg + _data._n_producers * _data._cost_p) / _data._n_consumers) + _data._n_producers * _data._cost_p - _data._cost_p + _data._n_producers * _data._cost_p)));
-                cons_step = prod_step * _data._n_producers / _data._n_consumers;
-            } else {
-                cons_step = std::sqrt(std::fabs((_data._iter * avg_cost_s) / (((_data._n_consumers * _data._producers_avg + _data._n_consumers * _data._cost_p) / _data._n_producers) + _data._n_consumers * _data._cost_p - _data._cost_p + _data._n_consumers * _data._cost_p)));
-                prod_step = cons_step * _data._n_consumers / _data._n_producers;
-            }
-
-            _data._second_prod_step = prod_step;
-            _data._second_cons_step = cons_step;
-
-            _data._second_prod_step_eff = SECOND_BEST_PROD_STEP;
-            _data._second_cons_step_eff = SECOND_BEST_CONS_STEP;
-
-            // unsigned int best_step = std::sqrt((_data._iter * avg_cost_s) / (_data._cost_p * _times.size() + _data._wi));
-            // printf("Old = %d, new = %d\n", _best_step, best_step);
-            // _second_best_step = best_step;
-
-            int dephase_i = 0;
-            for (auto& [queue, map_data]: _times) {
-#if RECONFIGURE == 1
-                /* if (_choice_step == 0 || map_data._producer) {
-                    queue->prepare_reconfigure(SECOND_BEST_STEP);
-                } else {
-                    queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
-                    ++dephase_i;
-                } */
-                if (map_data._producer) {
-                    queue->prepare_reconfigure(SECOND_BEST_PROD_STEP);
-                } else {
-                    queue->prepare_reconfigure(SECOND_BEST_CONS_STEP);
-                }
-#endif
-            }
+            // cost_s.push_back(averg / v.size());
+            cost_s.push_back(unsorted_median(s.data(), s.size()));
         }
+
+        uint64_t avg_cost_s = avg(cost_s.data(), cost_s.size());
+        // unsigned int prod_step = 0, cons_step = 0;
+        auto [prod_step, cons_step] = compute_steps(_data._producers_avg, _data._consumers_avg, avg_cost_s);
+
+        // int dephase_i = 0;
+        for (auto& [queue, map_data]: _times) {
+#if RECONFIGURE == 1
+            /* if (_choice_step == 0 || map_data._producer) {
+                queue->prepare_reconfigure(SECOND_BEST_STEP);
+            } else {
+                queue->prepare_reconfigure(_choice_step + _dephase * dephase_i);
+                ++dephase_i;
+            } */
+            if (map_data._producer) {
+                queue->prepare_reconfigure(SECOND_BEST_PROD_STEP);
+            } else {
+                queue->prepare_reconfigure(SECOND_BEST_CONS_STEP);
+            }
+#endif
+        }
+
+        _data._second_prod_step = prod_step;
+        _data._second_cons_step = cons_step;
+
+        _data._second_prod_step_eff = SECOND_BEST_PROD_STEP;
+        _data._second_cons_step_eff = SECOND_BEST_CONS_STEP;
     }
 }
 
 template<typename T>
-void Observer<T>::set_cost_p_cost_s_size(size_t cost_p_cost_s_size) {
+std::tuple<uint32_t, uint32_t> Observer<T>::compute_steps(uint64_t producer_avg, uint64_t consumer_avg, uint64_t cost_s) {
+    uint64_t pc_ratio = _n_consumers * producer_avg;
+    uint64_t cp_ratio = _n_producers * consumer_avg;
+
+    uint64_t up = _data._iter * cost_s;
+    if (pc_ratio > cp_ratio) {
+        uint64_t down_left = (_n_producers * consumer_avg + _n_producers * _data._cost_p) / _n_consumers;
+        uint64_t down_right = 2 * (_n_producers * _data._cost_p - _data._cost_p + _n_producers * _data._cost_p);
+
+        uint32_t step = std::sqrt(up / (down_left + down_right));
+        return { step, step * _n_producers / _n_consumers };
+    } else {
+        uint64_t down_left = (_n_consumers * producer_avg + _n_consumers * _data._cost_p) / _n_producers;
+        uint64_t down_right = 2 * (_n_consumers * _data._cost_p - _data._cost_p + _n_consumers * _data._cost_p);
+
+        uint32_t step = std::sqrt(up / (down_left + down_right));
+        return { step * _n_consumers / _n_producers, step };
+    }
+}
+
+template<typename T>
+void Observer<T>::set_first_reconfiguration_n(uint32_t n) {
     for (auto& [_, data]: _times) {
         if (data._producer) {
-            if (data._push_times) {
+            if (data._push_times.capacity() != 0) {
                 throw std::runtime_error("You cannot change the size of the time");
             }
-            data._push_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
-            // data._sync_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
-            data._lock_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
-            data._unlock_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
-            data._copy_times = (uint64_t*)malloc(sizeof(uint64_t) * cost_p_cost_s_size);
+
+            data._work_times.reserve(n);
+            data._push_times.reserve(n);
+            data._lock_times.reserve(n);
+            data._copy_times.reserve(n);
+            data._unlock_times.reserve(n);
         }
     }
 
-    _cost_p_cost_s_size = cost_p_cost_s_size;
+    _n_first_reconf = n;
 }
 
 template<typename T>
-void Observer<T>::add_cost_p_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t items) {
-    // printf("Adding CostP = %llu\n", time);
-    MapData& data = _times[producer];
+bool Observer<T>::add_producer_synchronization_time_first(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t /* items */) {
+    uint32_t observations = get_add_operations_first_phase();
+    uint32_t max = get_max_operations_first_phase();
 
-    if (data._n_push < _cost_p_cost_s_size) {
-        data._push_times[data._n_push++] = push_time;
+    if (observations > max) {
+        return false;
     }
+
+    FirstReconfigurationData& data = _times[producer];
+    data._push_times.push_back(push_time);
 
     if (copy_time != 0) {
-        /* if (data._n_sync < _cost_p_cost_s_size) {
-            data._sync_times[data._n_sync++] = sync_time;
-        } */
-        if (data._n_sync < _cost_p_cost_s_size) {
-            data._lock_times[data._n_sync] = lock_time;
-            data._copy_times[data._n_sync] = copy_time;
-            data._unlock_times[data._n_sync] = unlock_time;
-            data._items[data._n_sync] = items;
-            data._n_sync++;
-        }
+        data._lock_times.push_back(lock_time);
+        data._copy_times.push_back(copy_time);
+        data._unlock_times.push_back(unlock_time);
+        // data._items.push_back(items);
     }
-    if (data._n_push == _cost_p_cost_s_size && data._n_sync == _cost_p_cost_s_size) {
+
+    if (observations == max) {
         trigger_reconfigure(true);
+        return false;
     }
+
+    return true;
+}
+
+template<typename T>
+void Observer<T>::set_second_reconfiguration_n(uint32_t n) {
+    _n_second_reconf = n;
+    for (auto& data: _cost_s) {
+        auto& v = data.second;
+        v.reserve(n);
+    }
+
+    /* for (auto& data: _cs_data) {
+        data.second._data.reserve(cost_s_size);
+    } */
+}
+
+template<typename T>
+typename Observer<T>::CostSState Observer<T>::add_producer_synchronization_time_second(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
+    if (producer->was_reconfigured()) {
+        uint32_t observations = get_add_operations_second_phase();
+        uint32_t max = get_max_operations_second_phase();
+
+        if (observations > max) {
+            return CostSState::RECONFIGURED;
+        }
+
+        if (_cost_s.find(producer) == _cost_s.end()) {
+            throw std::runtime_error("Adding second reconfiguration time for not registered producer");
+        }
+
+        _cost_s[producer].push_back({lock, critical, unlock});
+        if (observations == max) {
+            trigger_reconfigure(false);
+            return CostSState::TRIGGERED;
+        }
+
+        return CostSState::RECONFIGURED;
+    }
+
+    return CostSState::NOT_RECONFIGURED;
 }
 
 template<typename T>
@@ -458,8 +368,8 @@ json Observer<T>::serialize() const {
 
     json compute;
     compute["iter"] = _data._iter;
-    compute["n_consumers"] = _data._n_consumers;
-    compute["n_producers"] = _data._n_producers;
+    compute["n_consumers"] = _n_consumers;
+    compute["n_producers"] = _n_producers;
     compute["prod_cons"] = _data._prod_cons;
     compute["prod_prod"] = _data._prod_prod;
     compute["producers_avg"] = _data._producers_avg;
@@ -479,7 +389,7 @@ json Observer<T>::serialize() const {
         fifo["type"] = data._producer ? "producer" : "consumer";
         json locks = json::array(), transfers = json::array(), unlocks = json::array(), locals = json::array(), work = json::array();
 
-        copy(work, data._work_times, data._n_work);
+        copy(work, data._work_times.data(), data._work_times.size());
     
         fifo["work"] = work;
 
@@ -488,10 +398,10 @@ json Observer<T>::serialize() const {
             continue;
         }
 
-        copy(locals, data._push_times, data._n_push);
-        copy(locks, data._lock_times, data._n_sync);
-        copy(transfers, data._copy_times, data._n_sync);
-        copy(unlocks, data._unlock_times, data._n_sync);
+        copy(locals, data._push_times.data(), data._push_times.size());
+        copy(locks, data._lock_times.data(), data._lock_times.size());
+        copy(transfers, data._copy_times.data(), data._copy_times.size());
+        copy(unlocks, data._unlock_times.data(), data._unlock_times.size());
 
         fifo["lock"] = locks;
         fifo["transfer"] = transfers;
@@ -507,7 +417,7 @@ json Observer<T>::serialize() const {
         json locks = json::array(), unlocks = json::array(), transfers = json::array();
 
         fifo["type"] = queue->_producer ? "producer" : "consumer";
-        for (auto [lock, transfer, unlock, _]: data) {
+        for (auto [lock, transfer, unlock]: data) {
             locks.push_back(lock);
             unlocks.push_back(unlock);
             transfers.push_back(transfer);
@@ -531,47 +441,26 @@ json Observer<T>::serialize() const {
 }
 
 template<typename T>
-void Observer<T>::set_cost_s_size(size_t cost_s_size) {
-    _cost_s_size = cost_s_size;
-    for (auto& data: _cost_s) {
-        auto& v = data.second;
-        v.reserve(cost_s_size);
-    }
-
-    for (auto& data: _cs_data) {
-        data.second._data.reserve(cost_s_size);
-    }
+uint32_t Observer<T>::get_add_operations_first_phase() {
+    return _count.fetch_add(1, std::memory_order_acq_rel);
 }
 
 template<typename T>
-typename Observer<T>::CostSState Observer<T>::add_cost_s_time(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
-    if (producer->was_reconfigured()) {
-        if (_cost_s.find(producer) == _cost_s.end()) {
-            throw std::runtime_error("Non mais là...");
-        }
-        // printf("%p %d %llu\n", producer, _cost_s[producer].size(), sync_time);
-        /* if (sync_time < producer->get_step() * _data._cost_p) {
-            // Because we cannot be sure that the value of sync_time is based on the new step
-            // if it happens to be absurd, then use sync_time without trying to adjust it. This
-            // should not happen a lot of times.
-            time = sync_time;
-        } */
-        // printf("%p %llu %llu\n", producer, _cost_s[producer][0], time);
-        _cost_s[producer].push_back({lock, critical, unlock});
-        // printf("%p %llu\n", producer, _cost_s[producer][0]);
-        if (_cost_s[producer].size() == _cost_s_size) {
-            // printf("Producer P2 OK\n");
-            trigger_reconfigure(false);
-            return CostSState::TRIGGERED;
-        }
-
-        return CostSState::RECONFIGURED;
-    }
-
-    return CostSState::NOT_RECONFIGURED;
+uint32_t Observer<T>::get_add_operations_second_phase() {
+    return _count_second_phase.fetch_add(1, std::memory_order_acq_rel);
 }
 
 template<typename T>
+uint32_t Observer<T>::get_max_operations_first_phase() {
+    return _n_first_reconf * (_n_consumers + _n_producers);
+}
+
+template<typename T>
+uint32_t Observer<T>::get_max_operations_second_phase() {
+    return _n_second_reconf * (_n_consumers + _n_producers);
+}
+
+/* template<typename T>
 void Observer<T>::add_critical_section_data(NaiveQueueImpl<T>* queue, uint64_t lock, uint64_t cs, uint64_t unlock, uint64_t items) {
     _cs_data[queue]._data.push_back({lock, cs, unlock, items});
-}
+} */

@@ -6,7 +6,7 @@ include_directories ("${CMAKE_CURRENT_SOURCE_DIR}" "${LUA_INCLUDE_DIR}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-sign-compare ${CMAKE_THREAD_LIBS_INIT}")
 add_definitions("-DENABLE_GZIP_COMPRESSION -DENABLE_PTHREADS -DENABLE_BZIP2_COMPRESSION")
 file (GLOB DEDUP_SRC *.cpp)
-list (REMOVE_ITEM DEDUP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/step.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/lua_old.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/encode_fifo.cpp")
+list (REMOVE_ITEM DEDUP_SRC "${CMAKE_CURRENT_SOURCE_DIR}/step.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/lua_old.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/encode_fifo.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/encode_smart.cpp")
 # message (STATUS "${DEDUP_SRC}")
 
 # add_library(dedup_step SHARED "step.cpp")
