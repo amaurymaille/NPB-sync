@@ -302,7 +302,7 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 
                 //put it into send buffer
 #if TIMED_PUSH == 1
-                auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+                bool push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
 #else
                 args._output_fifos[0]->push(chunk);
 #endif
@@ -331,7 +331,7 @@ void RefineNaiveQueue(thread_args_naive const& args) {
 
                 //put it into send buffer
 #if TIMED_PUSH == 1
-                auto push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+                bool push_result = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
 #else
                 args._output_fifos[0]->push(chunk);
 #endif
@@ -414,7 +414,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
 #endif
             last_was_compressed = true;
 #if TIMED_PUSH == 1
-            auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+            bool push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
             if (push_res && push_work_output) {
                 push_work_output = args._output_observers[0]->add_work_time(args._output_fifos[0], d);
             }
@@ -440,7 +440,7 @@ void DeduplicateNaiveQueue(thread_args_naive const& args) {
             last_was_compressed = false;
 
 #if TIMED_PUSH == 1
-            auto push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
+            bool push_res = args._extra_output_fifos[0]->generic_push(args._extra_output_observers[0], chunk);
             if (push_res && push_work_extra) {
                 push_work_extra = args._extra_output_observers[0]->add_work_time(args._extra_output_fifos[0], diff(begin, SteadyClock::now()));
             }
@@ -501,7 +501,7 @@ void CompressNaiveQueue(thread_args_naive const& args) {
         TP begin = SteadyClock::now();
         sub_Compress(chunk);
 #if TIMED_PUSH == 1
-        auto push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
+        bool push_res = args._output_fifos[0]->generic_push(args._output_observers[0], chunk);
 #else
         args._output_fifos[0]->push(chunk);
 
@@ -887,7 +887,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             for (auto const& [fifo, fifo_data]: fifo_ids) {
                 // FIFOData& fifo_data = data._fifo_data[fifo];
                 // target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
-                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0, OBS_LIMIT, 50);
+                NaiveQueueImpl<chunk_t*>* impl = ids_to_fifos[fifo]->view(producer, fifo_data._n, false, 0, 0);
                 target.push_back(impl);
 
                 Observer<chunk_t*>* obs = ids_to_observers[fifo];

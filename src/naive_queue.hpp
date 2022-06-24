@@ -249,15 +249,12 @@ class NaiveQueueImpl {
 
     public:
         NaiveQueueImpl(NaiveQueueMaster<T>* master, bool producer, size_t size, bool /* reconfigure */, 
-                unsigned int threshold, unsigned int new_step, unsigned int samples_first, 
-                unsigned int samples_second) {
+                unsigned int threshold, unsigned int new_step) {
             _producer = producer;
             _master = master; 
             // _reconfigure = reconfigure;
             _threshold = threshold;
             _new_step = new_step;
-            _samples_second = samples_second;
-            _sync_limit = samples_first;
             _reconfigured.store(false, std::memory_order_relaxed);
             _need_reconfigure.store(false, std::memory_order_relaxed);
             _begin = std::chrono::steady_clock::now();
@@ -284,8 +281,6 @@ class NaiveQueueImpl {
         /* inline std::optional<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>>
             generic_pop() __attribute__((always_inline)); */
 
-        typedef std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> TimingData;
-
         inline std::optional<T> pop() __attribute__((always_inline));
         template<typename T2>
         inline std::tuple<std::tuple<std::optional<T>, uint64_t, uint64_t, uint64_t>, bool> cross_pop(std::chrono::nanoseconds const& timeout, NaiveQueueImpl<T2>* cross_queue) __attribute__((always_inline));
@@ -295,10 +290,10 @@ class NaiveQueueImpl {
         // Do not time anything
         inline void push(T const& data) __attribute__((always_inline));
         // Time everything
-        inline TimingData timed_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
+        inline void timed_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
         // Time only if there are still observable synchronizations to be
         // performed.
-        inline std::optional<TimingData> generic_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
+        inline bool generic_push(Observer<T>* observer, T const& data) __attribute__((always_inline));
 
         size_t n_elements() const {
             return _n_elements;
@@ -324,14 +319,6 @@ class NaiveQueueImpl {
 
         size_t get_step() const {
             return _size - 1;
-        }
-
-        void set_sync_limit(unsigned int limit) {
-            _sync_limit = limit;
-        }
-
-        void reset_sync_count() {
-            _sync_count = 0;
         }
 
         void* get_master() const {
@@ -360,12 +347,6 @@ class NaiveQueueImpl {
         std::atomic<bool> _need_reconfigure;
         // Was the reconfiguration done ?
         std::atomic<bool> _reconfigured;
-        // How many synchronization must be observed ?
-        unsigned int _sync_limit = 0;
-        // How many synchronization have been observed ?
-        unsigned int _sync_count = 0;
-        // How many synchronizations for the second reconfiguration ?
-        unsigned int _samples_second;
 
         typedef void (NaiveQueueImpl<T>::*AddObserverTimeFn)(Observer<T>*, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
@@ -373,6 +354,8 @@ class NaiveQueueImpl {
 
         void add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
         void add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+
+        bool _need_observer_push = true;
 
         /// Manual reconfiguration
 
@@ -602,9 +585,6 @@ class NaiveQueueImpl {
 };
 
 template<typename T>
-using TimingData = typename NaiveQueueImpl<T>::TimingData;
-
-template<typename T>
 class NaiveQueueMaster {
     public:
         NaiveQueueMaster() { }
@@ -747,8 +727,6 @@ inline std::optional<T> NaiveQueueImpl<T>::pop() {
 
     return pop_local();
 }
-template<typename T>
-using TimedTimingData = std::tuple<TimingData<T>, bool>;
 
 template<typename T>
 template<typename T2>
@@ -809,7 +787,7 @@ inline std::tuple<std::optional<T>, bool> NaiveQueueImpl<T>::cross_pop_no_timing
 
 
 template<typename T>
-inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) {
+inline void NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) {
     uint64_t cost_p = 0;
     if (n_elements() == get_step() - 1) {
         std::chrono::time_point<std::chrono::steady_clock> begin = std::chrono::steady_clock::now();
@@ -823,13 +801,11 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
     std::chrono::time_point<std::chrono::steady_clock> begin_enqueue; 
     std::chrono::time_point<std::chrono::steady_clock> end_enqueue;
     uint64_t lock, critical, unlock;
-    bool enqueued = false;
 
     if (full()) {
         // dump();
         // std::cout << "[Push] Full" << std::endl;
         
-        enqueued = true;
         // unsigned int amount = n_elements();
         begin_enqueue = std::chrono::steady_clock::now();
         auto [count, _lock, _critical, _unlock] = _master->enqueue(this, _size - 1);
@@ -856,11 +832,10 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
             }
         } */
 
-        if (_sync_count == _sync_limit) {
+        if (!_need_observer_push) {
             if (!_reconfigured.load(std::memory_order_relaxed)) {
                 _observer_fn = &NaiveQueueImpl<T>::add_observer_time_second_reconfiguration;
-                _sync_count = 0;
-                _sync_limit = _samples_second;
+                _need_observer_push = true;
             }
         }
     }
@@ -879,11 +854,11 @@ inline std::tuple<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> NaiveQueueIm
     }
 #endif
 
-    if (enqueued) {
+    /* if (enqueued) {
         return { cost_p, diff(begin_enqueue, end_enqueue), lock, critical, unlock };
     } else {
         return { cost_p, 0, 0, 0, 0 };
-    }
+    } */
 }
 
 template<typename T>
@@ -931,12 +906,13 @@ inline void NaiveQueueImpl<T>::push(T const& data) {
 }
 
 template<typename T>
-inline std::optional<TimingData<T>> NaiveQueueImpl<T>::generic_push(Observer<T>* observer, T const& data) {
-    if (_sync_count < _sync_limit) {
-        return std::make_optional<TimingData>(timed_push(observer, data));
+inline bool NaiveQueueImpl<T>::generic_push(Observer<T>* observer, T const& data) {
+    if (_need_observer_push) {
+        timed_push(observer, data);
+        return _need_observer_push;
     } else {
         push(data);
-        return std::nullopt;
+        return false;
     }
 }
 
@@ -1422,20 +1398,19 @@ private:
 
 template<typename T>
 void NaiveQueueImpl<T>::add_observer_time_first_reconfiguration(Observer<T>* observer, uint64_t cost_p, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t items) {
-    ++_sync_count;
-    observer->add_producer_synchronization_time_first(this, cost_p, lock, critical, unlock, items);
+    _need_observer_push = observer->add_producer_synchronization_time_first(this, cost_p, lock, critical, unlock, items);
 }
 
 template<typename T>
 void NaiveQueueImpl<T>::add_observer_time_second_reconfiguration(Observer<T>* observer, uint64_t, uint64_t lock, uint64_t critical, uint64_t unlock, uint64_t) {
     switch (observer->add_producer_synchronization_time_second(this, lock, critical, unlock)) {
         case Observer<T>::CostSState::NOT_RECONFIGURED:
-        case Observer<T>::CostSState::RECONFIGURED:
             return;
 
         case Observer<T>::CostSState::TRIGGERED:
+        case Observer<T>::CostSState::RECONFIGURED:
             // printf("FIFO ready for second reconfiguration\n");
-            _sync_count = _sync_limit;
+            _need_observer_push = false;
             return;
     }
 }
