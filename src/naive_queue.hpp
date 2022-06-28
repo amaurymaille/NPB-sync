@@ -334,7 +334,7 @@ class NaiveQueueImpl {
         size_t _n_elements;
         size_t _size;
         std::chrono::time_point<std::chrono::steady_clock> _begin;
-        bool _producer;
+        bool _producer = false;
 
         // New step. Used both in manual and automatic reconfiguration.
         // Not atomic, but needs to be written before _need_reconfigure is set to true, 
@@ -644,9 +644,9 @@ class NaiveQueueMaster {
             timed_dequeue_no_timing(NaiveQueueImpl<T>* queue, int limit, std::chrono::nanoseconds const& timeout);
     private:
         Ringbuffer<T> _buf;
-        int _n_producers;
-        int _n_consumers;
-        int _n_terminated;
+        int _n_producers = 0;
+        int _n_consumers = 0;
+        int _n_terminated = 0;
         std::timed_mutex _mutex;
         std::condition_variable_any _not_empty, _not_full;
 
@@ -803,6 +803,7 @@ inline void NaiveQueueImpl<T>::timed_push(Observer<T>* observer, T const& data) 
     uint64_t lock, critical, unlock;
 
     if (full()) {
+        assert (cost_p != 0);
         // dump();
         // std::cout << "[Push] Full" << std::endl;
         
@@ -1305,7 +1306,14 @@ private:
         std::vector<uint64_t> _work_times;
         std::vector<uint64_t> _push_times;
         std::vector<uint64_t> _lock_times, _copy_times, _unlock_times;
+        std::mutex _m;
+        uint32_t _interactions = 0;
         // uint64_t* _items;
+    };
+
+    struct SecondReconfigurationData {
+        std::vector<std::array<uint64_t, 3>> _cost_s;
+        std::mutex _m;
     };
 
     /* struct CSData {
@@ -1361,14 +1369,27 @@ private:
         void trigger_reconfigure(bool first);
         std::tuple<uint32_t, uint32_t> compute_steps(uint64_t producer_avg, uint64_t consumer_avg, 
                 uint64_t cost_s); 
-        uint32_t get_add_operations_first_phase();
-        uint32_t get_add_operations_second_phase();
 
-        uint32_t get_max_operations_first_phase();
-        uint32_t get_max_operations_second_phase();
+        uint32_t get_operations_first_phase() const;
+        uint32_t get_operations_second_phase() const;
+
+        uint32_t get_producers_operations_first_phase() const;
+        uint32_t get_consumers_operations_first_phase() const;
+
+        uint32_t get_add_consumers_operations_first_phase();
+        uint32_t get_add_consumers_operations_second_phase();
+
+        uint32_t get_add_producers_operations_first_phase();
+        uint32_t get_add_producers_operations_second_phase();
+        
+        uint32_t get_max_consumers_operations_first_phase();
+        uint32_t get_max_consumers_operations_second_phase();
+
+        uint32_t get_max_producers_operations_first_phase();
+        uint32_t get_max_producers_operations_second_phase();
 
         std::map<NaiveQueueImpl<T>*, FirstReconfigurationData> _times;
-        std::map<NaiveQueueImpl<T>*, std::vector<std::array<uint64_t, 3>>> _cost_s;
+        std::map<NaiveQueueImpl<T>*, SecondReconfigurationData> _cost_s;
         // std::map<NaiveQueueImpl<T>*, CSData> _cs_data;
 
         uint32_t _n_first_reconf = 0;
@@ -1385,15 +1406,17 @@ private:
         int _prod_step = 0;
         int _cons_step = 0;
 
-        bool _reconfigured = false;
-        bool _reconfigured_twice = false;
+        std::atomic<bool> _reconfigured;
+        std::atomic<bool> _reconfigured_twice;
 
         Data _data;
         std::mutex _m;
 
         std::string _description;
+        std::atomic<uint32_t> _producer_count, _producer_count_second_phase, 
+            _consumer_count, _consumer_count_second_phase;
 
-        std::atomic<uint32_t> _count, _count_second_phase;
+        // std::atomic<uint32_t> _count, _count_second_phase;
 };
 
 template<typename T>

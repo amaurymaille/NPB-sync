@@ -464,8 +464,8 @@ void CompressNaiveQueue(thread_args_naive const& args) {
     pthread_barrier_wait(args._barrier);
     chunk_t * chunk;
 
-    bool push_work_input = false;
-    bool push_work_output = false;
+    bool push_work_input = true;
+    bool push_work_output = true;
 
     int count = 0;
     int pop_count = 0;
@@ -1044,10 +1044,6 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     clear_mem(compress_stage, compress);
     clear_mem(reorder_stage, reorder);
 
-    for (NaiveQueueImpl<chunk_t*>* addr: naive_queues_addr) {
-        delete addr;
-    }
-
     auto dump_observers = [](Observer<chunk_t*>* observers, size_t n_observers, std::optional<std::string> const& filename_base, std::string const& layer) -> void {
         if (!filename_base)
             return;
@@ -1076,9 +1072,13 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
     dump_observers(compress_observers, nb_compress_observers, data._observers, "compress");
     delete[] compress_observers;
 
-    for (auto const& [queue, data]: _split_data) {
+    /* for (auto const& [queue, data]: _split_data) {
         std::cout << queue << ":" << std::endl;
         std::copy(data.begin(), data.end(), std::ostream_iterator<uint64_t>(std::cout, ","));
+    } */
+
+    for (NaiveQueueImpl<chunk_t*>* addr: naive_queues_addr) {
+        delete addr;
     }
 
     delete[] fragment_to_refine;

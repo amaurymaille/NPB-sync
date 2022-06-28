@@ -12,10 +12,22 @@
 
 using json = nlohmann::json;
 
+static void init_atomic(std::atomic<uint32_t>& a) {
+    a.store(0, std::memory_order_relaxed);
+}
+
+static void init_atomic(std::atomic<bool>& a) {
+    a.store(false, std::memory_order_relaxed);
+}
+
 template<typename T>
 Observer<T>::Observer() { 
-    _count.store(0, std::memory_order_relaxed); 
-    _count_second_phase.store(0, std::memory_order_relaxed);
+    init_atomic(_producer_count);
+    init_atomic(_producer_count_second_phase);
+    init_atomic(_consumer_count);
+    init_atomic(_consumer_count_second_phase);
+    init_atomic(_reconfigured);
+    init_atomic(_reconfigured_twice);
 }
 
 template<typename T>
@@ -23,13 +35,19 @@ Observer<T>::Observer(std::string const& description, uint64_t iter, int choice_
     _description(description), _choice_step(choice_step), _dephase(dephase), _prod_step(prod_step), _cons_step(cons_step) {
     _data._iter = iter;
 
-    _count.store(0, std::memory_order_relaxed);
-    _count_second_phase.store(0, std::memory_order_relaxed);
+    init_atomic(_producer_count);
+    init_atomic(_producer_count_second_phase);
+    init_atomic(_consumer_count);
+    init_atomic(_consumer_count_second_phase);
+    init_atomic(_reconfigured);
+    init_atomic(_reconfigured_twice);
 }
 
 template<typename T>
 Observer<T>::~Observer() {
     std::cout << "First prod = " << _data._first_prod_step << ", first cons = " << _data._first_cons_step << ", second prod " << _data._second_prod_step << ", second cons " << _data._second_cons_step << ", first prod effective " << _data._first_prod_step_eff << ", first cons effective " << _data._first_cons_step_eff << ", second prod effective " << _data._second_prod_step_eff << ", second cons effective " << _data._second_cons_step_eff << std::endl;
+
+    std::cout << _producer_count.load(std::memory_order_acquire) << ", " << _consumer_count.load(std::memory_order_acquire) << ", " << _producer_count_second_phase.load(std::memory_order_acquire) << ", " << _consumer_count_second_phase.load(std::memory_order_acquire) << ", " << _n_first_reconf << ", " << _n_second_reconf << std::endl;
 }
 
 template<typename T>
@@ -67,17 +85,32 @@ bool Observer<T>::add_work_time(NaiveQueueImpl<T>* client, uint64_t time) {
         throw std::runtime_error("Client not registered\n");
     }
 
-    uint32_t operations = get_add_operations_first_phase();
-    uint32_t max = get_max_operations_first_phase();
+    assert (time != 0);
+
+    uint32_t operations, max, other_operations, other_max;
+    if (client->_producer) {
+        operations = get_add_producers_operations_first_phase();
+        max = get_max_producers_operations_first_phase();
+        other_operations = get_consumers_operations_first_phase();
+        other_max = get_max_consumers_operations_first_phase();
+    } else {
+        operations = get_add_consumers_operations_first_phase();
+        max = get_max_consumers_operations_first_phase();
+        other_operations = get_producers_operations_first_phase();
+        other_max = get_max_producers_operations_first_phase();
+    }
 
     if (operations > max) {
         return false;
     }
 
     FirstReconfigurationData& data = _times[client];
+    data._m.lock();
     data._work_times.push_back(time);
+    data._interactions++;
+    data._m.unlock();
 
-    if (operations == max) {
+    if (operations == max && other_operations >= other_max) {
         trigger_reconfigure(true);
         return false;
     }
@@ -88,6 +121,10 @@ bool Observer<T>::add_work_time(NaiveQueueImpl<T>* client, uint64_t time) {
 template<typename T>
 void Observer<T>::trigger_reconfigure(bool first) {
     auto avg = [](uint64_t* arr, size_t s, float ignore = 0) {
+        if (s == 0) {
+            return 0;
+        }
+
         if (ignore != 0) {
             std::sort(arr, arr + s);
         }
@@ -95,6 +132,10 @@ void Observer<T>::trigger_reconfigure(bool first) {
     };
 
     auto sorted_median = [](uint64_t* arr, size_t s) {
+        if (s == 0) {
+            return 0UL;
+        }
+
         if (s % 2 == 0) {
             return (arr[s / 2 - 1] + arr[s / 2]) / 2;
         } else {
@@ -112,7 +153,12 @@ void Observer<T>::trigger_reconfigure(bool first) {
         return sorted_median(arr, s / 2);
     };
 
+    bool expected = false;
     if (first) {
+        if (!_reconfigured.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            return;
+        }
+
         /* if (!_reconfigured && std::all_of(_times.begin(), _times.end(), [this](auto const& value) {
             auto const& [_, data] = value;
             if (data._producer) {
@@ -135,14 +181,25 @@ void Observer<T>::trigger_reconfigure(bool first) {
         unlocks.reserve(_n_producers);
         copies.reserve(_n_producers);
         
+        uint32_t producers_zero = 0;
         for (auto& [queue, data]: _times) {
+            data._m.lock();
             unsigned int average = avg(data._work_times.data(), data._work_times.size());
             if (data._producer) {
                 cost_p.push_back(avg(data._push_times.data(), data._push_times.size()));
+                data._m.unlock();
+                if (average == 0) {
+                    ++producers_zero;
+                }
                 producers.push_back(average);
             } else {
+                data._m.unlock();
                 consumers.push_back(average);
             }
+        }
+
+        if (producers_zero == _n_producers) {
+            throw std::runtime_error("Okay like WTF bro\n");
         }
 
         auto consumer_avg = avg(consumers.data(), consumers.size());
@@ -162,6 +219,13 @@ void Observer<T>::trigger_reconfigure(bool first) {
         _data._cost_u = avg(unlocks.data(), unlocks.size());
 
         auto [prod_step, cons_step] = compute_steps(producer_avg, consumer_avg, _data._cost_wl + _data._cost_u);
+        if (prod_step == 0) {
+            prod_step = 1;
+        }
+
+        if (cons_step == 0) {
+            cons_step = 1;
+        }
 
         // int dephase_i = 0;
         for (auto& [queue, map_data]: _times) {
@@ -191,7 +255,6 @@ void Observer<T>::trigger_reconfigure(bool first) {
         _data._first_cons_step_eff = BEST_CONS_STEP;
 
 
-        _reconfigured = true;
         // }
     } else {
         /* if (!_reconfigured_twice && std::all_of(_cost_s.begin(), _cost_s.end(), [this](auto const& value) {
@@ -202,17 +265,21 @@ void Observer<T>::trigger_reconfigure(bool first) {
 
             return true;
         })) { */
-        _reconfigured_twice = true;
+        if (!_reconfigured_twice.compare_exchange_strong(expected, true, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            return;
+        }
         std::vector<uint64_t> cost_s(_cost_s.size());
 
         for (auto& data: _cost_s) {
             auto& v = data.second;
 
             std::vector<uint64_t> s;
-            for (auto [lock, critical, unlock]: v) {
+            v._m.lock();
+            for (auto [lock, critical, unlock]: v._cost_s) {
                 // averg += lock + unlock;
                 s.push_back(lock + unlock);
             }
+            v._m.unlock();
             // cost_s.push_back(averg / v.size());
             cost_s.push_back(unsorted_median(s.data(), s.size()));
         }
@@ -288,24 +355,38 @@ void Observer<T>::set_first_reconfiguration_n(uint32_t n) {
 
 template<typename T>
 bool Observer<T>::add_producer_synchronization_time_first(NaiveQueueImpl<T>* producer, uint64_t push_time, uint64_t lock_time, uint64_t copy_time, uint64_t unlock_time, uint64_t /* items */) {
-    uint32_t observations = get_add_operations_first_phase();
-    uint32_t max = get_max_operations_first_phase();
+    assert (push_time != 0);
+    assert (lock_time != 0);
+    assert (copy_time != 0);
+    assert (unlock_time != 0);
+
+    uint32_t observations = get_add_producers_operations_first_phase();
+    uint32_t max = get_max_producers_operations_first_phase();
 
     if (observations > max) {
         return false;
     }
 
+    if (_times.find(producer) == _times.end()) {
+        throw std::runtime_error("Adding sync time for non registered producer\n");
+    }
+
     FirstReconfigurationData& data = _times[producer];
+    data._m.lock();
     data._push_times.push_back(push_time);
 
     if (copy_time != 0) {
         data._lock_times.push_back(lock_time);
         data._copy_times.push_back(copy_time);
         data._unlock_times.push_back(unlock_time);
+        data._interactions++;
         // data._items.push_back(items);
     }
+    data._m.unlock();
 
-    if (observations == max) {
+    uint32_t other_observations = get_consumers_operations_first_phase();
+    uint32_t other_max = get_max_consumers_operations_first_phase();
+    if (observations == max && other_observations >= other_max) {
         trigger_reconfigure(true);
         return false;
     }
@@ -318,7 +399,7 @@ void Observer<T>::set_second_reconfiguration_n(uint32_t n) {
     _n_second_reconf = n;
     for (auto& data: _cost_s) {
         auto& v = data.second;
-        v.reserve(n);
+        v._cost_s.reserve(n);
     }
 
     /* for (auto& data: _cs_data) {
@@ -329,8 +410,8 @@ void Observer<T>::set_second_reconfiguration_n(uint32_t n) {
 template<typename T>
 typename Observer<T>::CostSState Observer<T>::add_producer_synchronization_time_second(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
     if (producer->was_reconfigured()) {
-        uint32_t observations = get_add_operations_second_phase();
-        uint32_t max = get_max_operations_second_phase();
+        uint32_t observations = get_add_producers_operations_second_phase();
+        uint32_t max = get_max_producers_operations_second_phase();
 
         if (observations > max) {
             return CostSState::RECONFIGURED;
@@ -340,13 +421,17 @@ typename Observer<T>::CostSState Observer<T>::add_producer_synchronization_time_
             throw std::runtime_error("Adding second reconfiguration time for not registered producer");
         }
 
-        _cost_s[producer].push_back({lock, critical, unlock});
+        SecondReconfigurationData& data = _cost_s[producer];
+        data._m.lock();
+        data._cost_s.push_back({lock, critical, unlock});
+        data._m.unlock();
+
         if (observations == max) {
             trigger_reconfigure(false);
             return CostSState::TRIGGERED;
         }
 
-        return CostSState::RECONFIGURED;
+        return CostSState::NOT_RECONFIGURED;
     }
 
     return CostSState::NOT_RECONFIGURED;
@@ -417,7 +502,7 @@ json Observer<T>::serialize() const {
         json locks = json::array(), unlocks = json::array(), transfers = json::array();
 
         fifo["type"] = queue->_producer ? "producer" : "consumer";
-        for (auto [lock, transfer, unlock]: data) {
+        for (auto [lock, transfer, unlock]: data._cost_s) {
             locks.push_back(lock);
             unlocks.push_back(unlock);
             transfers.push_back(transfer);
@@ -441,23 +526,53 @@ json Observer<T>::serialize() const {
 }
 
 template<typename T>
-uint32_t Observer<T>::get_add_operations_first_phase() {
-    return _count.fetch_add(1, std::memory_order_acq_rel);
+uint32_t Observer<T>::get_producers_operations_first_phase() const {
+    return _producer_count.load(std::memory_order_acquire);
 }
 
 template<typename T>
-uint32_t Observer<T>::get_add_operations_second_phase() {
-    return _count_second_phase.fetch_add(1, std::memory_order_acq_rel);
+uint32_t Observer<T>::get_consumers_operations_first_phase() const {
+    return _consumer_count.load(std::memory_order_acquire);
 }
 
 template<typename T>
-uint32_t Observer<T>::get_max_operations_first_phase() {
-    return _n_first_reconf * (_n_consumers + _n_producers);
+uint32_t Observer<T>::get_add_producers_operations_first_phase() {
+    return _producer_count.fetch_add(1, std::memory_order_acq_rel);
 }
 
 template<typename T>
-uint32_t Observer<T>::get_max_operations_second_phase() {
-    return _n_second_reconf * (_n_consumers + _n_producers);
+uint32_t Observer<T>::get_add_producers_operations_second_phase() {
+    return _producer_count_second_phase.fetch_add(1, std::memory_order_acq_rel);
+}
+
+template<typename T>
+uint32_t Observer<T>::get_add_consumers_operations_first_phase() {
+    return _consumer_count.fetch_add(1, std::memory_order_acq_rel);
+}
+
+template<typename T>
+uint32_t Observer<T>::get_add_consumers_operations_second_phase() {
+    return _consumer_count_second_phase.fetch_add(1, std::memory_order_acq_rel);
+}
+
+template<typename T>
+uint32_t Observer<T>::get_max_producers_operations_first_phase() {
+    return _n_first_reconf * 2 * _n_producers;
+}
+
+template<typename T>
+uint32_t Observer<T>::get_max_producers_operations_second_phase() {
+    return _n_second_reconf * 2 * _n_producers;
+}
+
+template<typename T>
+uint32_t Observer<T>::get_max_consumers_operations_first_phase() {
+    return _n_first_reconf * _n_consumers;
+}
+
+template<typename T>
+uint32_t Observer<T>::get_max_consumers_operations_second_phase() {
+    return _n_second_reconf * _n_consumers;
 }
 
 /* template<typename T>

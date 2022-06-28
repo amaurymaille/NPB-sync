@@ -91,7 +91,7 @@ static inline void *ringbuffer_remove(ringbuffer_t *buf) {
   }
 
   --buf->n_elements;
-  assert(buf->n_elements >= 0);
+  // assert(buf->n_elements > 0);
   return ptr;
 }
 

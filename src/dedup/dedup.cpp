@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
@@ -96,6 +97,7 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
         ("lua-output-file-mode", po::value<char>(), "Mode in which the output file is to be opened ('w' or 'a')")
         ("output", po::value<std::string>(), "Output file in which the program will write the compressed output")
         ("observers", po::value<std::string>(), "Output file in which the observers will write their logs")
+        ("redirect", po::value<std::string>(), "File in which the output will get redirected")
         ("numbers", "Fragment and refine the input file and output the number of chunks");
 
     po::variables_map vm;
@@ -166,6 +168,12 @@ void parse_args(int argc, char** argv, CLIArgs& args) {
 
     if (vm.count("observers")) {
         args._observers = std::make_optional(vm["observers"].as<std::string>());
+    }
+
+    if (vm.count("redirect")) {
+        int fd = open(vm["redirect"].as<std::string>().c_str(), O_WRONLY);
+        dup2(fd, 1);
+        dup2(fd, 2);
     }
 }
 
