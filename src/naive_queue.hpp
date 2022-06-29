@@ -1306,14 +1306,14 @@ private:
         std::vector<uint64_t> _work_times;
         std::vector<uint64_t> _push_times;
         std::vector<uint64_t> _lock_times, _copy_times, _unlock_times;
-        std::mutex _m;
-        uint32_t _interactions = 0;
+        // std::mutex _m;
+        // uint32_t _interactions = 0;
         // uint64_t* _items;
     };
 
     struct SecondReconfigurationData {
         std::vector<std::array<uint64_t, 3>> _cost_s;
-        std::mutex _m;
+        // std::mutex _m;
     };
 
     /* struct CSData {

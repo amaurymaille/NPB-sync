@@ -105,10 +105,10 @@ bool Observer<T>::add_work_time(NaiveQueueImpl<T>* client, uint64_t time) {
     }
 
     FirstReconfigurationData& data = _times[client];
-    data._m.lock();
+    // data._m.lock();
     data._work_times.push_back(time);
-    data._interactions++;
-    data._m.unlock();
+    // data._interactions++;
+    // data._m.unlock();
 
     if (operations == max && other_operations >= other_max) {
         trigger_reconfigure(true);
@@ -183,17 +183,17 @@ void Observer<T>::trigger_reconfigure(bool first) {
         
         uint32_t producers_zero = 0;
         for (auto& [queue, data]: _times) {
-            data._m.lock();
+            // data._m.lock();
             unsigned int average = avg(data._work_times.data(), data._work_times.size());
             if (data._producer) {
                 cost_p.push_back(avg(data._push_times.data(), data._push_times.size()));
-                data._m.unlock();
+                // data._m.unlock();
                 if (average == 0) {
                     ++producers_zero;
                 }
                 producers.push_back(average);
             } else {
-                data._m.unlock();
+                // data._m.unlock();
                 consumers.push_back(average);
             }
         }
@@ -274,12 +274,12 @@ void Observer<T>::trigger_reconfigure(bool first) {
             auto& v = data.second;
 
             std::vector<uint64_t> s;
-            v._m.lock();
+            // v._m.lock();
             for (auto [lock, critical, unlock]: v._cost_s) {
                 // averg += lock + unlock;
                 s.push_back(lock + unlock);
             }
-            v._m.unlock();
+            // v._m.unlock();
             // cost_s.push_back(averg / v.size());
             cost_s.push_back(unsorted_median(s.data(), s.size()));
         }
@@ -342,11 +342,14 @@ void Observer<T>::set_first_reconfiguration_n(uint32_t n) {
                 throw std::runtime_error("You cannot change the size of the time");
             }
 
-            data._work_times.reserve(n);
-            data._push_times.reserve(n);
-            data._lock_times.reserve(n);
-            data._copy_times.reserve(n);
-            data._unlock_times.reserve(n);
+            unsigned int reserved = n * 2 * _n_producers;
+            data._work_times.reserve(reserved);
+            data._push_times.reserve(reserved);
+            data._lock_times.reserve(reserved);
+            data._copy_times.reserve(reserved);
+            data._unlock_times.reserve(reserved);
+        } else {
+            data._work_times.reserve(n * _n_consumers);
         }
     }
 
@@ -372,17 +375,17 @@ bool Observer<T>::add_producer_synchronization_time_first(NaiveQueueImpl<T>* pro
     }
 
     FirstReconfigurationData& data = _times[producer];
-    data._m.lock();
+    // data._m.lock();
     data._push_times.push_back(push_time);
 
     if (copy_time != 0) {
         data._lock_times.push_back(lock_time);
         data._copy_times.push_back(copy_time);
         data._unlock_times.push_back(unlock_time);
-        data._interactions++;
+        // data._interactions++;
         // data._items.push_back(items);
     }
-    data._m.unlock();
+    // data._m.unlock();
 
     uint32_t other_observations = get_consumers_operations_first_phase();
     uint32_t other_max = get_max_consumers_operations_first_phase();
@@ -422,9 +425,9 @@ typename Observer<T>::CostSState Observer<T>::add_producer_synchronization_time_
         }
 
         SecondReconfigurationData& data = _cost_s[producer];
-        data._m.lock();
+        // data._m.lock();
         data._cost_s.push_back({lock, critical, unlock});
-        data._m.unlock();
+        // data._m.unlock();
 
         if (observations == max) {
             trigger_reconfigure(false);
