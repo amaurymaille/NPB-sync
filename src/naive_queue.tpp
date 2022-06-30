@@ -181,25 +181,25 @@ void Observer<T>::trigger_reconfigure(bool first) {
         unlocks.reserve(_n_producers);
         copies.reserve(_n_producers);
         
-        uint32_t producers_zero = 0;
         for (auto& [queue, data]: _times) {
             // data._m.lock();
             unsigned int average = avg(data._work_times.data(), data._work_times.size());
             if (data._producer) {
-                cost_p.push_back(avg(data._push_times.data(), data._push_times.size()));
-                // data._m.unlock();
-                if (average == 0) {
-                    ++producers_zero;
+                uint64_t cost_p_avg = avg(data._push_times.data(), data._push_times.size());
+                if (cost_p_avg != 0) {
+                    cost_p.push_back(cost_p_avg);
                 }
-                producers.push_back(average);
+
+                // data._m.unlock();
+                if (average != 0) {
+                    producers.push_back(average);
+                }
             } else {
                 // data._m.unlock();
-                consumers.push_back(average);
+                if (average != 0) {
+                    consumers.push_back(average);
+                }
             }
-        }
-
-        if (producers_zero == _n_producers) {
-            throw std::runtime_error("Okay like WTF bro\n");
         }
 
         auto consumer_avg = avg(consumers.data(), consumers.size());
