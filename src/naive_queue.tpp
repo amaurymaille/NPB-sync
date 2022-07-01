@@ -64,9 +64,11 @@ template<typename T>
 void Observer<T>::add_producer(NaiveQueueImpl<T>* producer) {
     FirstReconfigurationData& data = _times[producer];
     data._producer = true;
+    data._phantom = false;
 
     ++_n_producers;
-    _cost_s[producer];
+    SecondReconfigurationData& sdata = _cost_s[producer];
+    sdata._phantom = false;
     // _cs_data[producer]._producer = true;
 }
 
@@ -74,15 +76,41 @@ template<typename T>
 void Observer<T>::add_consumer(NaiveQueueImpl<T>* consumer) {
     FirstReconfigurationData& data = _times[consumer];
     data._producer = false;
+    data._phantom = false;
     
     ++_n_consumers;
     // _cs_data[consumer]._producer = false;
 }
 
 template<typename T>
+void Observer<T>::add_phantom_producer(NaiveQueueImpl<T>* producer) {
+    FirstReconfigurationData& data = _times[producer];
+    data._producer = true;
+    data._phantom = true;
+
+    // ++_n_producers;
+    SecondReconfigurationData& sdata = _cost_s[producer];
+    sdata._phantom = true;
+}
+
+template<typename T>
+void Observer<T>::add_phantom_consumer(NaiveQueueImpl<T>* consumer) {
+    FirstReconfigurationData& data = _times[consumer];
+    data._producer = false;
+    data._phantom = true;
+
+    // ++_n_consumers;
+}
+
+template<typename T>
 bool Observer<T>::add_work_time(NaiveQueueImpl<T>* client, uint64_t time) {
-    if (_times.find(client) == _times.end()) {
+    auto iter = _times.find(client);
+    if (iter == _times.end()) {
         throw std::runtime_error("Client not registered\n");
+    }
+
+    if (iter->second._phantom) {
+        return false;
     }
 
     assert (time != 0);
@@ -182,6 +210,10 @@ void Observer<T>::trigger_reconfigure(bool first) {
         copies.reserve(_n_producers);
         
         for (auto& [queue, data]: _times) {
+            if (data._phantom) {
+                continue;
+            }
+
             // data._m.lock();
             unsigned int average = avg(data._work_times.data(), data._work_times.size());
             if (data._producer) {
@@ -207,6 +239,10 @@ void Observer<T>::trigger_reconfigure(bool first) {
         _data._cost_p = *std::min_element(cost_p.begin(), cost_p.end());
 
         for (auto& [queue, data]: _times) {
+            if (data._phantom) {
+                continue;
+            }
+
             if (data._producer) {
                 locks.push_back(quart(data._lock_times.data(), data._lock_times.size()));
                 unlocks.push_back(quart(data._unlock_times.data(), data._unlock_times.size()));
@@ -363,6 +399,15 @@ bool Observer<T>::add_producer_synchronization_time_first(NaiveQueueImpl<T>* pro
     assert (copy_time != 0);
     assert (unlock_time != 0);
 
+    auto iter = _times.find(producer);
+    if (iter == _times.end()) {
+        throw std::runtime_error("Adding sync time for non registered producer\n");
+    }
+
+    if (iter->second._phantom) {
+        return false;
+    }
+
     uint32_t observations = get_add_producers_operations_first_phase();
     uint32_t max = get_max_producers_operations_first_phase();
 
@@ -370,10 +415,7 @@ bool Observer<T>::add_producer_synchronization_time_first(NaiveQueueImpl<T>* pro
         return false;
     }
 
-    if (_times.find(producer) == _times.end()) {
-        throw std::runtime_error("Adding sync time for non registered producer\n");
-    }
-
+    
     FirstReconfigurationData& data = _times[producer];
     // data._m.lock();
     data._push_times.push_back(push_time);
@@ -412,16 +454,21 @@ void Observer<T>::set_second_reconfiguration_n(uint32_t n) {
 
 template<typename T>
 typename Observer<T>::CostSState Observer<T>::add_producer_synchronization_time_second(NaiveQueueImpl<T>* producer, uint64_t lock, uint64_t critical, uint64_t unlock) {
+    auto iter = _cost_s.find(producer);
+    if (iter == _cost_s.end()) {
+        throw std::runtime_error("Adding second reconfiguration time for not registered producer");
+    }
+
+    if (iter->second._phantom) {
+        return CostSState::RECONFIGURED;
+    }
+
     if (producer->was_reconfigured()) {
         uint32_t observations = get_add_producers_operations_second_phase();
         uint32_t max = get_max_producers_operations_second_phase();
 
         if (observations > max) {
             return CostSState::RECONFIGURED;
-        }
-
-        if (_cost_s.find(producer) == _cost_s.end()) {
-            throw std::runtime_error("Adding second reconfiguration time for not registered producer");
         }
 
         SecondReconfigurationData& data = _cost_s[producer];

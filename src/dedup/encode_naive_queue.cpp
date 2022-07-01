@@ -883,7 +883,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
         pthread_t* threads = new pthread_t[layer_data.get_total_threads()];
 
-        auto generate_views = [&data, &ids_to_fifos, &ids_to_observers](std::vector<NaiveQueueImpl<chunk_t*>*>& target, std::vector<Observer<chunk_t*>*>& observers, bool producer, std::map<int, FIFOData> const& fifo_ids) {
+        auto generate_views = [&data, &ids_to_fifos, &ids_to_observers](std::vector<NaiveQueueImpl<chunk_t*>*>& target, std::vector<Observer<chunk_t*>*>& observers, bool producer, std::map<int, FIFOData> const& fifo_ids, bool phantom = false) {
             for (auto const& [fifo, fifo_data]: fifo_ids) {
                 // FIFOData& fifo_data = data._fifo_data[fifo];
                 // target.push_back(ids_to_fifos[fifo]->view(producer, fifo_data._n, fifo_data._reconfigure, fifo_data._change_step_after, fifo_data._new_step));
@@ -892,10 +892,18 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
 
                 Observer<chunk_t*>* obs = ids_to_observers[fifo];
                 observers.push_back(obs);
-                if (producer) {
-                    obs->add_producer(impl);
+                if (phantom) {
+                    if (producer) {
+                        obs->add_phantom_producer(impl);
+                    } else {
+                        obs->add_phantom_consumer(impl);
+                    }
                 } else {
-                    obs->add_consumer(impl);
+                    if (producer) {
+                        obs->add_producer(impl);
+                    } else {
+                        obs->add_consumer(impl);
+                    }
                 }
             }
         };
@@ -906,7 +914,7 @@ static void _Encode(/* std::vector<Globals::SmartFIFOTSV>& timestamp_datas, */ D
             generate_views(args[i]._input_fifos, args[i]._input_observers, false, thread_data._inputs);
 
             if (extra) {
-                generate_views(args[i]._extra_output_fifos, args[i]._extra_output_observers, true, thread_data._extras);
+                generate_views(args[i]._extra_output_fifos, args[i]._extra_output_observers, true, thread_data._extras, true);
             }
 
             args[i]._barrier = &barrier;
